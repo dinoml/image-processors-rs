@@ -45,13 +45,34 @@ cargo check --workspace --features video
 
 The repo includes `vcpkg.json`, so vcpkg installs the native FFmpeg dependency set from the repository root. The setup script exports `PKG_CONFIG_PATH` because vcpkg manifest mode places the installed files in `vcpkg_installed`.
 
+## Linux Setup
+
+Install FFmpeg development libraries and `pkg-config`. On Ubuntu:
+
+```bash
+sudo apt-get install clang libavcodec-dev libavdevice-dev libavfilter-dev \
+  libavformat-dev libavutil-dev libclang-dev libswresample-dev \
+  libswscale-dev pkg-config
+```
+
+## macOS Setup
+
+Install FFmpeg and `pkg-config` with Homebrew:
+
+```bash
+brew install ffmpeg pkg-config
+```
+
 ## CI
 
-The Windows video CI lane bootstraps vcpkg, installs the manifest dependencies, and runs:
+The video CI lanes install FFmpeg development libraries on Windows, Linux, and macOS, and run:
 
-```powershell
+```text
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 ```
+
+The Windows lane also installs `pkgconfiglite`, because `ffmpeg-sys-next` uses
+the pkg-config metadata from the repository's manifest-mode vcpkg installation.
 
 Default and `url` feature checks do not require FFmpeg development libraries.
