@@ -1,0 +1,242 @@
+{
+  "cases": [
+    {
+      "backend": "pil",
+      "class_name": "VivitImageProcessor",
+      "comparison": {
+        "dtype": "exact",
+        "float_full_values": {
+          "absolute_tolerance": 0.06,
+          "relative_tolerance": 0.0
+        },
+        "float_statistics": {
+          "absolute_tolerance": 0.01,
+          "relative_tolerance": 0.0
+        },
+        "integer_values": "exact",
+        "metadata": "exact",
+        "shape": "exact"
+      },
+      "family": "vivit",
+      "image": {
+        "height": 5,
+        "mode": "RGB",
+        "width": 5
+      },
+      "images": [
+        {
+          "height": 5,
+          "mode": "RGB",
+          "width": 5
+        },
+        {
+          "height": 5,
+          "mode": "RGB",
+          "width": 5
+        },
+        {
+          "height": 5,
+          "mode": "RGB",
+          "width": 5
+        }
+      ],
+      "metadata": {
+        "original_sizes": [
+          [
+            5,
+            5
+          ],
+          [
+            5,
+            5
+          ],
+          [
+            5,
+            5
+          ]
+        ],
+        "target_size": [
+          4,
+          4
+        ],
+        "video_original_sizes": [
+          [
+            [
+              5,
+              5
+            ],
+            [
+              5,
+              5
+            ],
+            [
+              5,
+              5
+            ]
+          ]
+        ]
+      },
+      "model_id": "VivitImageProcessor(size={'shortest_edge': 4}, crop_size={'height': 4, 'width': 4})",
+      "outputs": {
+        "pixel_values": {
+          "data": {
+            "dtype": "float32",
+            "encoding": "base64",
+            "value": "7+4uwPz9fb9DQ8O/4NxcPsTDA8CgoqK+2NlZv+TjYz+0tTW///4+wAD//j5jY+O/gJAQvdTTE8D29TXADQ2Nv8rJCcDQ0tK+8PFxv8zLSz89Pb2/iIaGPoiKir7j4iLAgIQEvtrZGcD8+zvAGRmZv4yLCz9dXd2/0dAQwISFBb9JScm/sKwsPri6ur7p6CjA5OVlv9jXVz+gnp4+e3v7v+jm5j5paem/19YWwJydHb/5+DjAExOTv1dX178A8XA9c3Pzv6CkJL6wsTG//v09wB0dnb+EgwM/gKCgvNPSEsAA+fg9yskJwOzrK8Dw8XG/zMtLPz09vb/BwADAiIqKvikpqb/Y1tY+4OjovdnYGMCkpSW/+/o6wJCPDz9bW9u/tLMzP0lJyb/HxgbAuLq6vunoKMDk5WW/Nze3v6Cenj68vT2/AACAP/Du7j5nZ+e/gIiIvdbVFcD49zfAERGRv+/uLsD8/X2/Q0PDv+DcXD7EwwPAoKKivtjZWb/k42M/CQmJv6yrKz+QjAw+ycgIwMjKyr7r6irA0M9PPzs7u7/083M/KSmpv21t7b/g6Oi92dgYwKSlJb8XF5e/kI8PP/j6+r7x8DDAuLc3P0dHx7/AvDw+xsUFwOjnJ8Dg4WG/394ewLy9Pb8jI6O/8O7uPmdn57+AiIi9mJkZv/j3N8DAuLg9zMsLwO7tLcD4+Xm/xMNDP0FBwb/DwgLAmJqavnNz87+gpCS+sLExv/79PcAdHZ2/hIMDP4CgoLzT0hLA"
+          },
+          "dtype": "float32",
+          "max": 1.0,
+          "mean": -1.0357298172182507,
+          "min": -2.984313726425171,
+          "sample": [
+            -2.7333333492279053,
+            -0.9921567440032959,
+            -1.525490164756775,
+            0.21568632125854492,
+            -2.058823585510254,
+            -0.31764698028564453,
+            -0.850980281829834,
+            0.8901960849761963,
+            -0.7098038196563721,
+            -2.984313726425171,
+            0.49803924560546875,
+            -1.7764705419540405,
+            -0.0352940559387207,
+            -2.3098039627075195,
+            -2.843137264251709,
+            -1.1019607782363892
+          ],
+          "shape": [
+            1,
+            3,
+            3,
+            4,
+            4
+          ]
+        }
+      },
+      "processor_config": {
+        "crop_size": {
+          "height": 4,
+          "width": 4
+        },
+        "do_center_crop": true,
+        "do_normalize": true,
+        "do_rescale": true,
+        "do_resize": true,
+        "image_mean": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "image_std": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "offset": true,
+        "resample": "0",
+        "rescale_factor": 0.00784313725490196,
+        "size": {
+          "shortest_edge": 4
+        }
+      },
+      "stages": {
+        "processed_video": {
+          "data": {
+            "dtype": "uint8",
+            "encoding": "base64",
+            "value": "EYBezTyrifiSAd9OvSwKeTalg/Jh0K4dtyYEc+JRL55byqgXhvXTQtxLKZgHdlTDRrWTAnHgvi3HNhSD8mE/rmvauCeWBeNS7Fs5qBeGZNOQ/91MuyoIdxGAXs08q4n4e+rIN6YV82L8a0m4J5Z046AP7VzLOhiHIZBu3Uy7mQjFNBKB8F89rEa1kwJx4L4t"
+          },
+          "dtype": "uint8",
+          "max": 255.0,
+          "mean": 125.22222222222223,
+          "min": 1.0,
+          "sample": [
+            17,
+            128,
+            94,
+            205,
+            60,
+            171,
+            137,
+            248,
+            146,
+            1,
+            223,
+            78,
+            189,
+            44,
+            10,
+            121
+          ],
+          "shape": [
+            1,
+            3,
+            3,
+            4,
+            4
+          ]
+        }
+      },
+      "video_batch_size": 1,
+      "video_frames": [
+        {
+          "height": 5,
+          "mode": "RGB",
+          "width": 5
+        },
+        {
+          "height": 5,
+          "mode": "RGB",
+          "width": 5
+        },
+        {
+          "height": 5,
+          "mode": "RGB",
+          "width": 5
+        }
+      ],
+      "videos": [
+        [
+          {
+            "height": 5,
+            "mode": "RGB",
+            "width": 5
+          },
+          {
+            "height": 5,
+            "mode": "RGB",
+            "width": 5
+          },
+          {
+            "height": 5,
+            "mode": "RGB",
+            "width": 5
+          }
+        ]
+      ]
+    }
+  ],
+  "generator": "scripts/parity/transformers_image_parity.py",
+  "input": {
+    "description": "For flattened RGB byte index i and image offset n, value = (i * 37 + 17 + n * 53) % 256.",
+    "kind": "deterministic_rgb",
+    "parameters": {
+      "as_video": false,
+      "height": 5,
+      "height_step": 0,
+      "image_count": 3,
+      "video_batch_size": 1,
+      "width": 5,
+      "width_step": 0
+    }
+  },
+  "schema": "image-processors.transformers-parity.v1",
+  "upstream": {
+    "commit": "6d960ca0a0eba0d2aebc920d8080a9353da468d3",
+    "library": "transformers",
+    "source": "transformers.image_processing",
+    "version": "5.14.0.dev0"
+  }
+}

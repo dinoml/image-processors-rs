@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  rust:
+    name: Rust
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      - run: cargo clippy -p image-processors --all-targets --no-default-features -- -D warnings
+      - run: cargo test -p image-processors --no-default-features
+      - run: cargo clippy --workspace --all-targets --features url -- -D warnings
+      - run: cargo test --workspace --features url
+
+  video-windows:
+    name: Video Feature (Windows/vcpkg)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Bootstrap vcpkg
+        shell: pwsh
+        run: |
+          git clone https://github.com/microsoft/vcpkg "$env:RUNNER_TEMP\vcpkg"
+          & "$env:RUNNER_TEMP\vcpkg\bootstrap-vcpkg.bat" -disableMetrics
+          "VCPKG_ROOT=$env:RUNNER_TEMP\vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "VCPKG_DEFAULT_TRIPLET=x64-windows" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Install FFmpeg development libraries
+        shell: pwsh
+        run: |
+          & "$env:VCPKG_ROOT\vcpkg.exe" install --triplet x64-windows --x-manifest-root="$pwd"
+          "PKG_CONFIG_PATH=$pwd\vcpkg_installed\x64-windows\lib\pkgconfig" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "$pwd\vcpkg_installed\x64-windows\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+      - name: Check all features
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - name: Test all features
+        run: cargo test --workspace --all-features

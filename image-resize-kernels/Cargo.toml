@@ -1,0 +1,23 @@
+[package]
+name = "image-resize-kernels"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Resize kernels for model image processor parity and performance."
+rust-version = "1.95"
+keywords = ["image-processing", "resize", "vision", "simd"]
+categories = ["multimedia::images", "science"]
+
+[lib]
+name = "image_resize_kernels"
+path = "src/lib.rs"
+
+[[bench]]
+name = "kernel_hotpaths"
+harness = false
+
+[dependencies]
+fast_image_resize = { version = "6", default-features = false, features = ["std"] }
+half = "2"
+thiserror = "2"

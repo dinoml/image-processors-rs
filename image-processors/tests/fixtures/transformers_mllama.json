@@ -1,0 +1,565 @@
+{
+  "cases": [
+    {
+      "backend": "pil",
+      "class_name": "MllamaImageProcessorPil",
+      "comparison": {
+        "dtype": "exact",
+        "float_full_values": {
+          "absolute_tolerance": 1e-06,
+          "relative_tolerance": 0.0
+        },
+        "float_statistics": {
+          "absolute_tolerance": 1e-06,
+          "relative_tolerance": 0.0
+        },
+        "integer_values": "exact",
+        "metadata": "exact",
+        "shape": "exact"
+      },
+      "family": "mllama",
+      "image": {
+        "height": 17,
+        "mode": "RGB",
+        "width": 13
+      },
+      "images": [
+        {
+          "height": 17,
+          "mode": "RGB",
+          "width": 13
+        },
+        {
+          "height": 19,
+          "mode": "RGB",
+          "width": 16
+        }
+      ],
+      "metadata": {
+        "aspect_ratio_ids": [
+          [
+            6
+          ],
+          [
+            6
+          ]
+        ],
+        "aspect_ratio_mask": [
+          [
+            [
+              true,
+              true,
+              true,
+              true
+            ]
+          ],
+          [
+            [
+              true,
+              true,
+              true,
+              true
+            ]
+          ]
+        ],
+        "canvas_sizes": [
+          [
+            10,
+            10
+          ],
+          [
+            10,
+            10
+          ]
+        ],
+        "image_patch_counts": [
+          4,
+          4
+        ],
+        "num_tiles": [
+          [
+            4
+          ],
+          [
+            4
+          ]
+        ],
+        "original_sizes": [
+          [
+            17,
+            13
+          ],
+          [
+            19,
+            16
+          ]
+        ],
+        "reshaped_input_sizes": [
+          [
+            10,
+            7
+          ],
+          [
+            10,
+            8
+          ]
+        ]
+      },
+      "model_id": "MllamaImageProcessor(size={'height': 5, 'width': 5}, max_image_tiles=4)",
+      "outputs": {
+        "aspect_ratio_ids": {
+          "data": {
+            "dtype": "int64",
+            "encoding": "base64",
+            "value": "BgAAAAAAAAAGAAAAAAAAAA=="
+          },
+          "dtype": "int64",
+          "max": 6.0,
+          "mean": 6.0,
+          "min": 6.0,
+          "sample": [
+            6,
+            6
+          ],
+          "shape": [
+            2,
+            1
+          ]
+        },
+        "aspect_ratio_mask": {
+          "data": {
+            "dtype": "int64",
+            "encoding": "base64",
+            "value": "AQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAA=="
+          },
+          "dtype": "int64",
+          "max": 1.0,
+          "mean": 1.0,
+          "min": 1.0,
+          "sample": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ],
+          "shape": [
+            2,
+            1,
+            4
+          ]
+        },
+        "pixel_values": {
+          "data": {
+            "dtype": "float32",
+            "encoding": "base64",
+            "value": "3t1dv+DfXz+cmxs/sK6uPqCYmD2ioqK+lpUVv9rZWb/k42M/oJ8fP/DsbD6QkBC9mpqavpKREb/W1VW//v7+vsTDQ7/6+Xk/trU1P+Ti4j7g0FA93Nxcvvb29r7Avz+//v19P5STE7/Y11e/5uVlP6KhIT+8uro+4ODgvJaWlr6Qjw+/1NNTv+rpaT+GhQU/hIKCPsDAQLyOjo6+jIsLv9TUVL7y8vK+vr09vwAAgD+8uzs/sK6uPqCYmD3ExES+6urqvrq5Ob+SkpK+jo0Nv9LRUb/s62s/qKcnP4iGhj6AgIC7ioqKvoqJCb/OzU2/0M9PP4yLCz+Qjo4+AMFAPIKCgr6wqKg9vLw8vubm5r64tze//Pt7v6KhIT+8uro+0MjIPaysLL7e3t6+xMREvurq6r4AAIC/AACAvwAAgL+4trY+wLi4PQAAgL8AAIC/AACAv+jnZz+koyM/AACAvwAAgL8AAIC/uLQ0Pri4uL0AAIC/AACAvwAAgL+6uTk/7OrqPgAAgL8AAIC/AACAv9DIyD2srCy+AACAvwAAgL8AAIC/pqUlP8TCwj4AAIC/AACAvwAAgL/Qz0+/7u1tPwAAgL8AAIC/AACAv/Du7j7QzEw+AACAvwAAgL8AAIC//v19v8C/Pz8AAIC/AACAvwAAgL/IxsY+APn4PQAAgL8AAIC/AACAv/Dvbz+sqys/AACAvwAAgL8AAIC/hoUFv8rJSb8AAIC/AACAvwAAgL/CwUE//Pr6PgAAgL8AAIC/AACAv7SzM7/493e/AACAvwAAgL8AAIC/mpkZP6yqqj6QiIg9zMxMvu7u7r7c21u/4uFhP56dHT+0srI+sKioPdjW1j6gnBw+6OjovcLCwr6mpSW/+Pd3P7SzMz/g3t4+sKwsPsjIyL36+vq+wsFBv/z7ez+4tzc/6ObmPuTjYz+gnx8/uLa2PsC4uD20tDS+kpERv9bVVb/o52c/pKMjP8C+vj62tTU/5OLiPri0ND64uLi9tra2vsC/P7/+/X0/urk5P+zq6j7IxEQ+zMxMvu7u7r68uzu/AACAv769PT/U01O/6ulpP6alJT/EwsI+8OjoPY6Ojr6Miwu/0M9Pv+7tbT+qqSk/AACAP7y7Oz/w7u4+0MxMPoiIiL3q6uq+urk5v/79fb/Avz8/+Pb2PsC4uD20tDS+4uLivra1Nb/6+Xm/vLs7vwAAgL8AAIC/AACAvwAAgL+8vDy+5ubmvgAAgL8AAIC/AACAv+rpab/U01M/AACAvwAAgL8AAIC/urq6vqKhIb8AAIC/AACAvwAAgL/AvDw+qKiovQAAgL8AAIC/AACAv+Li4r62tTW/AACAvwAAgL8AAIC/4NjYPaSkJL4AAIC/AACAvwAAgL+gnx+/5ONjvwAAgL8AAIC/AACAv5iYmL2urq6+AACAvwAAgL8AAIC/9PLyPtjUVD4AAIC/AACAvwAAgL+cnBy+1tbWvgAAgL8AAIC/AACAv8zKyj6IhAQ+AACAvwAAgL8AAIC/qqqqvpqZGb8AAIC/AACAvwAAgL/g3Fw+0NBQvQAAgL8AAIC/AACAv8TDQz8A//4+AACAvwAAgL8AAIC/2NbWPqCcHD7o6Oi9wsLCvqalJb+wrCw+yMjIvbq6ur6ioSG/5uVlv6ioqL2ysrK+np0dv+LhYb/c21s/qqqqvpqZGb/e3V2/4N9fP5ybGz+WlRW/2tlZv+TjYz+gnx8/uLa2Pra1NT/k4uI+uLQ0Pri4uL22tra+7OrqPsjERD6YmJi9rq6uvpybG7/Y1FQ+8PBwvaampr6Ylxe/3Ntbv7CwML2enp6+lJMTv9jXV7/m5WU/lpaWvpCPD7/U01O/6ulpP6alJT8AAIA/vLs7P/Du7j7QzEw+iIiIvcC/Pz/49vY+4NxcPtDQUL2ioqK+AP/+PvDsbD6QkBC9mpqavpKREb8A/Xw+oKCgvJKSkr6OjQ2/0tFRv4CAgLuKioq+iokJv87NTb/w728/6ulpv9TTUz+Qjw8/AACAvwAAgL/Y11c/lJMTP6Cenj4AAIC/AACAv5iXFz+opqY+APFwPQAAgL8AAIC/sK6uPqCYmD3ExES+AACAvwAAgL/AuLg9tLQ0vuLi4r4AAIC/AACAv6CfH7/k42O/2tlZPwAAgL8AAIC/4N9fv97dXT+amRk/AACAvwAAgL/i4WE/np0dP7Sysj4AAIC/AACAv6KhIT+8uro+0MjIPQAAgL8AAIC/xMLCPvDo6D2cnBy+AACAvwAAgL+qqqq+mpkZv97dXb8AAIC/AACAv5aVFb/a2Vm/5ONjPwAAgL8AAIC/1tVVv+jnZz+koyM/AACAvwAAgL/s62s/qKcnP8jGxj4AAIC/AACAv6yrKz/Qzs4+kIwMPgAAgL8AAIC/1tVVv+jnZz+koyM/wL6+PuDY2D3s62s/qKcnP8jGxj4A+fg9lJQUvqyrKz/Qzs4+kIwMPoSEBL7Kysq+2NbWPqCcHD7o6Oi9wsLCvqalJb+wrCw+yMjIvbq6ur6ioSG/5uVlv4yLC7/Qz0+/7u1tP6qpKT/Myso+zMtLv/LxcT+urS0/1NLSPpiUFD729XU/srExP9za2j6opCQ+2NjYvba1NT/k4uI+uLQ0Pri4uL22tra+7OrqPsjERD6YmJi9rq6uvpybG7+CgoK+hoUFv8rJSb/083M/sK8vP4KBAb/GxUW/+Pd3P7SzMz/g3t4+wsFBv/z7ez+4tzc/6ObmPsC8PD4AAIA/vLs7P/Du7j7QzEw+iIiIvcC/Pz/49vY+4NxcPtDQUL2ioqK+pKQkvtra2r6ysTG/AACAvwAAgL/S0tK+rq0tv/Lxcb8AAIC/AACAv6qpKb/u7W2/0M9PPwAAgL8AAIC/6ulpv9TTUz+Qjw8/AACAvwAAgL/Y11c/lJMTP6Cenj4AAIC/AACAv4iEBD6MjAy+zs7OvgAAgL8AAIC/+Pj4vcbGxr6opye/AACAvwAAgL++vr6+pKMjv+jnZ78AAIC/AACAv6CfH7/k42O/2tlZPwAAgL8AAIC/4N9fv97dXT+amRk/AACAvwAAgL/Y1tY+oJwcPujo6L0AAIC/AACAv7CsLD7IyMi9urq6vgAAgL8AAIC/qKiovbKysr6enR2/AACAvwAAgL+qqqq+mpkZv97dXb8AAIC/AACAv5aVFb/a2Vm/5ONjPwAAgL8AAIC/"
+          },
+          "dtype": "float32",
+          "max": 1.0,
+          "mean": -0.23325489123662313,
+          "min": -1.0,
+          "sample": [
+            -0.8666666746139526,
+            0.8745098114013672,
+            0.6078431606292725,
+            0.34117650985717773,
+            0.07450985908508301,
+            -0.3176470398902893,
+            -0.5843137502670288,
+            -0.8509804010391235,
+            0.8901960849761963,
+            0.6235294342041016,
+            0.23137259483337402,
+            -0.03529411554336548,
+            -0.3019607663154602,
+            -0.5686274766921997,
+            -0.8352941274642944,
+            -0.498039186000824,
+            -0.7647058963775635,
+            0.9764705896377563,
+            0.7098039388656616,
+            0.4431372880935669,
+            0.050980448722839355,
+            -0.21568626165390015,
+            -0.4823529124259949,
+            -0.7490196228027344
+          ],
+          "shape": [
+            2,
+            1,
+            4,
+            3,
+            5,
+            5
+          ]
+        }
+      },
+      "processor_config": {
+        "do_convert_rgb": true,
+        "do_normalize": true,
+        "do_pad": true,
+        "do_rescale": true,
+        "do_resize": true,
+        "image_mean": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "image_std": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "max_image_tiles": 4,
+        "resample": "0",
+        "rescale_factor": 0.00392156862745098,
+        "size": {
+          "height": 5,
+          "longest_edge": null,
+          "max_height": null,
+          "max_width": null,
+          "shortest_edge": null,
+          "width": 5
+        }
+      },
+      "stages": {
+        "processed_image": {
+          "dtype": "float32",
+          "max": 255.0,
+          "mean": 97.76,
+          "min": 0.0,
+          "sample": [
+            17.0,
+            239.0,
+            205.0,
+            171.0,
+            137.0,
+            87.0,
+            53.0,
+            19.0,
+            241.0,
+            207.0,
+            157.0,
+            123.0,
+            89.0,
+            55.0,
+            21.0,
+            64.0,
+            30.0,
+            252.0,
+            218.0,
+            184.0,
+            134.0,
+            100.0,
+            66.0,
+            32.0
+          ],
+          "shape": [
+            2,
+            1,
+            4,
+            3,
+            5,
+            5
+          ]
+        }
+      },
+      "video_frames": []
+    },
+    {
+      "backend": "torchvision",
+      "class_name": "MllamaImageProcessor",
+      "comparison": {
+        "dtype": "exact",
+        "float_full_values": {
+          "absolute_tolerance": 1e-06,
+          "relative_tolerance": 0.0
+        },
+        "float_statistics": {
+          "absolute_tolerance": 1e-06,
+          "relative_tolerance": 0.0
+        },
+        "integer_values": "exact",
+        "metadata": "exact",
+        "shape": "exact"
+      },
+      "family": "mllama",
+      "image": {
+        "height": 17,
+        "mode": "RGB",
+        "width": 13
+      },
+      "images": [
+        {
+          "height": 17,
+          "mode": "RGB",
+          "width": 13
+        },
+        {
+          "height": 19,
+          "mode": "RGB",
+          "width": 16
+        }
+      ],
+      "metadata": {
+        "aspect_ratio_ids": [
+          [
+            6
+          ],
+          [
+            6
+          ]
+        ],
+        "aspect_ratio_mask": [
+          [
+            [
+              true,
+              true,
+              true,
+              true
+            ]
+          ],
+          [
+            [
+              true,
+              true,
+              true,
+              true
+            ]
+          ]
+        ],
+        "canvas_sizes": [
+          [
+            10,
+            10
+          ],
+          [
+            10,
+            10
+          ]
+        ],
+        "image_patch_counts": [
+          4,
+          4
+        ],
+        "num_tiles": [
+          [
+            4
+          ],
+          [
+            4
+          ]
+        ],
+        "original_sizes": [
+          [
+            17,
+            13
+          ],
+          [
+            19,
+            16
+          ]
+        ],
+        "reshaped_input_sizes": [
+          [
+            10,
+            7
+          ],
+          [
+            10,
+            8
+          ]
+        ]
+      },
+      "model_id": "MllamaImageProcessor(size={'height': 5, 'width': 5}, max_image_tiles=4)",
+      "outputs": {
+        "aspect_ratio_ids": {
+          "data": {
+            "dtype": "int64",
+            "encoding": "base64",
+            "value": "BgAAAAAAAAAGAAAAAAAAAA=="
+          },
+          "dtype": "int64",
+          "max": 6.0,
+          "mean": 6.0,
+          "min": 6.0,
+          "sample": [
+            6,
+            6
+          ],
+          "shape": [
+            2,
+            1
+          ]
+        },
+        "aspect_ratio_mask": {
+          "data": {
+            "dtype": "int64",
+            "encoding": "base64",
+            "value": "AQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAA=="
+          },
+          "dtype": "int64",
+          "max": 1.0,
+          "mean": 1.0,
+          "min": 1.0,
+          "sample": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ],
+          "shape": [
+            2,
+            1,
+            4
+          ]
+        },
+        "pixel_values": {
+          "data": {
+            "dtype": "float32",
+            "encoding": "base64",
+            "value": "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"
+          },
+          "dtype": "float32",
+          "max": 1.0,
+          "mean": -0.23325490245129912,
+          "min": -1.0,
+          "sample": [
+            -0.8666666746139526,
+            0.8745098114013672,
+            0.6078431606292725,
+            0.34117648005485535,
+            0.07450980693101883,
+            -0.3176470696926117,
+            -0.5843137502670288,
+            -0.8509804010391235,
+            0.8901960849761963,
+            0.6235294342041016,
+            0.23137255012989044,
+            -0.03529411926865578,
+            -0.3019607961177826,
+            -0.5686274766921997,
+            -0.8352941274642944,
+            -0.49803921580314636,
+            -0.7647058963775635,
+            0.9764705896377563,
+            0.7098039388656616,
+            0.4431372582912445,
+            0.05098039284348488,
+            -0.21568627655506134,
+            -0.48235294222831726,
+            -0.7490196228027344
+          ],
+          "shape": [
+            2,
+            1,
+            4,
+            3,
+            5,
+            5
+          ]
+        }
+      },
+      "processor_config": {
+        "do_convert_rgb": true,
+        "do_normalize": true,
+        "do_pad": true,
+        "do_rescale": true,
+        "do_resize": true,
+        "image_mean": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "image_std": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "max_image_tiles": 4,
+        "resample": "0",
+        "rescale_factor": 0.00392156862745098,
+        "size": {
+          "height": 5,
+          "longest_edge": null,
+          "max_height": null,
+          "max_width": null,
+          "shortest_edge": null,
+          "width": 5
+        }
+      },
+      "stages": {
+        "processed_image": {
+          "dtype": "float32",
+          "max": 255.0,
+          "mean": 97.76,
+          "min": 0.0,
+          "sample": [
+            17.0,
+            239.0,
+            205.0,
+            171.0,
+            137.0,
+            87.0,
+            53.0,
+            19.0,
+            241.0,
+            207.0,
+            157.0,
+            123.0,
+            89.0,
+            55.0,
+            21.0,
+            64.0,
+            30.0,
+            252.0,
+            218.0,
+            184.0,
+            134.0,
+            100.0,
+            66.0,
+            32.0
+          ],
+          "shape": [
+            2,
+            1,
+            4,
+            3,
+            5,
+            5
+          ]
+        }
+      },
+      "video_frames": []
+    }
+  ],
+  "generator": "scripts/parity/transformers_image_parity.py",
+  "input": {
+    "description": "For flattened RGB byte index i and image offset n, value = (i * 37 + 17 + n * 53) % 256.",
+    "kind": "deterministic_rgb",
+    "parameters": {
+      "as_video": false,
+      "height": 17,
+      "height_step": 2,
+      "image_count": 2,
+      "video_batch_size": 1,
+      "width": 13,
+      "width_step": 3
+    }
+  },
+  "schema": "image-processors.transformers-parity.v1",
+  "upstream": {
+    "commit": "6d960ca0a0eba0d2aebc920d8080a9353da468d3",
+    "library": "transformers",
+    "source": "transformers.image_processing",
+    "version": "5.14.0.dev0"
+  }
+}

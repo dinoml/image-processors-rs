@@ -1,0 +1,555 @@
+{
+  "cases": [
+    {
+      "backend": "pil",
+      "class_name": "Idefics3ImageProcessorPil",
+      "comparison": {
+        "dtype": "exact",
+        "float_full_values": {
+          "absolute_tolerance": 1e-06,
+          "relative_tolerance": 0.0
+        },
+        "float_statistics": {
+          "absolute_tolerance": 1e-06,
+          "relative_tolerance": 0.0
+        },
+        "integer_values": "exact",
+        "metadata": "exact",
+        "shape": "exact"
+      },
+      "family": "idefics3",
+      "image": {
+        "height": 7,
+        "mode": "RGB",
+        "width": 9
+      },
+      "images": [
+        {
+          "height": 7,
+          "mode": "RGB",
+          "width": 9
+        },
+        {
+          "height": 11,
+          "mode": "RGB",
+          "width": 4
+        }
+      ],
+      "metadata": {
+        "cols": [
+          [
+            2
+          ],
+          [
+            1
+          ]
+        ],
+        "image_patch_counts": [
+          5,
+          3
+        ],
+        "original_sizes": [
+          [
+            7,
+            9
+          ],
+          [
+            11,
+            4
+          ]
+        ],
+        "reshaped_input_sizes": [
+          [
+            10,
+            10
+          ],
+          [
+            10,
+            5
+          ]
+        ],
+        "rows": [
+          [
+            2
+          ],
+          [
+            2
+          ]
+        ]
+      },
+      "model_id": "Idefics3ImageProcessor(size={'longest_edge': 10}, max_image_size={'longest_edge': 5})",
+      "outputs": {
+        "pixel_attention_mask": {
+          "data": {
+            "dtype": "int64",
+            "encoding": "base64",
+            "value": "AQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+          },
+          "dtype": "int64",
+          "max": 1.0,
+          "mean": 0.8,
+          "min": 0.0,
+          "sample": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ],
+          "shape": [
+            2,
+            5,
+            5,
+            5
+          ]
+        },
+        "pixel_values": {
+          "data": {
+            "dtype": "float32",
+            "encoding": "base64",
+            "value": "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"
+          },
+          "dtype": "float32",
+          "max": 1.0,
+          "mean": -0.008836589018503824,
+          "min": -1.0,
+          "sample": [
+            -0.8666666746139526,
+            0.003921627998352051,
+            0.8745098114013672,
+            -0.26274508237838745,
+            0.6078431606292725,
+            0.9450980424880981,
+            -0.1921568512916565,
+            0.6784313917160034,
+            -0.4588235020637512,
+            0.4117647409439087,
+            0.7490196228027344,
+            -0.38823527097702026,
+            0.48235297203063965,
+            -0.6549019813537598,
+            0.21568632125854492,
+            0.7490196228027344,
+            -0.38823527097702026,
+            0.48235297203063965,
+            -0.6549019813537598,
+            0.21568632125854492,
+            0.5529412031173706,
+            -0.5843137502670288,
+            0.2862745523452759,
+            -0.8509804010391235,
+            0.019607901573181152,
+            -0.5764706134796143,
+            0.29411768913269043,
+            -0.843137264251709,
+            0.027451038360595703,
+            0.8980392217636108,
+            -0.772549033164978,
+            0.09803926944732666
+          ],
+          "shape": [
+            2,
+            5,
+            3,
+            5,
+            5
+          ]
+        }
+      },
+      "processor_config": {
+        "do_convert_rgb": true,
+        "do_image_splitting": true,
+        "do_normalize": true,
+        "do_pad": true,
+        "do_rescale": true,
+        "do_resize": true,
+        "image_mean": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "image_std": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "max_image_size": {
+          "longest_edge": 5
+        },
+        "resample": "0",
+        "rescale_factor": 0.00392156862745098,
+        "size": {
+          "height": null,
+          "longest_edge": 10,
+          "max_height": null,
+          "max_width": null,
+          "shortest_edge": null,
+          "width": null
+        }
+      },
+      "stages": {
+        "processed_image": {
+          "dtype": "float32",
+          "max": 255.0,
+          "mean": 100.87333333333333,
+          "min": 0.0,
+          "sample": [
+            17.0,
+            128.0,
+            239.0,
+            94.0,
+            205.0,
+            248.0,
+            103.0,
+            214.0,
+            69.0,
+            180.0,
+            223.0,
+            78.0,
+            189.0,
+            44.0,
+            155.0,
+            223.0,
+            78.0,
+            189.0,
+            44.0,
+            155.0,
+            198.0,
+            53.0,
+            164.0,
+            19.0,
+            130.0,
+            54.0,
+            165.0,
+            20.0,
+            131.0,
+            242.0,
+            29.0,
+            140.0
+          ],
+          "shape": [
+            2,
+            5,
+            3,
+            5,
+            5
+          ]
+        }
+      },
+      "video_frames": []
+    },
+    {
+      "backend": "torchvision",
+      "class_name": "Idefics3ImageProcessor",
+      "comparison": {
+        "dtype": "exact",
+        "float_full_values": {
+          "absolute_tolerance": 1e-06,
+          "relative_tolerance": 0.0
+        },
+        "float_statistics": {
+          "absolute_tolerance": 1e-06,
+          "relative_tolerance": 0.0
+        },
+        "integer_values": "exact",
+        "metadata": "exact",
+        "shape": "exact"
+      },
+      "family": "idefics3",
+      "image": {
+        "height": 7,
+        "mode": "RGB",
+        "width": 9
+      },
+      "images": [
+        {
+          "height": 7,
+          "mode": "RGB",
+          "width": 9
+        },
+        {
+          "height": 11,
+          "mode": "RGB",
+          "width": 4
+        }
+      ],
+      "metadata": {
+        "cols": [
+          [
+            2
+          ],
+          [
+            1
+          ]
+        ],
+        "image_patch_counts": [
+          5,
+          3
+        ],
+        "original_sizes": [
+          [
+            7,
+            9
+          ],
+          [
+            11,
+            4
+          ]
+        ],
+        "reshaped_input_sizes": [
+          [
+            10,
+            10
+          ],
+          [
+            10,
+            5
+          ]
+        ],
+        "rows": [
+          [
+            2
+          ],
+          [
+            2
+          ]
+        ]
+      },
+      "model_id": "Idefics3ImageProcessor(size={'longest_edge': 10}, max_image_size={'longest_edge': 5})",
+      "outputs": {
+        "pixel_attention_mask": {
+          "data": {
+            "dtype": "float32",
+            "encoding": "base64",
+            "value": "AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+          },
+          "dtype": "float32",
+          "max": 1.0,
+          "mean": 0.8,
+          "min": 0.0,
+          "sample": [
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          "shape": [
+            2,
+            5,
+            5,
+            5
+          ]
+        },
+        "pixel_values": {
+          "data": {
+            "dtype": "float32",
+            "encoding": "base64",
+            "value": "3t1dv4GAgDvg318/h4aGvpybGz/y8XE/xcREvq6tLT/r6uq+09LSPsC/Pz/Hxsa+9/b2PqinJ7/d3Fw+wL8/P8fGxr739vY+qKcnv93cXD6OjQ0/lpUVv5OSkj7a2Vm/oaCgPJSTE7+XlpY+2NdXv+Hg4Dzm5WU/xsVFv8nIyD3493c/rawsvrSzMz/493e/ycjIvcbFRT+7urq+goEBP/j3d7/JyMi9xsVFP7u6ur6CgQE/2NdXP5eWlr6UkxM/kI8Pv5+enj6TkpK+lpUVP46NDb+joqI+0tFRv/f29r7HxsY+wL8/v/n4+D3+/X0/rq0tv8XERD7y8XG/mZiYvczLSz+urS2/xcREPvLxcb+ZmJi9zMtLP+DfX7+BgIC73t1dP4uKir6amRk/nJsbP4iHB7+vrq4+zMtLv5mYmD3T0tI+urk5v5WUFD7+/X2/+fj4vd3cXD7s62u/0dBQvdLRUT+joqK+3dxcPuzra7/R0FC90tFRP6Oior6hoKA85ONjP/38fL6gnx8/hIMDv+blZT/19HS+oqEhP4KBAb+7uro+tLMzP9/e3r7f3t4+tLMzv62sLD6CgQE/oqEhv/X0dD7m5WW/4eDgvIKBAT+ioSG/9fR0PublZb/h4OC8n56ePtTTU7+xsDA96ulpP+XkZL7S0VG/0dBQPezraz/d3Fy+qKcnP/79fT+VlBS+urk5P9PS0r7r6uo+zMtLP6+urr6Ihwc/nJsbv4eGhj7My0s/r66uvoiHBz+cmxu/h4aGPpqZGT+KiQm/q6qqPs7NTb+JiIg9jo0NP5aVFb+TkpI+2tlZv6GgoDy3trY+yMdHv7m4uD329XU/tbQ0vqWkJD76+Xm/2djYvcTDQz+/vr6+paQkPvr5eb/Z2Ni9xMNDP7++vr6RkBC91tVVP5uamr6SkRE/kpERv9jXVz+Xlpa+lJMTP5CPD7+fnp4+pqUlP/v6+r7DwsI+wsFBv+no6D3n5uY+sK8vv728PD7083O/qaiovefm5j6wry+/vbw8PvTzc7+pqKi9g4KCPuLhYb/BwEC83NtbP4+Ojr7g31+/gYCAu97dXT+Lioq+mpkZP/Dvbz/NzEy+rKsrP+/u7r7Pzs4+vr09P8vKyr7z8vI+qqkpv9XUVD6+vT0/y8rKvvPy8j6qqSm/1dRUPoyLCz+Ylxe/j46OPtzbW7/BwEA8oaCgPOTjYz/9/Hy+oJ8fP4SDA7+1tDS+srExP+Pi4r7b2to+trU1v7++vr7//v4+pKMjv+3sbD7o52e/v76+vv/+/j6koyO/7exsPujnZ7+SkRG/m5qaPtbVVb+RkBA96OdnP5+enj7U01O/sbAwPerpaT/l5GS+6ejoPfz7ez+dnBy+uLc3P9fW1r6pqKi9yslJP7Oysr6GhQU/np0dv6moqL3KyUk/s7KyvoaFBT+enR2/j46OvpiXFz+Miwu/p6amPtDPT7+amRk/iokJv6uqqj7OzU2/iYiIPc/Ozj68uzu/jYwMPgAAgL+FhAS+1dRUPu7tbb/x8HC90M9PP6empr7V1FQ+7u1tv/HwcL3Qz08/p6amvsHAQDzi4WE/g4KCvp6dHT+GhQW/xcREvuvq6r7T0tI+lZQUPvn4+L3Hxsa+qKcnv93cXD7R0FC9o6KivpaVFb/a2Vm/oaCgPP38fL6EgwO/+vl5v8TDQz+/vr6+pKMjv+jnZ7/W1VU/kpERP5KREb/W1VW/6OdnP8nIyD2trCy+tLMzP9/e3j6trCw+ycjIvbu6ur6CgQE/9fR0PuHg4LyXlpa+kI8Pv5+enj6xsDA95eRkvrCvL7/083O/qaiovbOysr6enR2/4uFhv9zbWz+Pjo6+jIsLv9DPT7/HxsY++fj4Pf79fT+6uTk/6+rqPsXERD6ZmJi9zMtLP4iHBz+HhoY+gYCAu4uKir6amRk/q6qqPomIiD3Lysq+qqkpv9XUVD7x8HC9p6amvpiXF7/c21u/wcBAPIOCgr6GhQW/5+bmvtfW1j64tze/uLc3v52cHD78+3u/6ejovcLBQT/CwUE/w8LCvvv6+j6mpSW/5eRkPuXkZD7q6Wm/sbAwvdTTUz+fnp6+n56evpCPDz+UkxO/l5aWPtjXV7/Y11e/4eDgPKWkJL62tTU/29ravtva2r7j4uI+srExv7W0ND729XW/9vV1v7m4uL3Ix0c/t7a2voSDAz+EgwM/oJ8fv/38fD7k42O/oaCgvKGgoLza2Vk/k5KSvpaVFT+OjQ2/jo0Nv6Oioj6FhAQ+AACAP42MDL6NjAy+vLs7P8/Ozr7v7u4+rKsrv6yrK7/NzEw+8O9vv4mIiL3OzU0/zs1NP6uqqr6KiQk/mpkZv4uKij6Lioo+3t1dv4GAgDvg318/h4aGvoeGhr6cmxs/u7q6PsbFRb/JyMg9ycjIPfj3dz+trCy+tLMzP9/e3r7f3t6+397ePrSzM7+trCw++Pd3v/j3d7/JyMi9xsVFP7u6ur6CgQE/goEBP6KhIb/19HQ+5uVlv+Hg4Lzh4OC82NdXP6inJz/39va+x8bGPsfGxj7Avz+/+fj4Pf79fT+VlBS+lZQUvrq5OT/T0tK+6+rqPq6tLb+urS2/xcREPvLxcb+ZmJi9zMtLP8zLSz+vrq6+iIcHP5ybG7+HhoY+h4aGPuDfX7/y8XE/xcREvq6tLT+urS0/6+rqvtPS0j66uTm/lZQUPpWUFD7+/X2/+fj4vcC/Pz/Hxsa+x8bGvvf29j6opye/3dxcPuzra7/s62u/0dBQvdLRUT+joqK+jo0NP46NDT+WlRW//Pt7v+no6L3CwUE/wsFBP8PCwr6xsDC91NNTP5+enr6fnp6+kI8PP7u6uj7GxUW/ycjIPcnIyD3493c/tLMzv62sLD7493e/+Pd3v8nIyL319HQ+5uVlv+Hg4Lzh4OC82NdXP7KxMb+1tDQ+9vV1v/b1db+5uLi9/fx8PuTjY7+hoKC8oaCgvNrZWT+opyc/9/b2vsfGxj7HxsY+wL8/v9PS0r7r6uo+rq0tv66tLb/FxEQ+iIcHP5ybG7+HhoY+h4aGPuDfX7/Pzs6+7+7uPqyrK7+sqyu/zcxMPoqJCT+amRm/i4qKPouKij7e3V2/8vFxP8XERL6urS0/rq0tP+vq6r75+Pi9wL8/P8fGxr7Hxsa+9/b2PtLRUT+joqK+jo0NP46NDT+WlRW/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+          },
+          "dtype": "float32",
+          "max": 1.0,
+          "mean": -0.01792418309363226,
+          "min": -1.0,
+          "sample": [
+            -0.8666666746139526,
+            0.003921568859368563,
+            0.8745098114013672,
+            -0.26274511218070984,
+            0.6078431606292725,
+            0.9450980424880981,
+            -0.1921568661928177,
+            0.6784313917160034,
+            -0.4588235318660736,
+            0.4117647111415863,
+            0.7490196228027344,
+            -0.38823530077934265,
+            0.48235294222831726,
+            -0.6549019813537598,
+            0.21568627655506134,
+            0.7490196228027344,
+            -0.38823530077934265,
+            0.48235294222831726,
+            -0.6549019813537598,
+            0.21568627655506134,
+            0.5529412031173706,
+            -0.5843137502670288,
+            0.2862745225429535,
+            -0.8509804010391235,
+            0.019607843831181526,
+            -0.5764706134796143,
+            0.29411765933036804,
+            -0.843137264251709,
+            0.027450980618596077,
+            0.8980392217636108,
+            -0.772549033164978,
+            0.09803921729326248
+          ],
+          "shape": [
+            2,
+            5,
+            3,
+            5,
+            5
+          ]
+        }
+      },
+      "processor_config": {
+        "do_convert_rgb": true,
+        "do_image_splitting": true,
+        "do_normalize": true,
+        "do_pad": true,
+        "do_rescale": true,
+        "do_resize": true,
+        "image_mean": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "image_std": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "max_image_size": {
+          "longest_edge": 5
+        },
+        "resample": "0",
+        "rescale_factor": 0.00392156862745098,
+        "size": {
+          "height": null,
+          "longest_edge": 10,
+          "max_height": null,
+          "max_width": null,
+          "shortest_edge": null,
+          "width": null
+        }
+      },
+      "stages": {
+        "processed_image": {
+          "dtype": "float32",
+          "max": 255.0,
+          "mean": 99.71466666666667,
+          "min": 0.0,
+          "sample": [
+            17.0,
+            128.0,
+            239.0,
+            94.0,
+            205.0,
+            248.0,
+            103.0,
+            214.0,
+            69.0,
+            180.0,
+            223.0,
+            78.0,
+            189.0,
+            44.0,
+            155.0,
+            223.0,
+            78.0,
+            189.0,
+            44.0,
+            155.0,
+            198.0,
+            53.0,
+            164.0,
+            19.0,
+            130.0,
+            54.0,
+            165.0,
+            20.0,
+            131.0,
+            242.0,
+            29.0,
+            140.0
+          ],
+          "shape": [
+            2,
+            5,
+            3,
+            5,
+            5
+          ]
+        }
+      },
+      "video_frames": []
+    }
+  ],
+  "generator": "scripts/parity/transformers_image_parity.py",
+  "input": {
+    "description": "For flattened RGB byte index i and image offset n, value = (i * 37 + 17 + n * 53) % 256.",
+    "kind": "deterministic_rgb",
+    "parameters": {
+      "as_video": false,
+      "height": 7,
+      "height_step": 4,
+      "image_count": 2,
+      "video_batch_size": 1,
+      "width": 9,
+      "width_step": -5
+    }
+  },
+  "schema": "image-processors.transformers-parity.v1",
+  "upstream": {
+    "commit": "6d960ca0a0eba0d2aebc920d8080a9353da468d3",
+    "library": "transformers",
+    "source": "transformers.image_processing",
+    "version": "5.14.0.dev0"
+  }
+}

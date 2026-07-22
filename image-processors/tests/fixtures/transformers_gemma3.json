@@ -1,0 +1,367 @@
+{
+  "cases": [
+    {
+      "backend": "pil",
+      "class_name": "Gemma3ImageProcessorPil",
+      "comparison": {
+        "dtype": "exact",
+        "float_full_values": {
+          "absolute_tolerance": 1e-06,
+          "relative_tolerance": 0.0
+        },
+        "float_statistics": {
+          "absolute_tolerance": 1e-06,
+          "relative_tolerance": 0.0
+        },
+        "integer_values": "exact",
+        "metadata": "exact",
+        "shape": "exact"
+      },
+      "family": "gemma3",
+      "image": {
+        "height": 17,
+        "mode": "RGB",
+        "width": 13
+      },
+      "images": [
+        {
+          "height": 17,
+          "mode": "RGB",
+          "width": 13
+        },
+        {
+          "height": 19,
+          "mode": "RGB",
+          "width": 16
+        }
+      ],
+      "metadata": {
+        "num_crops": [
+          2,
+          0
+        ],
+        "original_sizes": [
+          [
+            17,
+            13
+          ],
+          [
+            19,
+            16
+          ]
+        ],
+        "reshaped_input_sizes": [
+          [
+            5,
+            5
+          ],
+          [
+            5,
+            5
+          ],
+          [
+            5,
+            5
+          ],
+          [
+            5,
+            5
+          ]
+        ]
+      },
+      "model_id": "Gemma3ImageProcessor(size={'height': 5, 'width': 5}, do_pan_and_scan=True)",
+      "outputs": {
+        "pixel_values": {
+          "data": {
+            "dtype": "float32",
+            "encoding": "base64",
+            "value": "urk5v/79fb/Gxsa+4NxcPtDQUL3Avr4+4NjYPba1NT+ysTG/9vV1v8jERD6YmJi9iIcHP+DfX7/e3V0/AMFAPIKCgr60srI+9PNzP7CvLz/m5WW/2NdXP5CPD7/AsDA95ORkvt7e3r60szO/yMjIvYKBAT/49HQ+qqkpP8zKyj4AAIA/zs7OvqyrK7/49vY+4NxcPtLRUT+WlRW/2tlZv5yamj6gkBA9pKMjP8TDQ7/6+Xk/nJsbv+DfX7+Kioq+rKqqPpCIiD2UlBS+0tLSvsjERD7My0s/iIcHP/Tzcz+wry8/uLc3v+jo6L3CwsK+xsVFP4KBAT/m5WW/lpaWvpCPD7+Ylxc/qKamPu7tbT/y8vK+vr09v6Kior6WlRW/wKCgPKCfHz+4trY+AIGAO4aGhr6wrq4+8vFxP66tLT+OjQ0/lJKSPuTjYz+EgwO/yMdHv+jnZ7/W1VU/kpERv6CQED3s7Gy+tra2vqCfH7+goKC8lpUVP6Sioj7IxEQ+mJiYvYiHBz/g31+/3t1dP5iWlj4A4eA8oqEhP8bFRb/493c/2NdXP5STEz/U01O/5ORkvvr6+r6enR2/4uFhv46Ojr6opqY+APFwPYiIiL2qqqq+jIqKPuDfXz+cmxs/+Pb2PuDcXD7S0VE/lpUVv9rZWb+WlRU/pKKiPuzraz/29va+wL8/v+DfX7/e3V0/iokJv5CIiD3MzEy+pqamvpiXF78AwUA8np0dP7Sysj7o5GQ+sLAwvZCPDz/Y11e/5uVlP8bFRT+CgQE/5uVlv5aWlr6Qjw+/iokJv87NTb/MzEy+0M7OPpCMDD4AwUA8goKCvrSysj7083M/sK8vP5CPDz+YlpY+5uVlP4KBAb/GxUW/rKwsvt7e3r6wrCw+xsVFP4KBAT/EwsI+8OjoPbi3Nz+wry+/9PNzv/z8fL6EgwO/wLi4PbKxMT/c2to+nJqaPqCQED2koyM/xMNDv/r5eT/a2Vk/lpUVP9LRUb/c3Fy+9vb2vgD5+D2UlBS+7OrqPvLxcb/My0s/rKsrP9DOzj4AAIC/ysrKvqqpKb/AsDA95ORkvsTCwj78+3s/uLc3P5iXFz+opqY+7u1tP/Ly8r6+vT2/3t1dv+DfXz+Ihwe/oJiYPcTERL7U0tI+mJQUPsC/Pz+opye/7Otrv/b1dT+ysTE/trU1v9jY2L2+vr6+mJaWPublZT+8uro++Pd3P97e3r7U1FS+zMrKPoyMDL7w7u4+8O9vv7a1Nb/Y2Ni9pKMjv5CQEL2SkRE/zMtLP5ybG7/e3V0/iokJv5CIiD2YlpY+5uVlP7y6uj7493c/3t7evpaVFT/S0VG/qKcnP8C/P7+UlBS+sKioPbCvLz+gnBw+wsFBP6alJb/W1ta+wLw8PrKysr6EgoI+3NtbP+zra7+ioqK+2tlZv/z8fL64trY+lpUVP9LRUb+opyc/wL8/v5SUFL7g318/iIcHv/LxcT/q6uq+mJQUPsC+vj76+Xk/5OLiPvb1db+2tra+hIQEvvTy8j7w8HC9jIsLP9zbW7+ioSG/4ODgvJCPD7/AsDA9pqUlP+DfXz+Ihwe/8vFxP+rq6r6YlBQ+"
+          },
+          "dtype": "float32",
+          "max": 1.0,
+          "mean": 0.043189557592074074,
+          "min": -1.0,
+          "sample": [
+            -0.7254902124404907,
+            -0.9921568632125854,
+            -0.38823527097702026,
+            0.21568632125854492,
+            -0.05098038911819458,
+            0.37254905700683594,
+            0.10588240623474121,
+            0.7098039388656616,
+            -0.6941176652908325,
+            -0.9607843160629272,
+            0.19215691089630127,
+            -0.07450979948043823,
+            0.529411792755127,
+            -0.8745098114013672,
+            0.8666666746139526,
+            0.011764764785766602
+          ],
+          "shape": [
+            4,
+            3,
+            5,
+            5
+          ]
+        }
+      },
+      "processor_config": {
+        "do_convert_rgb": true,
+        "do_normalize": true,
+        "do_pan_and_scan": true,
+        "do_rescale": true,
+        "do_resize": true,
+        "image_mean": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "image_std": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "pan_and_scan_max_num_crops": 4,
+        "pan_and_scan_min_crop_size": 5,
+        "pan_and_scan_min_ratio_to_activate": 1.2,
+        "resample": "0",
+        "rescale_factor": 0.00392156862745098,
+        "size": {
+          "height": 5,
+          "longest_edge": null,
+          "max_height": null,
+          "max_width": null,
+          "shortest_edge": null,
+          "width": 5
+        }
+      },
+      "stages": {
+        "processed_image": {
+          "dtype": "uint8",
+          "max": 255.0,
+          "mean": 133.00666666666666,
+          "min": 0.0,
+          "sample": [
+            35,
+            1,
+            78,
+            155,
+            121,
+            175,
+            141,
+            218,
+            39,
+            5,
+            152,
+            118,
+            195,
+            16,
+            238,
+            129
+          ],
+          "shape": [
+            4,
+            3,
+            5,
+            5
+          ]
+        }
+      },
+      "video_frames": []
+    },
+    {
+      "backend": "torchvision",
+      "class_name": "Gemma3ImageProcessor",
+      "comparison": {
+        "dtype": "exact",
+        "float_full_values": {
+          "absolute_tolerance": 1e-06,
+          "relative_tolerance": 0.0
+        },
+        "float_statistics": {
+          "absolute_tolerance": 1e-06,
+          "relative_tolerance": 0.0
+        },
+        "integer_values": "exact",
+        "metadata": "exact",
+        "shape": "exact"
+      },
+      "family": "gemma3",
+      "image": {
+        "height": 17,
+        "mode": "RGB",
+        "width": 13
+      },
+      "images": [
+        {
+          "height": 17,
+          "mode": "RGB",
+          "width": 13
+        },
+        {
+          "height": 19,
+          "mode": "RGB",
+          "width": 16
+        }
+      ],
+      "metadata": {
+        "num_crops": [
+          2,
+          0
+        ],
+        "original_sizes": [
+          [
+            17,
+            13
+          ],
+          [
+            19,
+            16
+          ]
+        ],
+        "reshaped_input_sizes": [
+          [
+            5,
+            5
+          ],
+          [
+            5,
+            5
+          ],
+          [
+            5,
+            5
+          ],
+          [
+            5,
+            5
+          ]
+        ]
+      },
+      "model_id": "Gemma3ImageProcessor(size={'height': 5, 'width': 5}, do_pan_and_scan=True)",
+      "outputs": {
+        "pixel_values": {
+          "data": {
+            "dtype": "float32",
+            "encoding": "base64",
+            "value": "urk5v/79fb/Hxsa+3dxcPtHQUL2/vr4+2djYPba1NT+ysTG/9vV1v8XERD6ZmJi9iIcHP+DfX7/e3V0/wcBAPIOCgr6zsrI+9PNzP7CvLz/m5WW/2NdXP5CPD7+xsDA95eRkvt/e3r60szO/ycjIvYKBAT/19HQ+qqkpP8vKyj4AAIA/z87OvqyrK7/39vY+3dxcPtLRUT+WlRW/2tlZv5uamj6RkBA9pKMjP8TDQ7/6+Xk/nJsbv+DfX7+Lioq+q6qqPomIiD2VlBS+09LSvsXERD7My0s/iIcHP/Tzcz+wry8/uLc3v+no6L3DwsK+xsVFP4KBAT/m5WW/l5aWvpCPD7+Ylxc/p6amPu7tbT/z8vK+vr09v6Oior6WlRW/oaCgPKCfHz+3trY+gYCAO4eGhr6vrq4+8vFxP66tLT+OjQ0/k5KSPuTjYz+EgwO/yMdHv+jnZ7/W1VU/kpERv5GQED3t7Gy+t7a2vqCfH7+hoKC8lpUVP6Oioj7FxEQ+mZiYvYiHBz/g31+/3t1dP5eWlj7h4OA8oqEhP8bFRb/493c/2NdXP5STEz/U01O/5eRkvvv6+r6enR2/4uFhv4+Ojr6npqY+8fBwPYmIiL2rqqq+i4qKPuDfXz+cmxs/9/b2Pt3cXD7S0VE/lpUVv9rZWb+WlRU/o6KiPuzraz/39va+wL8/v+DfX7/e3V0/iokJv4mIiD3NzEy+p6amvpiXF7/BwEA8np0dP7Oysj7l5GQ+sbAwvZCPDz/Y11e/5uVlP8bFRT+CgQE/5uVlv5eWlr6Qjw+/iokJv87NTb/NzEy+z87OPo2MDD7BwEA8g4KCvrOysj7083M/sK8vP5CPDz+XlpY+5uVlP4KBAb/GxUW/rawsvt/e3r6trCw+xsVFP4KBAT/DwsI+6ejoPbi3Nz+wry+/9PNzv/38fL6EgwO/ubi4PbKxMT/b2to+m5qaPpGQED2koyM/xMNDv/r5eT/a2Vk/lpUVP9LRUb/d3Fy+9/b2vvn4+D2VlBS+6+rqPvLxcb/My0s/rKsrP8/Ozj4AAIC/y8rKvqqpKb+xsDA95eRkvsPCwj78+3s/uLc3P5iXFz+npqY+7u1tP/Py8r6+vT2/3t1dv+DfXz+Ihwe/mZiYPcXERL7T0tI+lZQUPsC/Pz+opye/7Otrv/b1dT+ysTE/trU1v9nY2L2/vr6+l5aWPublZT+7uro++Pd3P9/e3r7V1FS+y8rKPo2MDL7v7u4+8O9vv7a1Nb/Z2Ni9pKMjv5GQEL2SkRE/zMtLP5ybG7/e3V0/iokJv4mIiD2XlpY+5uVlP7u6uj7493c/397evpaVFT/S0VG/qKcnP8C/P7+VlBS+qaioPbCvLz+dnBw+wsFBP6alJb/X1ta+vbw8PrOysr6DgoI+3NtbP+zra7+joqK+2tlZv/38fL63trY+lpUVP9LRUb+opyc/wL8/v5WUFL7g318/iIcHv/LxcT/r6uq+lZQUPr++vj76+Xk/4+LiPvb1db+3tra+hYQEvvPy8j7x8HC9jIsLP9zbW7+ioSG/4eDgvJCPD7+xsDA9pqUlP+DfXz+Ihwe/8vFxP+vq6r6VlBQ+"
+          },
+          "dtype": "float32",
+          "max": 1.0,
+          "mean": 0.04318954313639552,
+          "min": -1.0,
+          "sample": [
+            -0.7254902124404907,
+            -0.9921568632125854,
+            -0.38823530077934265,
+            0.21568627655506134,
+            -0.05098039284348488,
+            0.37254902720451355,
+            0.10588235408067703,
+            0.7098039388656616,
+            -0.6941176652908325,
+            -0.9607843160629272,
+            0.1921568661928177,
+            -0.07450980693101883,
+            0.529411792755127,
+            -0.8745098114013672,
+            0.8666666746139526,
+            0.0117647061124444
+          ],
+          "shape": [
+            4,
+            3,
+            5,
+            5
+          ]
+        }
+      },
+      "processor_config": {
+        "do_convert_rgb": true,
+        "do_normalize": true,
+        "do_pan_and_scan": true,
+        "do_rescale": true,
+        "do_resize": true,
+        "image_mean": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "image_std": [
+          0.5,
+          0.5,
+          0.5
+        ],
+        "pan_and_scan_max_num_crops": 4,
+        "pan_and_scan_min_crop_size": 5,
+        "pan_and_scan_min_ratio_to_activate": 1.2,
+        "resample": "0",
+        "rescale_factor": 0.00392156862745098,
+        "size": {
+          "height": 5,
+          "longest_edge": null,
+          "max_height": null,
+          "max_width": null,
+          "shortest_edge": null,
+          "width": 5
+        }
+      },
+      "stages": {
+        "processed_image": {
+          "dtype": "uint8",
+          "max": 255.0,
+          "mean": 133.00666666666666,
+          "min": 0.0,
+          "sample": [
+            35,
+            1,
+            78,
+            155,
+            121,
+            175,
+            141,
+            218,
+            39,
+            5,
+            152,
+            118,
+            195,
+            16,
+            238,
+            129
+          ],
+          "shape": [
+            4,
+            3,
+            5,
+            5
+          ]
+        }
+      },
+      "video_frames": []
+    }
+  ],
+  "generator": "scripts/parity/transformers_image_parity.py",
+  "input": {
+    "description": "For flattened RGB byte index i and image offset n, value = (i * 37 + 17 + n * 53) % 256.",
+    "kind": "deterministic_rgb",
+    "parameters": {
+      "as_video": false,
+      "height": 17,
+      "height_step": 2,
+      "image_count": 2,
+      "video_batch_size": 1,
+      "width": 13,
+      "width_step": 3
+    }
+  },
+  "schema": "image-processors.transformers-parity.v1",
+  "upstream": {
+    "commit": "6d960ca0a0eba0d2aebc920d8080a9353da468d3",
+    "library": "transformers",
+    "source": "transformers.image_processing",
+    "version": "5.14.0.dev0"
+  }
+}

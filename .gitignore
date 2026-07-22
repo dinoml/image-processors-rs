@@ -1,0 +1,23 @@
+# Rust
+target/
+Cargo.lock
+
+# Local tool environments
+.venv/
+.vcpkg/
+vcpkg_installed/
+
+# Logs and local output
+*.log
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Python
+__pycache__

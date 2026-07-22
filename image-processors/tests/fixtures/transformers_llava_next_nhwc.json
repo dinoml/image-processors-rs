@@ -1,0 +1,515 @@
+{
+  "cases": [
+    {
+      "backend": "pil",
+      "class_name": "LlavaNextImageProcessorPil",
+      "comparison": {
+        "dtype": "exact",
+        "float_full_values": {
+          "absolute_tolerance": 0.05,
+          "relative_tolerance": 0.0
+        },
+        "float_statistics": {
+          "absolute_tolerance": 0.01,
+          "relative_tolerance": 0.0
+        },
+        "integer_values": "exact",
+        "metadata": "exact",
+        "shape": "exact"
+      },
+      "family": "llava_next_nhwc",
+      "image": {
+        "height": 5,
+        "mode": "RGB",
+        "width": 9
+      },
+      "images": [
+        {
+          "height": 5,
+          "mode": "RGB",
+          "width": 9
+        },
+        {
+          "height": 7,
+          "mode": "RGB",
+          "width": 4
+        }
+      ],
+      "metadata": {
+        "image_patch_counts": [
+          5,
+          3
+        ],
+        "image_sizes": [
+          [
+            5,
+            9
+          ],
+          [
+            7,
+            4
+          ]
+        ],
+        "patch_grids": [
+          [
+            2,
+            2
+          ],
+          [
+            2,
+            1
+          ]
+        ],
+        "reshaped_input_sizes": [
+          [
+            5,
+            8
+          ],
+          [
+            7,
+            4
+          ]
+        ],
+        "selected_sizes": [
+          [
+            8,
+            8
+          ],
+          [
+            8,
+            4
+          ]
+        ]
+      },
+      "model_id": "LlavaNextImageProcessor(custom tiny grid, data_format=channels_last)",
+      "outputs": {
+        "image_sizes": {
+          "data": {
+            "dtype": "int64",
+            "encoding": "base64",
+            "value": "BQAAAAAAAAAJAAAAAAAAAAcAAAAAAAAABAAAAAAAAAA="
+          },
+          "dtype": "int64",
+          "max": 9.0,
+          "mean": 6.25,
+          "min": 4.0,
+          "sample": [
+            5,
+            9,
+            7,
+            4
+          ],
+          "shape": [
+            2,
+            2
+          ]
+        },
+        "pixel_values": {
+          "data": {
+            "dtype": "float32",
+            "encoding": "base64",
+            "value": "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"
+          },
+          "dtype": "float32",
+          "max": 2.1458969116210938,
+          "mean": -0.21950706152128988,
+          "min": -1.7922625541687012,
+          "sample": [
+            0.07633614540100098,
+            -0.42001041769981384,
+            -0.9163569211959839,
+            -1.4127033948898315,
+            -0.2886245846748352,
+            -0.7849710583686829,
+            -1.2813175916671753,
+            -1.777664065361023,
+            -1.0185459852218628,
+            -1.5148924589157104,
+            1.725958228111267,
+            1.2296117544174194,
+            -1.3835065364837646,
+            1.8573440313339233,
+            1.3609975576400757,
+            0.864651083946228,
+            0.7241846919059753,
+            0.21392060816287994,
+            -0.2963435649871826,
+            -0.806607723236084,
+            0.3489905297756195,
+            -0.16127367317676544,
+            -0.6715377569198608,
+            -1.1818019151687622
+          ],
+          "shape": [
+            2,
+            5,
+            3,
+            4,
+            4
+          ]
+        }
+      },
+      "processor_config": {
+        "crop_size": {
+          "height": 4,
+          "longest_edge": null,
+          "max_height": null,
+          "max_width": null,
+          "shortest_edge": null,
+          "width": 4
+        },
+        "do_center_crop": true,
+        "do_convert_rgb": true,
+        "do_normalize": true,
+        "do_pad": true,
+        "do_rescale": true,
+        "image_grid_pinpoints": [
+          [
+            4,
+            4
+          ],
+          [
+            4,
+            8
+          ],
+          [
+            8,
+            4
+          ],
+          [
+            8,
+            8
+          ]
+        ],
+        "image_mean": [
+          0.48145466,
+          0.4578275,
+          0.40821073
+        ],
+        "image_std": [
+          0.26862954,
+          0.26130258,
+          0.27577711
+        ],
+        "resample": "0",
+        "rescale_factor": 0.00392156862745098,
+        "size": {
+          "height": null,
+          "longest_edge": null,
+          "max_height": null,
+          "max_width": null,
+          "shortest_edge": 4,
+          "width": null
+        }
+      },
+      "stages": {
+        "processed_image": {
+          "dtype": "uint8",
+          "max": 255.0,
+          "mean": 76.7125,
+          "min": 0.0,
+          "sample": [
+            128,
+            94,
+            60,
+            26,
+            103,
+            69,
+            35,
+            1,
+            53,
+            19,
+            241,
+            207,
+            28,
+            250,
+            216,
+            182,
+            165,
+            131,
+            97,
+            63,
+            140,
+            106,
+            72,
+            38
+          ],
+          "shape": [
+            2,
+            5,
+            3,
+            4,
+            4
+          ]
+        }
+      },
+      "video_frames": []
+    },
+    {
+      "backend": "torchvision",
+      "class_name": "LlavaNextImageProcessor",
+      "comparison": {
+        "dtype": "exact",
+        "float_full_values": {
+          "absolute_tolerance": 0.05,
+          "relative_tolerance": 0.0
+        },
+        "float_statistics": {
+          "absolute_tolerance": 0.01,
+          "relative_tolerance": 0.0
+        },
+        "integer_values": "exact",
+        "metadata": "exact",
+        "shape": "exact"
+      },
+      "family": "llava_next_nhwc",
+      "image": {
+        "height": 5,
+        "mode": "RGB",
+        "width": 9
+      },
+      "images": [
+        {
+          "height": 5,
+          "mode": "RGB",
+          "width": 9
+        },
+        {
+          "height": 7,
+          "mode": "RGB",
+          "width": 4
+        }
+      ],
+      "metadata": {
+        "image_patch_counts": [
+          5,
+          3
+        ],
+        "image_sizes": [
+          [
+            5,
+            9
+          ],
+          [
+            7,
+            4
+          ]
+        ],
+        "patch_grids": [
+          [
+            2,
+            2
+          ],
+          [
+            2,
+            1
+          ]
+        ],
+        "reshaped_input_sizes": [
+          [
+            5,
+            8
+          ],
+          [
+            7,
+            4
+          ]
+        ],
+        "selected_sizes": [
+          [
+            8,
+            8
+          ],
+          [
+            8,
+            4
+          ]
+        ]
+      },
+      "model_id": "LlavaNextImageProcessor(custom tiny grid, data_format=channels_last)",
+      "outputs": {
+        "image_sizes": {
+          "data": {
+            "dtype": "int64",
+            "encoding": "base64",
+            "value": "BQAAAAAAAAAJAAAAAAAAAAcAAAAAAAAABAAAAAAAAAA="
+          },
+          "dtype": "int64",
+          "max": 9.0,
+          "mean": 6.25,
+          "min": 4.0,
+          "sample": [
+            5,
+            9,
+            7,
+            4
+          ],
+          "shape": [
+            2,
+            2
+          ]
+        },
+        "pixel_values": {
+          "data": {
+            "dtype": "float32",
+            "encoding": "base64",
+            "value": "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"
+          },
+          "dtype": "float32",
+          "max": 2.145897150039673,
+          "mean": -0.21950708629058985,
+          "min": -1.7922625541687012,
+          "sample": [
+            0.07633601129055023,
+            -0.4200104773044586,
+            -0.9163569808006287,
+            -1.412703514099121,
+            -0.28862464427948,
+            -0.7849711179733276,
+            -1.2813175916671753,
+            -1.7776641845703125,
+            -1.0185459852218628,
+            -1.5148924589157104,
+            1.725958228111267,
+            1.2296116352081299,
+            -1.3835066556930542,
+            1.8573440313339233,
+            1.3609975576400757,
+            0.8646510243415833,
+            0.724184513092041,
+            0.2139204442501068,
+            -0.2963436245918274,
+            -0.806607723236084,
+            0.3489903509616852,
+            -0.16127373278141022,
+            -0.6715378165245056,
+            -1.1818019151687622
+          ],
+          "shape": [
+            2,
+            5,
+            3,
+            4,
+            4
+          ]
+        }
+      },
+      "processor_config": {
+        "crop_size": {
+          "height": 4,
+          "longest_edge": null,
+          "max_height": null,
+          "max_width": null,
+          "shortest_edge": null,
+          "width": 4
+        },
+        "do_center_crop": true,
+        "do_convert_rgb": true,
+        "do_normalize": true,
+        "do_pad": true,
+        "do_rescale": true,
+        "image_grid_pinpoints": [
+          [
+            4,
+            4
+          ],
+          [
+            4,
+            8
+          ],
+          [
+            8,
+            4
+          ],
+          [
+            8,
+            8
+          ]
+        ],
+        "image_mean": [
+          0.48145466,
+          0.4578275,
+          0.40821073
+        ],
+        "image_std": [
+          0.26862954,
+          0.26130258,
+          0.27577711
+        ],
+        "resample": "0",
+        "rescale_factor": 0.00392156862745098,
+        "size": {
+          "height": null,
+          "longest_edge": null,
+          "max_height": null,
+          "max_width": null,
+          "shortest_edge": 4,
+          "width": null
+        }
+      },
+      "stages": {
+        "processed_image": {
+          "dtype": "uint8",
+          "max": 255.0,
+          "mean": 76.7125,
+          "min": 0.0,
+          "sample": [
+            128,
+            94,
+            60,
+            26,
+            103,
+            69,
+            35,
+            1,
+            53,
+            19,
+            241,
+            207,
+            28,
+            250,
+            216,
+            182,
+            165,
+            131,
+            97,
+            63,
+            140,
+            106,
+            72,
+            38
+          ],
+          "shape": [
+            2,
+            5,
+            3,
+            4,
+            4
+          ]
+        }
+      },
+      "video_frames": []
+    }
+  ],
+  "generator": "scripts/parity/transformers_image_parity.py",
+  "input": {
+    "description": "For flattened RGB byte index i and image offset n, value = (i * 37 + 17 + n * 53) % 256.",
+    "kind": "deterministic_rgb",
+    "parameters": {
+      "as_video": false,
+      "height": 5,
+      "height_step": 2,
+      "image_count": 2,
+      "video_batch_size": 1,
+      "width": 9,
+      "width_step": -5
+    }
+  },
+  "schema": "image-processors.transformers-parity.v1",
+  "upstream": {
+    "commit": "6d960ca0a0eba0d2aebc920d8080a9353da468d3",
+    "library": "transformers",
+    "source": "transformers.image_processing",
+    "version": "5.14.0.dev0"
+  }
+}

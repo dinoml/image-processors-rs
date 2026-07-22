@@ -1,0 +1,52 @@
+[package]
+name = "image-processors"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Core image processing primitives for model image processors."
+rust-version = "1.95"
+readme = "../README.md"
+keywords = ["image-processing", "vision", "tensor", "multimodal", "media"]
+categories = ["multimedia::images", "multimedia::video", "science"]
+
+[package.metadata.docs.rs]
+features = ["url"]
+rustdoc-args = ["--cfg", "docsrs"]
+
+[lib]
+name = "image_processors"
+path = "src/lib.rs"
+
+[[bench]]
+name = "clip_batch"
+harness = false
+
+[[bench]]
+name = "clip_dataset"
+harness = false
+
+[features]
+default = ["parallel"]
+parallel = ["dep:rayon"]
+turbojpeg = ["dep:turbojpeg", "turbojpeg/cmake", "turbojpeg/pkg-config"]
+url = ["dep:reqwest"]
+video = ["dep:video-rs"]
+
+[dependencies]
+half = "2"
+image = { version = "0.25", default-features = false, features = ["bmp", "gif", "ico", "jpeg", "png", "pnm", "tiff", "webp"] }
+image-resize-kernels = { path = "../image-resize-kernels" }
+rayon = { version = "1", optional = true }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"], optional = true }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+thiserror = "2"
+turbojpeg = { version = "1.4", default-features = false, optional = true }
+video-rs = { version = "0.11", default-features = false, features = ["ndarray"], optional = true }
+
+[dev-dependencies]
+base64 = "0.22"
+png = "0.18"
+proptest = "1"
