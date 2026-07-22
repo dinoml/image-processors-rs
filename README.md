@@ -2,6 +2,9 @@
 
 Rust-first media loading and image processor primitives for model image processors.
 
+For a workflow-oriented introduction to the public crate surface, see the
+**[Rust API usage guide](docs/USAGE.md)**.
+
 The current focus is the Rust crate architecture. Bindings are intentionally out of tree until the core owns the important boundaries:
 
 - media source loading and decoded frame ownership

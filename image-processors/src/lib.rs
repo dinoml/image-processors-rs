@@ -1,4 +1,5 @@
 #![doc = include_str!("../../README.md")]
+#![doc = include_str!("../../docs/USAGE.md")]
 #![warn(missing_docs)]
 //! Core image-processing primitives.
 //!
