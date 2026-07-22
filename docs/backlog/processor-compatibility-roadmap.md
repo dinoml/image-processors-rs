@@ -157,10 +157,10 @@ workspace, the `url` feature, and `image-processors` with default features
 disabled. The no-default build includes an observable assertion that video
 sources return `VideoDecodingUnavailable`.
 
-The `video` feature is checked in a Windows lane with FFmpeg development
-libraries installed through vcpkg. This keeps optional native dependencies out
-of the default and URL-only builds while still testing the all-feature public
-surface.
+The `video` feature is checked on Windows, Linux, and macOS with FFmpeg
+development libraries installed through vcpkg or the platform package manager.
+This keeps optional native dependencies out of the default and URL-only builds
+while still testing the all-feature public surface on all three CI platforms.
 
 The local verification sequence is:
 

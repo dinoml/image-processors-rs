@@ -10,6 +10,37 @@ The current focus is the Rust crate architecture. Bindings are intentionally out
 - resize, crop, mask, normalization, and binarization kernels
 - processor configs and concrete entrypoints that keep ownership in Rust
 
+## Getting started
+
+The workspace requires Rust 1.95 or newer. Until the crates are published,
+depend on the repository directly:
+
+```toml
+[dependencies]
+image-processors = { git = "https://github.com/dinoml/image-processors-rs" }
+```
+
+For local development, clone the repository and run:
+
+```powershell
+cargo test --workspace
+```
+
+### Features
+
+| Feature | Default | Purpose | Extra requirements |
+| --- | --- | --- | --- |
+| `parallel` | yes | Parallel batch preprocessing with Rayon | None |
+| `url` | no | Blocking HTTPS media loading with rustls | None |
+| `video` | no | Video decoding through `video-rs` | FFmpeg development libraries; see [`docs/FFMPEG.md`](docs/FFMPEG.md) |
+| `turbojpeg` | no | Optional libjpeg-turbo JPEG decoder | A C/C++ toolchain; NASM or a system libjpeg-turbo package is recommended for SIMD |
+
+Enable optional features in the normal Cargo form, for example:
+
+```toml
+image-processors = { git = "https://github.com/dinoml/image-processors-rs", features = ["url"] }
+```
+
 ## Architecture
 
 - `image-resize-kernels/src/lib.rs`
@@ -417,7 +448,30 @@ The current focus is the Rust crate architecture. Bindings are intentionally out
   - `ResizeFilter`
   - `ResizeParity`
 
-## Example
+## Usage
+
+### Preprocess a file with CLIP defaults
+
+Family wrappers carry the model-specific resize, normalization, and layout
+defaults. `ClipImageProcessor` produces an `NCHW` f32 tensor by default:
+
+```no_run
+use image_processors::{ClipImageProcessor, ClipImageProcessorConfig};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let processor = ClipImageProcessor::new(ClipImageProcessorConfig::default())?;
+    let tensor = processor.open("example.jpg")?;
+
+    assert_eq!(tensor.shape()[0], 1);
+    assert_eq!(tensor.shape()[1], 3);
+    Ok(())
+}
+```
+
+### Preprocess decoded pixels
+
+Use the generic processor when the caller owns decoded frames or needs an
+explicit preprocessing pipeline:
 
 ```rust
 use image_processors::{
@@ -439,7 +493,57 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-Video decoding is represented in the Rust API and is available behind the optional `video` feature through `video-rs`. That feature uses FFmpeg libraries through Rust bindings, so it requires FFmpeg development files discoverable by `pkg-config` or `vcpkg`; an `ffmpeg.exe` alone is not enough. See `docs/FFMPEG.md` for the Windows vcpkg setup and package-manager expectations.
+### Process a batch
+
+`open_batch` loads paths into one tensor. The default `parallel` feature lets
+the automatic scheduler parallelize larger batches while keeping small ones
+serial:
+
+```no_run
+use image_processors::{ClipImageProcessor, ClipImageProcessorConfig};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let processor = ClipImageProcessor::new(ClipImageProcessorConfig::default())?;
+    let paths = ["first.jpg", "second.jpg"];
+    let batch = processor.open_batch(&paths)?;
+
+    assert_eq!(batch.shape()[0], paths.len());
+    Ok(())
+}
+```
+
+For repeated batches, use `open_batch_into` with an
+`ImageProcessorWorkspace`, then recycle the returned tensor after its data is
+no longer needed. This reuses output and resize scratch allocations.
+
+### Load an image URL
+
+URL loading is available with the `url` feature:
+
+```no_run
+use image_processors::{ClipImageProcessor, ClipImageProcessorConfig, MediaSource};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let processor = ClipImageProcessor::new(ClipImageProcessorConfig::default())?;
+    let source = MediaSource::image_url("https://example.com/image.jpg");
+    let tensor = processor.open_source(source)?;
+
+    assert_eq!(tensor.shape()[0], 1);
+    Ok(())
+}
+```
+
+### Load Hugging Face processor configuration
+
+`ProcessorFamilyConfig::from_hf_preprocessor_json` converts a supported
+`preprocessor_config.json` document into a strongly typed family config. The
+compatibility catalog and supported processor families are described in
+[`docs/PARITY.md`](docs/PARITY.md).
+
+Video decoding is available behind the optional `video` feature through
+`video-rs`. It requires FFmpeg development files discoverable by `pkg-config`
+or vcpkg; an `ffmpeg.exe` alone is not enough. See
+[`docs/FFMPEG.md`](docs/FFMPEG.md) for platform setup.
 
 ## Development
 
@@ -518,7 +622,7 @@ run processed `32,942` valid images and skipped `6` corrupt JPEGs:
 | Transformers/Pillow threaded loader | `203.0 s` | `6.161349` | `162.302` |
 
 Optional Transformers parity fixture generation is documented in
-`docs/PARITY.md`.
+[`docs/PARITY.md`](docs/PARITY.md).
 
 ## Implemented Milestones
 
@@ -530,3 +634,7 @@ Optional Transformers parity fixture generation is documented in
 6. Support quantized and packed tensor storage where model processors need compact buffers.
 7. Make resize kernel and parity decisions explicit for high-quality model preprocessing.
 8. Keep bindings out of tree until the Rust API is coherent and tested.
+
+## License
+
+Licensed under the [Apache License, Version 2.0](LICENSE).

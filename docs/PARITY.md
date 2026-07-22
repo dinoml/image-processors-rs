@@ -663,12 +663,12 @@ that label from drifting away from its checked fixture cases.
 
 ## Performance Notes
 
-The primary local benchmark is the ShotDeck medthumb corpus with CLIP-style
-resize, center crop, and normalization:
+The primary local benchmark harness exercises a directory corpus with
+CLIP-style resize, center crop, and normalization:
 
 ```powershell
 cargo bench -p image-processors --bench clip_dataset -- `
-  --image-dir "X:\H\shotdeck\assets\images\stills\medthumb" `
+  --image-dir path\to\images `
   --batch-size 256 --warmup-batches 2 `
   --resize-profile compatibility --batch-execution auto --reuse-workspace --skip-errors
 ```
@@ -678,12 +678,14 @@ its default threaded image loader:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\bench\transformers_clip_dataset.py `
-  --image-dir "X:\H\shotdeck\assets\images\stills\medthumb" `
+  --image-dir path\to\images `
   --batch-size 256 --warmup-batches 2 --skip-errors
 ```
 
-Latest full-corpus results processed `32,942` valid images, skipped `6` corrupt
-JPEGs, and used `171` batches:
+The following historical full-corpus results processed `32,942` valid images,
+skipped `6` corrupt JPEGs, and used `171` batches. They predate the current
+exact fixed-point compatibility kernel and should be regenerated before making
+current throughput claims:
 
 | Path | Total | ms/image | images/sec |
 | --- | ---: | ---: | ---: |
@@ -691,10 +693,9 @@ JPEGs, and used `171` batches:
 | Rust fast profile | `7.5 s` | `0.227595` | `4393.763` |
 | Transformers/Pillow threaded loader | `203.0 s` | `6.161349` | `162.302` |
 
-That puts the compatibility profile at about `17.31x` the Python throughput and
-the fast profile at about `27.07x`. The fast profile is still about `1.56x`
-faster than compatibility, which is the ceiling the Pillow-compatible RGB path
-is chasing.
+In that historical run, the compatibility profile was about `17.31x` the
+Python throughput and the fast profile about `27.07x`. The fast profile was
+about `1.56x` faster than compatibility.
 
 The staged batch harness remains useful for locating the current hot path:
 
@@ -705,7 +706,7 @@ cargo bench -p image-processors --bench clip_batch -- `
   --resize-profile compatibility --batch-execution auto --reuse-workspace --all-stages
 ```
 
-Recent mean batch timings on the first `16` valid ShotDeck images:
+Historical mean batch timings on the first `16` valid images from that corpus:
 
 | Compatibility stage | B1 | B8 | B32 |
 | --- | ---: | ---: | ---: |

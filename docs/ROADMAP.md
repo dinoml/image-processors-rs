@@ -36,7 +36,7 @@ The repository is Rust-only for now. The goal is to get the core architecture ri
   - vcpkg FFmpeg manifest
   - Windows FFmpeg setup script
   - FFmpeg development-library docs
-  - Windows CI lane for all-feature `video-rs` checks and tests
+  - Windows, Linux, and macOS CI lanes for all-feature `video-rs` checks and tests
 - Rust tensor layer:
   - `Tensor`
   - `TensorData`

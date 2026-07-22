@@ -17,14 +17,6 @@ This is a Rust-first workspace for media loading, decoded frame ownership, tenso
 - `docs/FFMPEG.md` documents FFmpeg development-library setup for the optional `video` feature.
 - `docs/ROADMAP.md` tracks current implementation and next milestones.
 
-## Local Skills
-
-Use the project-scoped skills when they match the work:
-
-- `/microsoft-rust-guidelines` as the base Rust guidance for code design, review, refactoring, documentation, correctness, performance, and AI-agent-specific Rust pitfalls.
-- `/rust-best-practices` as a focused companion for borrowing vs cloning, errors, Clippy, tests, docs, generics, and pointer safety.
-- `/rust-testing` when adding or refactoring tests, doc tests, fixtures, property tests, benchmarks, or coverage.
-
 ## Rust Conventions
 
 - Prefer clear, idiomatic Rust over clever abstractions.
