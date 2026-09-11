@@ -233,6 +233,11 @@ impl ProcessorRecipeStage {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RecipeCropStage {
+    /// Center crop with nearest-even offsets, after symmetric zero padding if needed.
+    CenterTiesEven {
+        /// Output crop size.
+        size: ImageSize,
+    },
     /// Crop the center window from the current image.
     Center {
         /// Output crop size.
@@ -259,6 +264,7 @@ impl RecipeCropStage {
     pub(super) fn kind(self) -> &'static str {
         match self {
             Self::Center { .. } => "center_crop",
+            Self::CenterTiesEven { .. } => "center_crop_ties_even",
             Self::Absolute { .. } => "absolute_crop",
         }
     }

@@ -615,6 +615,84 @@ fn swin2sr_advances_dimensions_already_divisible_by_the_window() {
 }
 
 #[test]
+fn timm_center_crop_rounds_odd_offsets_to_even_in_both_orientations() {
+    for (long_edge, timm_origin, convnext_origin) in [(5, 2, 1), (7, 2, 2), (6, 2, 2), (4, 1, 1)] {
+        for transpose in [false, true] {
+            let (width, height) = if transpose {
+                (2, long_edge)
+            } else {
+                (long_edge, 2)
+            };
+            let values = (0..width * height)
+                .flat_map(|index| [index as u8; 3])
+                .collect();
+            let image = ImageFrame::new(width, height, PixelFormat::Rgb8, values)
+                .expect("valid test frame");
+            for (preset, origin) in [
+                (EncoderImageProcessorPreset::TimmWrapper, timm_origin),
+                (EncoderImageProcessorPreset::ConvNext, convnext_origin),
+            ] {
+                let mut config = EncoderImageProcessorConfig::for_preset(preset);
+                config.geometry = EncoderGeometry::CropPercentage {
+                    output_edge: 2,
+                    crop_percentage: 1.0,
+                    warp_at_or_above: None,
+                };
+                let processor = EncoderImageProcessor::new(config).expect("valid crop config");
+                let cropped = processor.prepare_image(&image).expect("crop succeeds");
+                let (left, top) = if transpose { (0, origin) } else { (origin, 0) };
+                let expected: Vec<u8> = (0..2)
+                    .flat_map(|y| {
+                        (0..2).flat_map(move |x| [((top + y) * width + left + x) as u8; 3])
+                    })
+                    .collect();
+                assert_eq!(
+                    cropped.data(),
+                    expected,
+                    "{preset:?}, source {width}x{height}"
+                );
+                let recipe = processor.config().processor_recipe().expect("valid recipe");
+                assert_eq!(
+                    recipe.stages().iter().any(|stage| matches!(
+                        stage,
+                        ProcessorRecipeStage::Crop {
+                            crop: image_processors::RecipeCropStage::CenterTiesEven { .. }
+                        }
+                    )),
+                    preset == EncoderImageProcessorPreset::TimmWrapper
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn timm_center_crop_zero_pads_images_smaller_than_the_crop() {
+    let image = ImageFrame::new(2, 2, PixelFormat::Rgb8, vec![17; 12]).expect("valid test frame");
+    let mut config =
+        EncoderImageProcessorConfig::for_preset(EncoderImageProcessorPreset::TimmWrapper);
+    config.geometry = EncoderGeometry::CropPercentage {
+        output_edge: 4,
+        crop_percentage: 2.0,
+        warp_at_or_above: None,
+    };
+    let processor = EncoderImageProcessor::new(config).expect("valid crop config");
+    let cropped = processor.prepare_image(&image).expect("padding succeeds");
+    let expected: Vec<u8> = (0..4)
+        .flat_map(|y| {
+            (0..4).flat_map(move |x| {
+                [if (1..3).contains(&x) && (1..3).contains(&y) {
+                    17
+                } else {
+                    0
+                }; 3]
+            })
+        })
+        .collect();
+    assert_eq!(cropped.data(), expected);
+}
+
+#[test]
 fn swin2sr_postprocess_clamps_restoration_output_to_unit_range() {
     let processor = Swin2SrImageProcessor::new(Swin2SrImageProcessorConfig::default())
         .expect("Swin2SR config should build");

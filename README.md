@@ -231,6 +231,8 @@ image-processors = { git = "https://github.com/dinoml/image-processors-rs", feat
   - `DocumentOcrImageProcessor` and `DocumentOcrImageProcessorConfig`
   - `EncoderImageProcessor`, `EncoderImageProcessorConfig`, and
     `EncoderImageProcessorPreset` for 19 audited encoder/classifier families
+    (the timm crop-percentage preset uses torchvision's nearest-even center
+    offsets; its recipe records `CenterTiesEven`, including zero padding when needed)
   - `Swin2SrImageProcessor` and `Swin2SrImageProcessorConfig` for restoration
   - `TaskVisionImageProcessor`, `TaskVisionImageProcessorConfig`, and
     `TaskVisionProcessorPreset` for 34 detection, segmentation, depth, and

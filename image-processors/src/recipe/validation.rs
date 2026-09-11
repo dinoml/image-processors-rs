@@ -485,11 +485,13 @@ fn validate_image_size_constraint_stage(
 
 fn validate_crop_stage(stage_index: usize, crop: RecipeCropStage) -> Result<(), RecipeError> {
     match crop {
-        RecipeCropStage::Center { size } => validate_transform(
-            stage_index,
-            crop.kind(),
-            ImageSize::new(size.height, size.width),
-        ),
+        RecipeCropStage::Center { size } | RecipeCropStage::CenterTiesEven { size } => {
+            validate_transform(
+                stage_index,
+                crop.kind(),
+                ImageSize::new(size.height, size.width),
+            )
+        }
         RecipeCropStage::Absolute { crop_box } => {
             let image_size = ImageSize {
                 height: crop_box.y_max.max(1),
