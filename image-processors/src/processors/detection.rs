@@ -590,34 +590,28 @@ fn preprocess_detr_images_output(
     }
 
     let tensor_processor = tensor_only_processor(config.image_processor_config())?;
-    let (tensor_frames, pixel_mask) = if config.do_pad {
+    let (tensor, pixel_mask) = if config.do_pad {
         let target = padded_batch_target_for_sizes(
             &reshaped_sizes,
             config.pad_size,
             config.pad_to_multiple,
         )?;
+        // DETR pads after normalization, so invisible pixels are tensor zeros.
+        let tensors = resized
+            .iter()
+            .map(|frame| tensor_processor.preprocess_images(std::slice::from_ref(frame)))
+            .collect::<Result<Vec<_>, _>>()?;
         (
-            pad_frames_to_size(resized, &reshaped_sizes, target)?,
+            pad_spatial_tensors(tensors, target, config.output_layout)?,
             pixel_mask_for_valid_sizes(&reshaped_sizes, target)?,
         )
     } else {
         let tensor = tensor_processor.preprocess_images(&resized)?;
         let pixel_mask = full_pixel_mask_for(&tensor)?;
-        let mut output = ProcessorOutput::from_pixel_values(tensor);
-        output.insert_tensor(ProcessorTensorName::PixelMask, pixel_mask);
-        output.insert_metadata(
-            ProcessorMetadataName::OriginalSizes,
-            ProcessorMetadataValue::ImageSizes(original_sizes),
-        );
-        output.insert_metadata(
-            ProcessorMetadataName::ReshapedInputSizes,
-            ProcessorMetadataValue::ImageSizes(reshaped_sizes),
-        );
-        return Ok(output);
+        (tensor, pixel_mask)
     };
 
-    let mut output =
-        ProcessorOutput::from_pixel_values(tensor_processor.preprocess_images(&tensor_frames)?);
+    let mut output = ProcessorOutput::from_pixel_values(tensor);
     output.insert_tensor(ProcessorTensorName::PixelMask, pixel_mask);
     output.insert_metadata(
         ProcessorMetadataName::OriginalSizes,
@@ -636,19 +630,43 @@ fn prepare_detr_frame(
 ) -> Result<(ImageFrame, ImageSize, ImageSize), ImageProcessorError> {
     let original_size = ImageSize::new(image.height(), image.width())?;
     let reshaped_size = shortest_edge_resize_output_size(original_size, config.resize_size)?;
-    let resized = resize_frame(image, reshaped_size, config.resample, ResizeMode::Default)?;
+    let resized = resize_frame_with_decision(
+        image,
+        reshaped_size,
+        config.resize_decision(),
+        ResizeMode::Default,
+    )?;
     Ok((resized, original_size, reshaped_size))
 }
 
 pub(super) fn shortest_edge_resize_output_size(
-    source: ImageSize,
+    original_size: ImageSize,
     config: ShortestEdgeResizeConfig,
 ) -> Result<ImageSize, ImageProcessorError> {
-    Ok(shortest_edge_resize_size(
-        source,
-        config.shortest_edge,
-        config.longest_edge,
-    )?)
+    let fallback =
+        shortest_edge_resize_size(original_size, config.shortest_edge, config.longest_edge)?;
+    let shortest = original_size.height.min(original_size.width);
+    let longest = original_size.height.max(original_size.width);
+    let Some(cap) = config.longest_edge else {
+        return Ok(fallback);
+    };
+    if longest as f64 / shortest as f64 * config.shortest_edge as f64 <= cap as f64 {
+        return Ok(fallback);
+    }
+    // Transformers retains the unrounded capped size for the long axis.
+    // Recomputing it from the rounded short axis shifts document pixels.
+    let raw_short = cap as f64 * shortest as f64 / longest as f64;
+    let short = raw_short.round_ties_even() as usize;
+    if shortest == short {
+        return Ok(original_size);
+    }
+    let long = (raw_short * longest as f64 / shortest as f64) as usize;
+    let (height, width) = if original_size.width < original_size.height {
+        (long, short)
+    } else {
+        (short, long)
+    };
+    Ok(ImageSize::new(height.max(1), width.max(1))?)
 }
 
 fn padded_batch_target_for_sizes(
@@ -675,26 +693,6 @@ fn padded_batch_target_for_sizes(
         validate_padding_target(target, *size)?;
     }
     Ok(target)
-}
-
-fn pad_frames_to_size(
-    frames: Vec<ImageFrame>,
-    sizes: &[ImageSize],
-    target: ImageSize,
-) -> Result<Vec<ImageFrame>, ImageProcessorError> {
-    frames
-        .into_iter()
-        .zip(sizes.iter().copied())
-        .map(|(frame, size)| {
-            validate_padding_target(target, size)?;
-            pad_frame(
-                &frame,
-                Padding::new(0, target.width - size.width, target.height - size.height, 0),
-                &[0],
-            )
-            .map_err(ImageProcessorError::Transform)
-        })
-        .collect()
 }
 
 fn pixel_mask_for_valid_sizes(

@@ -741,3 +741,13 @@ The script is a fixture generator for development machines and CI jobs that
 explicitly opt into Python parity checks. Rust resize dependencies should stay
 behind `image-resize-kernels` so processor APIs do not leak backend-specific
 types.
+
+### DETR document canvases
+
+Typed DETR outputs normalize resized pixels before zero-padding their tensor
+canvas. The pixel mask identifies the visible resized rectangle in either NCHW
+or NHWC layout. Capped document resizing retains the unrounded short-edge scale
+when computing the long axis, matching Transformers' PIL DETR processor. For
+example, a 1362-by-1760 page with both resize limits set to 800 becomes 619-by-800,
+then pads to an explicitly requested canvas. The generic shortest-edge geometry
+helper retains its existing rounded-short-edge policy.

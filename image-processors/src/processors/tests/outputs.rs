@@ -120,7 +120,7 @@ fn shortest_edge_resize_config_applies_longest_edge_cap() {
         shortest_edge_resize_output_size(wide, ShortestEdgeResizeConfig::default()).unwrap(),
         ImageSize {
             height: 533,
-            width: 1332,
+            width: 1333,
         }
     );
 }
@@ -582,4 +582,70 @@ fn sam_processor_post_process_masks_rejects_invalid_flattened_length() {
             actual: 3,
         })
     ));
+}
+
+#[test]
+fn detr_capped_document_resize_retains_unrounded_long_axis() {
+    let config = ShortestEdgeResizeConfig {
+        shortest_edge: 800,
+        longest_edge: Some(800),
+    };
+    for (source, expected) in [
+        ([1760, 1362], [800, 619]),
+        ([1362, 1760], [619, 800]),
+        ([480, 1180], [325, 800]),
+    ] {
+        assert_eq!(
+            shortest_edge_resize_output_size(
+                ImageSize::new(source[0], source[1]).expect("source"),
+                config
+            )
+            .expect("resize"),
+            ImageSize::new(expected[0], expected[1]).expect("expected"),
+        );
+    }
+}
+
+#[test]
+fn detr_padding_is_zero_after_normalization_in_both_layouts() {
+    let frame = ImageFrame::new(2, 1, PixelFormat::Rgb8, vec![255; 6]).expect("frame");
+    for output_layout in [
+        ImageLayout::ChannelsHeightWidth,
+        ImageLayout::HeightWidthChannels,
+    ] {
+        let config = DetrImageProcessorConfig {
+            resize_size: ShortestEdgeResizeConfig {
+                shortest_edge: 1,
+                longest_edge: None,
+            },
+            pad_size: Some(ImageSize::new(3, 4).expect("canvas")),
+            output_layout,
+            ..Default::default()
+        };
+        let processor = DetrImageProcessor::new(config).expect("processor");
+        let output = processor.preprocess_image_output(&frame).expect("output");
+        let values = output
+            .pixel_values()
+            .expect("pixels")
+            .data()
+            .to_vec::<f32>();
+        for y in 0..3 {
+            for x in 0..4 {
+                for channel in 0..3 {
+                    let index = match output_layout {
+                        ImageLayout::ChannelsHeightWidth => channel * 12 + y * 4 + x,
+                        ImageLayout::HeightWidthChannels => (y * 4 + x) * 3 + channel,
+                    };
+                    if y == 0 && x < 2 {
+                        assert!(
+                            values[index] > 2.0,
+                            "visible white pixel should be normalized"
+                        );
+                    } else {
+                        assert_eq!(values[index], 0.0, "padded tensor values must be zero");
+                    }
+                }
+            }
+        }
+    }
 }
