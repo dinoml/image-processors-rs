@@ -37,6 +37,8 @@ use crate::tensor::{
     VideoLayout,
 };
 mod encoder_presets;
+/// Aspect-preserving SigLIP2 NaFlex patch preparation.
+pub mod siglip2;
 pub use encoder_presets::{
     EncoderGeometry, EncoderImageProcessor, EncoderImageProcessorConfig,
     EncoderImageProcessorPreset, PresetProcessorError, Swin2SrImageProcessor,
