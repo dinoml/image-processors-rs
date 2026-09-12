@@ -1700,13 +1700,13 @@ fn owlv2_antialiased_resize(
     let scale_x = source.width as f64 / target.width as f64;
     for target_y in 0..target.height {
         let source_y =
-            ((target_y as f64 + 0.5) * scale_y - 0.5).clamp(0.0, (source.height - 1) as f64);
+            mirror_zoom_coordinate((target_y as f64 + 0.5) * scale_y - 0.5, source.height);
         let y0 = source_y.floor() as usize;
         let y1 = (y0 + 1).min(source.height - 1);
         let y_weight = (source_y - y0 as f64) as f32;
         for target_x in 0..target.width {
             let source_x =
-                ((target_x as f64 + 0.5) * scale_x - 0.5).clamp(0.0, (source.width - 1) as f64);
+                mirror_zoom_coordinate((target_x as f64 + 0.5) * scale_x - 0.5, source.width);
             let x0 = source_x.floor() as usize;
             let x1 = (x0 + 1).min(source.width - 1);
             let x_weight = (source_x - x0 as f64) as f32;
@@ -1723,6 +1723,21 @@ fn owlv2_antialiased_resize(
         }
     }
     Ok(output)
+}
+
+// Whole-sample symmetry for scipy.ndimage.zoom(mode="mirror", grid_mode=True).
+fn mirror_zoom_coordinate(coordinate: f64, length: usize) -> f64 {
+    if length <= 1 {
+        return 0.0;
+    }
+    let last = (length - 1) as f64;
+    if coordinate < 0.0 {
+        -coordinate
+    } else if coordinate > last {
+        2.0 * last - coordinate
+    } else {
+        coordinate
+    }
 }
 
 fn resize_f32_align_corners(
@@ -2362,4 +2377,31 @@ fn concatenate_matte_channels(
     Tensor::new(TensorData::F32(values), shape, image_layout)
         .and_then(|tensor| tensor.with_leading_axis(TensorLeadingAxis::Batch))
         .map_err(ImageProcessorError::Tensor)
+}
+
+#[cfg(test)]
+mod owlv2_resize_tests {
+    use super::*;
+
+    #[test]
+    fn enlargement_mirrors_both_edges_instead_of_clamping() {
+        let source = ImageSize::new(2, 2).expect("source");
+        let target = ImageSize::new(4, 4).expect("target");
+        let pixels: Vec<f32> = [0.0, 4.0, 8.0, 12.0]
+            .into_iter()
+            .flat_map(|v| [v; 3])
+            .collect();
+        let actual = owlv2_antialiased_resize(&pixels, source, target).expect("resize");
+        // scipy.ndimage.zoom(pixels, (2, 2, 1), order=1, mode="mirror", grid_mode=True).
+        let expected = [
+            3., 3., 5., 5., 3., 3., 5., 5., 7., 7., 9., 9., 7., 7., 9., 9.,
+        ];
+        for (pixel, expected) in actual.chunks_exact(3).zip(expected) {
+            assert_eq!(pixel, [expected; 3]);
+        }
+        let singleton =
+            owlv2_antialiased_resize(&[7.; 3], ImageSize::new(1, 1).expect("source"), target)
+                .expect("singleton resize");
+        assert_eq!(singleton, vec![7.; 48]);
+    }
 }
