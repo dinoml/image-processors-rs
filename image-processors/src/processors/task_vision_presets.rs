@@ -484,9 +484,18 @@ impl TaskVisionImageProcessorConfig {
             TaskVisionProcessorPreset::ConditionalDetr
             | TaskVisionProcessorPreset::DeformableDetr
             | TaskVisionProcessorPreset::GroundingDino
-            | TaskVisionProcessorPreset::RfDetr
-            | TaskVisionProcessorPreset::Yolos => {
+            | TaskVisionProcessorPreset::RfDetr => {
                 config.resize = shortest_edge(800, Some(1333));
+                config.emit_pixel_mask = true;
+                config.emit_original_sizes = true;
+                config.emit_reshaped_input_sizes = true;
+            }
+            TaskVisionProcessorPreset::Yolos => {
+                config.resize = TaskVisionResize::ShortestEdge {
+                    shortest_edge: 800,
+                    longest_edge: Some(1333),
+                    multiple: Some(16),
+                };
                 config.emit_pixel_mask = true;
                 config.emit_original_sizes = true;
                 config.emit_reshaped_input_sizes = true;
@@ -728,22 +737,34 @@ impl TaskVisionImageProcessorConfig {
                 longest_edge,
                 multiple,
             } => {
-                stages.push(ProcessorRecipeStage::Resize {
-                    resize: RecipeResizeStage::shortest_edge(
-                        shortest_edge,
-                        longest_edge,
-                        self.resample,
-                        self.resize_parity,
-                    ),
-                });
-                if let Some(multiple) = multiple {
-                    stages.push(ProcessorRecipeStage::RoundToMultiple {
-                        requested_size: None,
-                        multiples: ImageSize {
-                            height: multiple,
-                            width: multiple,
-                        },
+                if self.preset == TaskVisionProcessorPreset::Yolos {
+                    stages.push(ProcessorRecipeStage::Resize {
+                        resize: RecipeResizeStage::shortest_edge_round_down(
+                            shortest_edge,
+                            longest_edge,
+                            multiple.unwrap_or(16),
+                            self.resample,
+                            self.resize_parity,
+                        ),
                     });
+                } else {
+                    stages.push(ProcessorRecipeStage::Resize {
+                        resize: RecipeResizeStage::shortest_edge(
+                            shortest_edge,
+                            longest_edge,
+                            self.resample,
+                            self.resize_parity,
+                        ),
+                    });
+                    if let Some(multiple) = multiple {
+                        stages.push(ProcessorRecipeStage::RoundToMultiple {
+                            requested_size: None,
+                            multiples: ImageSize {
+                                height: multiple,
+                                width: multiple,
+                            },
+                        });
+                    }
                 }
             }
             TaskVisionResize::RoundDownToMultiple { multiple } => {
@@ -2126,6 +2147,27 @@ fn apply_task_resize(
             longest_edge,
             multiple,
         } => {
+            if config.preset == TaskVisionProcessorPreset::Yolos {
+                let target = super::detection::shortest_edge_resize_output_size(
+                    source,
+                    ShortestEdgeResizeConfig {
+                        shortest_edge,
+                        longest_edge,
+                    },
+                )?;
+                let multiple = multiple.unwrap_or(16);
+                let target = ImageSize::new(
+                    target.height / multiple * multiple,
+                    target.width / multiple * multiple,
+                )?;
+                return resize_frame_with_decision(
+                    &frame,
+                    target,
+                    ResizeDecision::new(config.resample, config.resize_parity)?,
+                    ResizeMode::Default,
+                )
+                .map_err(ImageProcessorError::Transform);
+            }
             let mut target = shortest_edge_resize_size(source, shortest_edge, longest_edge)?;
             if let Some(multiple) = multiple {
                 target = ImageSize::new(

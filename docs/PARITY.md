@@ -751,3 +751,18 @@ when computing the long axis, matching Transformers' PIL DETR processor. For
 example, a 1362-by-1760 page with both resize limits set to 800 becomes 619-by-800,
 then pads to an explicitly requested canvas. The generic shortest-edge geometry
 helper retains its existing rounded-short-edge policy.
+
+### YOLOS patch-aligned resizing
+
+The YOLOS task-vision preset resolves the capped aspect-preserving dimensions,
+then rounds both axes down to multiples of 16 before a single resample. It uses
+the unrounded capped scale for the long edge. A 640-by-480 image therefore becomes
+1056-by-800, and an 800-by-2000 image becomes 528-by-1328. This follows the
+Transformers 5.16.1 PIL YOLOS processor and its aligned canonical backends.
+Other task-vision shortest-edge presets retain their existing rounding policy.
+
+YOLOS recipes describe this as `ShortestEdgeRoundDown`, preserving the one-pass
+sampling contract instead of describing a second resize after rounding. The native
+task-vision processor executes this geometry. As with ordinary shortest-edge
+recipes, conversion to the generic fixed/dynamic image-processor configuration
+returns an explicit unsupported-stage error.

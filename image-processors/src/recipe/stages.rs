@@ -487,6 +487,27 @@ impl RecipeResizeStage {
         }
     }
 
+    /// Creates a single resize after rounding both resolved axes down to a divisor.
+    /// Uses the unrounded capped aspect scale before applying the divisor.
+    pub fn shortest_edge_round_down(
+        shortest_edge: usize,
+        longest_edge: Option<usize>,
+        multiple: usize,
+        filter: ResizeFilter,
+        parity: ResizeParity,
+    ) -> Self {
+        Self {
+            target: RecipeResizeTarget::ShortestEdgeRoundDown {
+                shortest_edge,
+                longest_edge,
+                multiple,
+            },
+            mode: ResizeMode::Default,
+            filter,
+            parity,
+        }
+    }
+
     /// Creates an aspect-preserving longest-edge resize stage.
     pub fn longest_edge(longest_edge: usize, filter: ResizeFilter, parity: ResizeParity) -> Self {
         Self {
@@ -522,6 +543,16 @@ pub enum RecipeResizeTarget {
         #[serde(default)]
         longest_edge: Option<usize>,
     },
+    /// Preserve the capped aspect scale, then round both axes down before one resample.
+    ShortestEdgeRoundDown {
+        /// Target size for the shorter image edge.
+        shortest_edge: usize,
+        /// Optional maximum size for the longer image edge.
+        #[serde(default)]
+        longest_edge: Option<usize>,
+        /// Positive divisor for both final dimensions.
+        multiple: usize,
+    },
     /// Resize so the longest image edge reaches `longest_edge`.
     LongestEdge {
         /// Target size for the longer image edge.
@@ -536,6 +567,7 @@ impl RecipeResizeTarget {
             Self::Dynamic => "resize_dynamic",
             Self::SmartResize { .. } => "resize_smart",
             Self::ShortestEdge { .. } => "resize_shortest_edge",
+            Self::ShortestEdgeRoundDown { .. } => "resize_shortest_edge_round_down",
             Self::LongestEdge { .. } => "resize_longest_edge",
         }
     }

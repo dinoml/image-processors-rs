@@ -279,6 +279,7 @@ impl ProcessorRecipe {
                             config.width = None;
                         }
                         RecipeResizeTarget::ShortestEdge { .. }
+                        | RecipeResizeTarget::ShortestEdgeRoundDown { .. }
                         | RecipeResizeTarget::LongestEdge { .. } => {
                             return Err(RecipeError::UnsupportedGenericStage {
                                 stage: resize.target.kind(),
