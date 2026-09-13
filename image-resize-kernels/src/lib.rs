@@ -1138,6 +1138,23 @@ fn resize_u8_pillow_crop_into_with_workspace<T: TransformedOutput>(
     Ok(())
 }
 
+// Pillow advances its affine source coordinate by repeated f64 addition.
+// Multiplying the destination coordinate instead changes integer-boundary
+// rounding (for example, 640 -> 224 samples source 49 at output 17).
+fn pillow_nearest_indices(input: usize, output: usize, origin: usize, count: usize) -> Vec<usize> {
+    let step = input as f64 / output as f64;
+    let mut position = step * 0.5;
+    (0..output)
+        .map(|_| {
+            let index = position.floor().min((input - 1) as f64) as usize;
+            position += step;
+            index
+        })
+        .skip(origin)
+        .take(count)
+        .collect()
+}
+
 #[expect(
     clippy::too_many_arguments,
     reason = "keeps resize, tensor, and transform parameters explicit"
@@ -1153,19 +1170,20 @@ fn write_nearest_crop_into<T: TransformedOutput>(
     offset: &[f32],
 ) -> Result<(), ResizeError> {
     validate_image_data(values.len(), source, channels)?;
-    let y_scale = source.height as f64 / crop.resized.height as f64;
-    let x_scale = source.width as f64 / crop.resized.width as f64;
-
-    for y in 0..crop.target.height {
-        let resized_y = crop.origin_y + y;
-        let source_y = ((resized_y as f64 + 0.5) * y_scale)
-            .floor()
-            .min((source.height - 1) as f64) as usize;
-        for x in 0..crop.target.width {
-            let resized_x = crop.origin_x + x;
-            let source_x = ((resized_x as f64 + 0.5) * x_scale)
-                .floor()
-                .min((source.width - 1) as f64) as usize;
+    let ys = pillow_nearest_indices(
+        source.height,
+        crop.resized.height,
+        crop.origin_y,
+        crop.target.height,
+    );
+    let xs = pillow_nearest_indices(
+        source.width,
+        crop.resized.width,
+        crop.origin_x,
+        crop.target.width,
+    );
+    for (y, &source_y) in ys.iter().enumerate() {
+        for (x, &source_x) in xs.iter().enumerate() {
             let source_start = (source_y * source.width + source_x) * channels;
             for channel in 0..channels {
                 let destination = f32_destination(crop.target, channels, layout, x, y, channel);
@@ -1460,17 +1478,10 @@ fn resize_u8_nearest(
     target: ImageSize,
 ) -> Result<Vec<u8>, ResizeError> {
     let mut output = vec![0; image_len(target, channels)?];
-    let y_scale = source.height as f64 / target.height as f64;
-    let x_scale = source.width as f64 / target.width as f64;
-
-    for y in 0..target.height {
-        let source_y = ((y as f64 + 0.5) * y_scale)
-            .floor()
-            .min((source.height - 1) as f64) as usize;
-        for x in 0..target.width {
-            let source_x = ((x as f64 + 0.5) * x_scale)
-                .floor()
-                .min((source.width - 1) as f64) as usize;
+    let ys = pillow_nearest_indices(source.height, target.height, 0, target.height);
+    let xs = pillow_nearest_indices(source.width, target.width, 0, target.width);
+    for (y, &source_y) in ys.iter().enumerate() {
+        for (x, &source_x) in xs.iter().enumerate() {
             let source_start = (source_y * source.width + source_x) * channels;
             let target_start = (y * target.width + x) * channels;
             output[target_start..target_start + channels]
@@ -1487,19 +1498,20 @@ fn resize_u8_nearest_crop(
     crop: ResizeCrop,
 ) -> Result<Vec<u8>, ResizeError> {
     let mut output = vec![0; image_len(crop.target, channels)?];
-    let y_scale = source.height as f64 / crop.resized.height as f64;
-    let x_scale = source.width as f64 / crop.resized.width as f64;
-
-    for y in 0..crop.target.height {
-        let resized_y = crop.origin_y + y;
-        let source_y = ((resized_y as f64 + 0.5) * y_scale)
-            .floor()
-            .min((source.height - 1) as f64) as usize;
-        for x in 0..crop.target.width {
-            let resized_x = crop.origin_x + x;
-            let source_x = ((resized_x as f64 + 0.5) * x_scale)
-                .floor()
-                .min((source.width - 1) as f64) as usize;
+    let ys = pillow_nearest_indices(
+        source.height,
+        crop.resized.height,
+        crop.origin_y,
+        crop.target.height,
+    );
+    let xs = pillow_nearest_indices(
+        source.width,
+        crop.resized.width,
+        crop.origin_x,
+        crop.target.width,
+    );
+    for (y, &source_y) in ys.iter().enumerate() {
+        for (x, &source_x) in xs.iter().enumerate() {
             let source_start = (source_y * source.width + source_x) * channels;
             let target_start = (y * crop.target.width + x) * channels;
             output[target_start..target_start + channels]
@@ -2794,5 +2806,96 @@ mod tests {
         (0..size.width * size.height)
             .map(|index| ((index as u32 * 29 + 101) % 256) as u8)
             .collect()
+    }
+    #[test]
+    fn pillow_nearest_preserves_affine_accumulation_boundaries() {
+        // Golden Pillow NEAREST resize of a 640-element uint8 ramp modulo 251.
+        let expected: &[u8] = &[
+            1, 4, 7, 10, 12, 15, 18, 21, 24, 27, 30, 32, 35, 38, 41, 44, 47, 49, 52, 55, 58, 61,
+            64, 67, 69, 72, 75, 78, 81, 84, 87, 90, 92, 95, 98, 101, 104, 107, 110, 112, 115, 118,
+            121, 124, 127, 130, 132, 135, 138, 141, 144, 147, 150, 152, 155, 158, 161, 164, 167,
+            170, 172, 175, 178, 181, 184, 187, 190, 192, 195, 198, 201, 204, 207, 210, 212, 215,
+            218, 221, 224, 227, 230, 232, 235, 238, 241, 244, 247, 250, 1, 4, 7, 10, 13, 16, 19,
+            21, 24, 27, 30, 33, 36, 38, 41, 44, 47, 50, 53, 56, 58, 61, 64, 67, 70, 73, 76, 78, 81,
+            84, 87, 90, 93, 96, 98, 101, 104, 107, 110, 113, 116, 118, 121, 124, 127, 130, 133,
+            136, 138, 141, 144, 147, 150, 153, 156, 158, 161, 164, 167, 170, 173, 176, 178, 181,
+            184, 187, 190, 193, 196, 198, 201, 204, 207, 210, 213, 216, 218, 221, 224, 227, 230,
+            233, 236, 238, 241, 244, 247, 250, 2, 5, 7, 10, 13, 16, 19, 22, 25, 27, 30, 33, 36, 39,
+            42, 45, 47, 50, 53, 56, 59, 62, 65, 67, 70, 73, 76, 79, 82, 85, 87, 90, 93, 96, 99,
+            102, 105, 107, 110, 113, 116, 119, 122, 125, 127, 130, 133, 136,
+        ];
+        let values = (0..640)
+            .map(|i| u8::try_from(i % 251).expect("bounded ramp"))
+            .collect::<Vec<_>>();
+        for vertical in [false, true] {
+            let (source, target, crop) = if vertical {
+                (
+                    ImageSize::new(640, 1).expect("source"),
+                    ImageSize::new(224, 1).expect("target"),
+                    ResizeCrop::new(
+                        ImageSize::new(224, 1).expect("resize"),
+                        0,
+                        17,
+                        ImageSize::new(31, 1).expect("crop size"),
+                    )
+                    .expect("crop"),
+                )
+            } else {
+                (
+                    ImageSize::new(1, 640).expect("source"),
+                    ImageSize::new(1, 224).expect("target"),
+                    ResizeCrop::new(
+                        ImageSize::new(1, 224).expect("resize"),
+                        17,
+                        0,
+                        ImageSize::new(1, 31).expect("crop size"),
+                    )
+                    .expect("crop"),
+                )
+            };
+            let full = resize_u8(
+                &values,
+                source,
+                1,
+                target,
+                ResizeFilter::Nearest,
+                ResizeProfile::Pillow,
+            )
+            .expect("Pillow nearest");
+            assert_eq!(full, expected);
+            let cropped = resize_u8_crop(
+                &values,
+                source,
+                1,
+                crop,
+                ResizeFilter::Nearest,
+                ResizeProfile::Pillow,
+            )
+            .expect("cropped nearest");
+            assert_eq!(cropped, &expected[17..48]);
+            let mut output = vec![0.0; 31];
+            let mut workspace = ResizeWorkspace::new();
+            resize_u8_crop_into_f32_with_workspace(
+                &values,
+                source,
+                1,
+                crop,
+                ResizeFilter::Nearest,
+                ResizeProfile::Pillow,
+                &mut output,
+                F32ImageLayout::Chw,
+                &[0.5],
+                &[-1.0],
+                &mut workspace,
+            )
+            .expect("direct transformed nearest");
+            assert_eq!(
+                output,
+                expected[17..48]
+                    .iter()
+                    .map(|v| f32::from(*v) * 0.5 - 1.0)
+                    .collect::<Vec<_>>()
+            );
+        }
     }
 }

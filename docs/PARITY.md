@@ -766,3 +766,14 @@ sampling contract instead of describing a second resize after rounding. The nati
 task-vision processor executes this geometry. As with ordinary shortest-edge
 recipes, conversion to the generic fixed/dynamic image-processor configuration
 returns an explicit unsupported-stage error.
+
+
+### Nearest-neighbor integer boundaries
+
+The Pillow compatibility profile advances affine source coordinates by repeated
+`f64` addition, matching Pillow's NEAREST sampling even at integer boundaries.
+For example, resizing 640 pixels to 224 selects source index 49 at output index
+17; a direct center-times-scale expression selects index 50. Full resize, cropped
+resize and fused normalized output use the same sampling. A Pillow-generated
+ramp fixture covers both axes and cropped FP32 output. The Torchvision profile
+retains its separate nearest-exact coordinate rule.
