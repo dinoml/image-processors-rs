@@ -643,3 +643,14 @@ Optional Transformers parity fixture generation is documented in
 ## License
 
 Licensed under the [Apache License, Version 2.0](LICENSE).
+
+### Large Pillow-compatible uint8 resize performance
+
+The `image-resize-kernels` full-image and workspace-backed uint8 Pillow paths
+process independent rows in parallel when an intermediate or output pass has
+at least 65,536 bytes. Smaller passes stay serial. An unchanged spatial axis
+uses an exact copy instead of evaluating identity filter coefficients. Integer
+accumulation, rounding and clipping order within each pixel are unchanged.
+Tests compare full and workspace output against 36 independently generated
+Pillow pixel hashes across bilinear, bicubic and Lanczos filters, channel counts
+and resize geometries. Direct transformed crop APIs retain their existing paths.

@@ -5,6 +5,7 @@
 //! semantics directly.
 
 use half::f16;
+use rayon::prelude::*;
 use thiserror::Error;
 
 /// Image dimensions in height-width order.
@@ -1203,6 +1204,75 @@ fn write_nearest_crop_into<T: TransformedOutput>(
 const PILLOW_PRECISION_BITS: u32 = 22;
 const PILLOW_ROUNDING_BIAS: i64 = 1_i64 << (PILLOW_PRECISION_BITS - 1);
 
+// Independent rows retain the original fixed-point accumulation and clipping
+// order. Small images stay serial to avoid thread-pool dispatch overhead.
+fn pillow_rows(
+    output: &mut [u8],
+    row_len: usize,
+    operation: impl Fn(usize, &mut [u8]) + Sync + Send,
+) {
+    if output.len() >= 65_536 {
+        output
+            .par_chunks_mut(row_len)
+            .enumerate()
+            .for_each(|(row, values)| operation(row, values));
+    } else {
+        output
+            .chunks_mut(row_len)
+            .enumerate()
+            .for_each(|(row, values)| operation(row, values));
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn pillow_fixed_passes(
+    values: &[u8],
+    source: ImageSize,
+    channels: usize,
+    target: ImageSize,
+    horizontal: &PillowFixedCoefficients,
+    vertical: &PillowFixedCoefficients,
+    intermediate: &mut [u8],
+    output: &mut [u8],
+) {
+    let row_len = target.width * channels;
+    if source.width == target.width {
+        intermediate.copy_from_slice(values);
+    } else {
+        pillow_rows(intermediate, row_len, |y, row| {
+            for x in 0..target.width {
+                let weights = horizontal.weights(x);
+                let source_x = horizontal.start(x);
+                for channel in 0..channels {
+                    let mut sum = PILLOW_ROUNDING_BIAS;
+                    for (offset, &weight) in weights.iter().enumerate() {
+                        let input =
+                            values[(y * source.width + source_x + offset) * channels + channel];
+                        sum += i64::from(input) * i64::from(weight);
+                    }
+                    row[x * channels + channel] = pillow_clip_u8(sum);
+                }
+            }
+        });
+    }
+    if source.height == target.height {
+        output.copy_from_slice(intermediate);
+    } else {
+        pillow_rows(output, row_len, |y, row| {
+            let weights = vertical.weights(y);
+            let source_y = vertical.start(y);
+            for (column, value) in row.iter_mut().enumerate() {
+                let mut sum = PILLOW_ROUNDING_BIAS;
+                for (offset, &weight) in weights.iter().enumerate() {
+                    let input = intermediate[(source_y + offset) * row_len + column];
+                    sum += i64::from(input) * i64::from(weight);
+                }
+                *value = pillow_clip_u8(sum);
+            }
+        });
+    }
+}
+
 fn resize_u8_pillow_fixed(
     values: &[u8],
     source: ImageSize,
@@ -1225,37 +1295,16 @@ fn resize_u8_pillow_fixed(
     ];
     let mut output = vec![0; image_len(target, channels)?];
 
-    for y in 0..source.height {
-        for x in 0..target.width {
-            let weights = horizontal.weights(x);
-            let source_x = horizontal.start(x);
-            for channel in 0..channels {
-                let mut sum = PILLOW_ROUNDING_BIAS;
-                for (offset, &weight) in weights.iter().enumerate() {
-                    let input = values[(y * source.width + source_x + offset) * channels + channel];
-                    sum += i64::from(input) * i64::from(weight);
-                }
-                intermediate[(y * target.width + x) * channels + channel] = pillow_clip_u8(sum);
-            }
-        }
-    }
-
-    for y in 0..target.height {
-        let weights = vertical.weights(y);
-        let source_y = vertical.start(y);
-        for x in 0..target.width {
-            for channel in 0..channels {
-                let mut sum = PILLOW_ROUNDING_BIAS;
-                for (offset, &weight) in weights.iter().enumerate() {
-                    let input =
-                        intermediate[((source_y + offset) * target.width + x) * channels + channel];
-                    sum += i64::from(input) * i64::from(weight);
-                }
-                output[(y * target.width + x) * channels + channel] = pillow_clip_u8(sum);
-            }
-        }
-    }
-
+    pillow_fixed_passes(
+        values,
+        source,
+        channels,
+        target,
+        &horizontal,
+        &vertical,
+        &mut intermediate,
+        &mut output,
+    );
     Ok(output)
 }
 
@@ -1282,37 +1331,16 @@ fn resize_u8_pillow_fixed_with_workspace(
     let intermediate = parts.u8_scratch.as_mut_slice();
     let mut output = vec![0; image_len(target, channels)?];
 
-    for y in 0..source.height {
-        for x in 0..target.width {
-            let weights = parts.horizontal.weights(x);
-            let source_x = parts.horizontal.start(x);
-            for channel in 0..channels {
-                let mut sum = PILLOW_ROUNDING_BIAS;
-                for (offset, &weight) in weights.iter().enumerate() {
-                    let input = values[(y * source.width + source_x + offset) * channels + channel];
-                    sum += i64::from(input) * i64::from(weight);
-                }
-                intermediate[(y * target.width + x) * channels + channel] = pillow_clip_u8(sum);
-            }
-        }
-    }
-
-    for y in 0..target.height {
-        let weights = parts.vertical.weights(y);
-        let source_y = parts.vertical.start(y);
-        for x in 0..target.width {
-            for channel in 0..channels {
-                let mut sum = PILLOW_ROUNDING_BIAS;
-                for (offset, &weight) in weights.iter().enumerate() {
-                    let input =
-                        intermediate[((source_y + offset) * target.width + x) * channels + channel];
-                    sum += i64::from(input) * i64::from(weight);
-                }
-                output[(y * target.width + x) * channels + channel] = pillow_clip_u8(sum);
-            }
-        }
-    }
-
+    pillow_fixed_passes(
+        values,
+        source,
+        channels,
+        target,
+        parts.horizontal,
+        parts.vertical,
+        intermediate,
+        &mut output,
+    );
     Ok(output)
 }
 
@@ -2896,6 +2924,386 @@ mod tests {
                     .map(|v| f32::from(*v) * 0.5 - 1.0)
                     .collect::<Vec<_>>()
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod pillow_parallel_tests {
+    use super::*;
+
+    #[test]
+    fn full_and_workspace_resize_match_pillow_golden_pixels() {
+        // FNV-1a hashes of Pillow 12.3.0 uint8 results. Alpha is opaque, as the
+        // kernel API resamples independent channels rather than premultiplied RGBA.
+        let cases = [
+            (
+                1,
+                79,
+                113,
+                277,
+                345,
+                ResizeFilter::Bilinear,
+                12203974615229453310_u64,
+            ),
+            (
+                1,
+                277,
+                345,
+                79,
+                113,
+                ResizeFilter::Bilinear,
+                2543749428388039397_u64,
+            ),
+            (
+                1,
+                79,
+                113,
+                79,
+                345,
+                ResizeFilter::Bilinear,
+                9744011208817915062_u64,
+            ),
+            (
+                1,
+                79,
+                113,
+                277,
+                113,
+                ResizeFilter::Bilinear,
+                15163923547403572473_u64,
+            ),
+            (
+                1,
+                79,
+                113,
+                277,
+                345,
+                ResizeFilter::Bicubic,
+                15714105379554258498_u64,
+            ),
+            (
+                1,
+                277,
+                345,
+                79,
+                113,
+                ResizeFilter::Bicubic,
+                8305578183701359817_u64,
+            ),
+            (
+                1,
+                79,
+                113,
+                79,
+                345,
+                ResizeFilter::Bicubic,
+                225436328689494647_u64,
+            ),
+            (
+                1,
+                79,
+                113,
+                277,
+                113,
+                ResizeFilter::Bicubic,
+                16815723108699658671_u64,
+            ),
+            (
+                1,
+                79,
+                113,
+                277,
+                345,
+                ResizeFilter::Lanczos,
+                6607000987719927330_u64,
+            ),
+            (
+                1,
+                277,
+                345,
+                79,
+                113,
+                ResizeFilter::Lanczos,
+                5941487208839317234_u64,
+            ),
+            (
+                1,
+                79,
+                113,
+                79,
+                345,
+                ResizeFilter::Lanczos,
+                17896323033325813476_u64,
+            ),
+            (
+                1,
+                79,
+                113,
+                277,
+                113,
+                ResizeFilter::Lanczos,
+                4407604839746268276_u64,
+            ),
+            (
+                3,
+                79,
+                113,
+                277,
+                345,
+                ResizeFilter::Bilinear,
+                721439976833089081_u64,
+            ),
+            (
+                3,
+                277,
+                345,
+                79,
+                113,
+                ResizeFilter::Bilinear,
+                9925588167825416853_u64,
+            ),
+            (
+                3,
+                79,
+                113,
+                79,
+                345,
+                ResizeFilter::Bilinear,
+                17437158176950107388_u64,
+            ),
+            (
+                3,
+                79,
+                113,
+                277,
+                113,
+                ResizeFilter::Bilinear,
+                10914662053287801977_u64,
+            ),
+            (
+                3,
+                79,
+                113,
+                277,
+                345,
+                ResizeFilter::Bicubic,
+                10041611976602108084_u64,
+            ),
+            (
+                3,
+                277,
+                345,
+                79,
+                113,
+                ResizeFilter::Bicubic,
+                11201578351176077748_u64,
+            ),
+            (
+                3,
+                79,
+                113,
+                79,
+                345,
+                ResizeFilter::Bicubic,
+                16803951105232581418_u64,
+            ),
+            (
+                3,
+                79,
+                113,
+                277,
+                113,
+                ResizeFilter::Bicubic,
+                3526718116588698037_u64,
+            ),
+            (
+                3,
+                79,
+                113,
+                277,
+                345,
+                ResizeFilter::Lanczos,
+                1410036742439437380_u64,
+            ),
+            (
+                3,
+                277,
+                345,
+                79,
+                113,
+                ResizeFilter::Lanczos,
+                8079933033690097902_u64,
+            ),
+            (
+                3,
+                79,
+                113,
+                79,
+                345,
+                ResizeFilter::Lanczos,
+                18429367746121678316_u64,
+            ),
+            (
+                3,
+                79,
+                113,
+                277,
+                113,
+                ResizeFilter::Lanczos,
+                18188085950261665245_u64,
+            ),
+            (
+                4,
+                79,
+                113,
+                277,
+                345,
+                ResizeFilter::Bilinear,
+                11304658239760066898_u64,
+            ),
+            (
+                4,
+                277,
+                345,
+                79,
+                113,
+                ResizeFilter::Bilinear,
+                10039260712918858214_u64,
+            ),
+            (
+                4,
+                79,
+                113,
+                79,
+                345,
+                ResizeFilter::Bilinear,
+                2574580075108025743_u64,
+            ),
+            (
+                4,
+                79,
+                113,
+                277,
+                113,
+                ResizeFilter::Bilinear,
+                7894495076331544685_u64,
+            ),
+            (
+                4,
+                79,
+                113,
+                277,
+                345,
+                ResizeFilter::Bicubic,
+                4591392360948848158_u64,
+            ),
+            (
+                4,
+                277,
+                345,
+                79,
+                113,
+                ResizeFilter::Bicubic,
+                13058530098347399140_u64,
+            ),
+            (
+                4,
+                79,
+                113,
+                79,
+                345,
+                ResizeFilter::Bicubic,
+                733282160729401323_u64,
+            ),
+            (
+                4,
+                79,
+                113,
+                277,
+                113,
+                ResizeFilter::Bicubic,
+                17893786451266700324_u64,
+            ),
+            (
+                4,
+                79,
+                113,
+                277,
+                345,
+                ResizeFilter::Lanczos,
+                4418797572586396847_u64,
+            ),
+            (
+                4,
+                277,
+                345,
+                79,
+                113,
+                ResizeFilter::Lanczos,
+                14917665525038147355_u64,
+            ),
+            (
+                4,
+                79,
+                113,
+                79,
+                345,
+                ResizeFilter::Lanczos,
+                3404845462791918732_u64,
+            ),
+            (
+                4,
+                79,
+                113,
+                277,
+                113,
+                ResizeFilter::Lanczos,
+                8559330780439452674_u64,
+            ),
+        ];
+        for (channels, sh, sw, th, tw, filter, expected) in cases {
+            let source = ImageSize::new(sh, sw).expect("source");
+            let target = ImageSize::new(th, tw).expect("target");
+            let mut input = (0..sh * sw * channels)
+                .map(|i| u8::try_from((i * 73 + (i / 11) * 17) % 256).expect("byte"))
+                .collect::<Vec<_>>();
+            if channels == 4 {
+                for pixel in input.chunks_exact_mut(4) {
+                    pixel[3] = 255;
+                }
+            }
+            let direct = resize_u8(
+                &input,
+                source,
+                channels,
+                target,
+                filter,
+                ResizeProfile::Pillow,
+            )
+            .expect("resize");
+            let hash = direct
+                .iter()
+                .fold(14_695_981_039_346_656_037_u64, |hash, &byte| {
+                    (hash ^ u64::from(byte)).wrapping_mul(1_099_511_628_211)
+                });
+            assert_eq!(
+                hash, expected,
+                "channels={channels}, source={source:?}, target={target:?}, filter={filter:?}"
+            );
+            let mut workspace = ResizeWorkspace::new();
+            let crop = ResizeCrop::new(target, 0, 0, target).expect("crop");
+            let cached = resize_u8_crop_with_workspace(
+                &input,
+                source,
+                channels,
+                crop,
+                filter,
+                ResizeProfile::Pillow,
+                &mut workspace,
+            )
+            .expect("workspace resize");
+            assert_eq!(cached, direct);
         }
     }
 }
