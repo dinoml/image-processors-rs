@@ -687,36 +687,42 @@ fn resize_f32_torchvision_interleaved(
     let mut intermediate = vec![0.0_f32; intermediate_len];
     let mut output = vec![0.0_f32; output_len];
 
-    for y in 0..source.height {
-        for x in 0..target.width {
-            let weights = horizontal.weights(x);
-            let start = horizontal.start(x);
-            for channel in 0..channels {
-                let mut value = 0.0_f32;
-                for (offset, &weight) in weights.iter().enumerate() {
-                    let source_index = (y * source.width + start + offset) * channels + channel;
-                    value += values[source_index] * weight;
+    intermediate
+        .par_chunks_exact_mut(target.width * channels)
+        .enumerate()
+        .for_each(|(y, row)| {
+            for x in 0..target.width {
+                let weights = horizontal.weights(x);
+                let start = horizontal.start(x);
+                for channel in 0..channels {
+                    let mut value = 0.0_f32;
+                    for (offset, &weight) in weights.iter().enumerate() {
+                        let source_index = (y * source.width + start + offset) * channels + channel;
+                        value += values[source_index] * weight;
+                    }
+                    row[x * channels + channel] = value;
                 }
-                intermediate[(y * target.width + x) * channels + channel] = value;
             }
-        }
-    }
+        });
 
-    for y in 0..target.height {
-        let weights = vertical.weights(y);
-        let start = vertical.start(y);
-        for x in 0..target.width {
-            for channel in 0..channels {
-                let mut value = 0.0_f32;
-                for (offset, &weight) in weights.iter().enumerate() {
-                    let intermediate_index =
-                        ((start + offset) * target.width + x) * channels + channel;
-                    value += intermediate[intermediate_index] * weight;
+    output
+        .par_chunks_exact_mut(target.width * channels)
+        .enumerate()
+        .for_each(|(y, row)| {
+            let weights = vertical.weights(y);
+            let start = vertical.start(y);
+            for x in 0..target.width {
+                for channel in 0..channels {
+                    let mut value = 0.0_f32;
+                    for (offset, &weight) in weights.iter().enumerate() {
+                        let intermediate_index =
+                            ((start + offset) * target.width + x) * channels + channel;
+                        value += intermediate[intermediate_index] * weight;
+                    }
+                    row[x * channels + channel] = value;
                 }
-                output[(y * target.width + x) * channels + channel] = value;
             }
-        }
-    }
+        });
 
     Ok(output)
 }
