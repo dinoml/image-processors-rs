@@ -1039,43 +1039,53 @@ fn resize_u8_pillow_crop_into_with_workspace<T: TransformedOutput>(
     let intermediate = parts.u8_scratch.as_mut_slice();
 
     if channels == 3 {
-        for (intermediate_y, source_y) in source_rows.clone().enumerate() {
-            for x in 0..crop.target.width {
-                let weights = parts.horizontal.weights(x);
-                let source_x = parts.horizontal.start(x);
-                let mut sums = [PILLOW_ROUNDING_BIAS; 3];
-                for (coefficient_offset, &weight) in weights.iter().enumerate() {
-                    let input_index = (source_y * source.width + source_x + coefficient_offset) * 3;
-                    let weight = i64::from(weight);
-                    sums[0] += i64::from(values[input_index]) * weight;
-                    sums[1] += i64::from(values[input_index + 1]) * weight;
-                    sums[2] += i64::from(values[input_index + 2]) * weight;
-                }
-                let intermediate_index = (intermediate_y * crop.target.width + x) * 3;
-                intermediate[intermediate_index] = pillow_clip_u8(sums[0]);
-                intermediate[intermediate_index + 1] = pillow_clip_u8(sums[1]);
-                intermediate[intermediate_index + 2] = pillow_clip_u8(sums[2]);
-            }
-        }
-    } else {
-        for (intermediate_y, source_y) in source_rows.enumerate() {
-            for x in 0..crop.target.width {
-                let weights = parts.horizontal.weights(x);
-                let source_x = parts.horizontal.start(x);
-                for channel in 0..channels {
-                    let mut sum = PILLOW_ROUNDING_BIAS;
+        pillow_rows(
+            intermediate,
+            crop.target.width * channels,
+            |intermediate_y, row| {
+                let source_y = source_row_start + intermediate_y;
+                for x in 0..crop.target.width {
+                    let weights = parts.horizontal.weights(x);
+                    let source_x = parts.horizontal.start(x);
+                    let mut sums = [PILLOW_ROUNDING_BIAS; 3];
                     for (coefficient_offset, &weight) in weights.iter().enumerate() {
-                        let input =
-                            values[(source_y * source.width + source_x + coefficient_offset)
-                                * channels
-                                + channel];
-                        sum += i64::from(input) * i64::from(weight);
+                        let input_index =
+                            (source_y * source.width + source_x + coefficient_offset) * 3;
+                        let weight = i64::from(weight);
+                        sums[0] += i64::from(values[input_index]) * weight;
+                        sums[1] += i64::from(values[input_index + 1]) * weight;
+                        sums[2] += i64::from(values[input_index + 2]) * weight;
                     }
-                    intermediate[(intermediate_y * crop.target.width + x) * channels + channel] =
-                        pillow_clip_u8(sum);
+                    let intermediate_index = x * 3;
+                    row[intermediate_index] = pillow_clip_u8(sums[0]);
+                    row[intermediate_index + 1] = pillow_clip_u8(sums[1]);
+                    row[intermediate_index + 2] = pillow_clip_u8(sums[2]);
                 }
-            }
-        }
+            },
+        );
+    } else {
+        pillow_rows(
+            intermediate,
+            crop.target.width * channels,
+            |intermediate_y, row| {
+                let source_y = source_row_start + intermediate_y;
+                for x in 0..crop.target.width {
+                    let weights = parts.horizontal.weights(x);
+                    let source_x = parts.horizontal.start(x);
+                    for channel in 0..channels {
+                        let mut sum = PILLOW_ROUNDING_BIAS;
+                        for (coefficient_offset, &weight) in weights.iter().enumerate() {
+                            let input =
+                                values[(source_y * source.width + source_x + coefficient_offset)
+                                    * channels
+                                    + channel];
+                            sum += i64::from(input) * i64::from(weight);
+                        }
+                        row[x * channels + channel] = pillow_clip_u8(sum);
+                    }
+                }
+            },
+        );
     }
 
     if channels == 3 {
@@ -2413,6 +2423,17 @@ mod tests {
     #[test]
     fn pillow_direct_crop_matches_full_resize_reference_across_filters_layouts_and_sizes() {
         let geometries = [
+            (
+                ImageSize::new(513, 769).expect("positive downsampling source"),
+                ResizeCrop::new(
+                    ImageSize::new(129, 193).expect("positive resized image"),
+                    33,
+                    16,
+                    ImageSize::new(97, 127).expect("positive crop"),
+                )
+                .expect("crop inside resized image"),
+                3,
+            ),
             (
                 ImageSize::new(47, 83).unwrap(),
                 ResizeCrop::new(
