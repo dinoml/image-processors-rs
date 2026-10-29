@@ -80,7 +80,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install FFmpeg development libraries
-        run: brew install ffmpeg pkg-config
+        run: |
+          brew install ffmpeg@8 pkg-config
+          echo "PKG_CONFIG_PATH=$(brew --prefix ffmpeg@8)/lib/pkgconfig" >> "$GITHUB_ENV"
+          echo "$(brew --prefix ffmpeg@8)/bin" >> "$GITHUB_PATH"
       - name: Check all features
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - name: Test all features
