@@ -3394,7 +3394,7 @@ mod pillow_parallel_tests {
                 .map(|i| u8::try_from((i * 73 + (i / 11) * 17) % 256).expect("byte"))
                 .collect::<Vec<_>>();
             if channels == 4 {
-                for pixel in input.chunks_exact_mut(4) {
+                for pixel in input.as_chunks_mut::<4>().0 {
                     pixel[3] = 255;
                 }
             }

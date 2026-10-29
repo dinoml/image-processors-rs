@@ -1190,7 +1190,7 @@ impl TaskVisionImageProcessor {
             .collect();
         values = owlv2_antialiased_resize(&values, source_size, target_size)?;
         if self.config.do_normalize {
-            for pixel in values.chunks_exact_mut(3) {
+            for pixel in values.as_chunks_mut::<3>().0 {
                 for (channel, value) in pixel.iter_mut().enumerate() {
                     let mean = self.config.image_mean[channel % self.config.image_mean.len()];
                     let std = self.config.image_std[channel % self.config.image_std.len()];
@@ -1210,7 +1210,7 @@ impl TaskVisionImageProcessor {
                     .checked_mul(target_size.width)
                     .ok_or(TransformError::ImageSizeOverflow)?;
                 let mut channels_first = vec![0.0_f32; pixels * 3];
-                for (pixel_index, pixel) in values.chunks_exact(3).enumerate() {
+                for (pixel_index, pixel) in values.as_chunks::<3>().0.iter().enumerate() {
                     for channel in 0..3 {
                         channels_first[channel * pixels + pixel_index] = pixel[channel];
                     }
@@ -1263,7 +1263,7 @@ impl TaskVisionImageProcessor {
             .collect::<Vec<_>>();
         let mut values = resize_f32_align_corners(&values, source_size, target_size)?;
         if self.config.do_normalize {
-            for pixel in values.chunks_exact_mut(3) {
+            for pixel in values.as_chunks_mut::<3>().0 {
                 for (channel, value) in pixel.iter_mut().enumerate() {
                     let mean = self.config.image_mean[channel % self.config.image_mean.len()];
                     let std = self.config.image_std[channel % self.config.image_std.len()];
@@ -1815,7 +1815,7 @@ fn float_hwc_to_tensor(
                 .checked_mul(size.width)
                 .ok_or(TransformError::ImageSizeOverflow)?;
             let mut channels_first = vec![0.0_f32; pixels * 3];
-            for (pixel_index, pixel) in values.chunks_exact(3).enumerate() {
+            for (pixel_index, pixel) in values.as_chunks::<3>().0.iter().enumerate() {
                 for channel in 0..3 {
                     channels_first[channel * pixels + pixel_index] = pixel[channel];
                 }
@@ -2312,7 +2312,7 @@ fn reverse_rgb_channels(frame: ImageFrame) -> Result<ImageFrame, ImageProcessorE
     let width = frame.width();
     let height = frame.height();
     let (_, _, _, mut data, timing) = frame.into_parts();
-    for pixel in data.chunks_exact_mut(3) {
+    for pixel in data.as_chunks_mut::<3>().0 {
         pixel.swap(0, 2);
     }
     Ok(ImageFrame::new(width, height, PixelFormat::Rgb8, data)?.with_timing(timing))
@@ -2367,7 +2367,7 @@ fn concatenate_matte_channels(
             vec![1, 4, height, width]
         }
         ImageLayout::HeightWidthChannels => {
-            for (rgb, &trimap) in image_values.chunks_exact(3).zip(&trimap_values) {
+            for (rgb, &trimap) in image_values.as_chunks::<3>().0.iter().zip(&trimap_values) {
                 values.extend_from_slice(rgb);
                 values.push(trimap);
             }
@@ -2396,8 +2396,8 @@ mod owlv2_resize_tests {
         let expected = [
             3., 3., 5., 5., 3., 3., 5., 5., 7., 7., 9., 9., 7., 7., 9., 9.,
         ];
-        for (pixel, expected) in actual.chunks_exact(3).zip(expected) {
-            assert_eq!(pixel, [expected; 3]);
+        for (pixel, expected) in actual.as_chunks::<3>().0.iter().zip(expected) {
+            assert_eq!(*pixel, [expected; 3]);
         }
         let singleton =
             owlv2_antialiased_resize(&[7.; 3], ImageSize::new(1, 1).expect("source"), target)
