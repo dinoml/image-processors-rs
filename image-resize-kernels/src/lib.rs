@@ -279,6 +279,43 @@ pub fn resize_f32_torchvision(
     target: ImageSize,
     filter: ResizeFilter,
 ) -> Result<Vec<f32>, ResizeError> {
+    resize_f32_antialiased(values, source, channels, target, filter, false)
+}
+
+/// Resizes interleaved finite `f32` values with antialiased bilinear filtering.
+///
+/// `align_corners` selects PyTorch's aligned-corner scale; `false` retains
+/// Torchvision's half-pixel scale. Filtering keeps floating values throughout.
+///
+/// # Errors
+///
+/// Returns an error for invalid dimensions, channel counts, storage lengths,
+/// nonfinite values, or overflowing image sizes.
+pub fn resize_f32_bilinear_antialiased(
+    values: &[f32],
+    source: ImageSize,
+    channels: usize,
+    target: ImageSize,
+    align_corners: bool,
+) -> Result<Vec<f32>, ResizeError> {
+    resize_f32_antialiased(
+        values,
+        source,
+        channels,
+        target,
+        ResizeFilter::Bilinear,
+        align_corners,
+    )
+}
+
+fn resize_f32_antialiased(
+    values: &[f32],
+    source: ImageSize,
+    channels: usize,
+    target: ImageSize,
+    filter: ResizeFilter,
+    align_corners: bool,
+) -> Result<Vec<f32>, ResizeError> {
     validate_image_data(values.len(), source, channels)?;
     if let Some((index, _)) = values
         .iter()
@@ -287,7 +324,14 @@ pub fn resize_f32_torchvision(
     {
         return Err(ResizeError::NonFiniteValue { index });
     }
-    resize_f32_torchvision_interleaved(values, source, channels, target, filter)
+    resize_f32_torchvision_interleaved_with_alignment(
+        values,
+        source,
+        channels,
+        target,
+        filter,
+        align_corners,
+    )
 }
 
 /// Resizes owned interleaved `u8` image data.
@@ -658,6 +702,19 @@ fn resize_f32_torchvision_interleaved(
     target: ImageSize,
     filter: ResizeFilter,
 ) -> Result<Vec<f32>, ResizeError> {
+    resize_f32_torchvision_interleaved_with_alignment(
+        values, source, channels, target, filter, false,
+    )
+}
+
+fn resize_f32_torchvision_interleaved_with_alignment(
+    values: &[f32],
+    source: ImageSize,
+    channels: usize,
+    target: ImageSize,
+    filter: ResizeFilter,
+    align_corners: bool,
+) -> Result<Vec<f32>, ResizeError> {
     if source == target {
         return Ok(values.to_vec());
     }
@@ -676,8 +733,30 @@ fn resize_f32_torchvision_interleaved(
         return Ok(output);
     }
 
-    let horizontal = Coefficients::new(source.width, target.width, filter)?;
-    let vertical = Coefficients::new(source.height, target.height, filter)?;
+    let horizontal = if align_corners {
+        Coefficients::new_window_with_alignment(
+            source.width,
+            target.width,
+            0,
+            target.width,
+            filter,
+            true,
+        )?
+    } else {
+        Coefficients::new(source.width, target.width, filter)?
+    };
+    let vertical = if align_corners {
+        Coefficients::new_window_with_alignment(
+            source.height,
+            target.height,
+            0,
+            target.height,
+            filter,
+            true,
+        )?
+    } else {
+        Coefficients::new(source.height, target.height, filter)?
+    };
     let output_len = image_len(target, channels)?;
     let intermediate_len = source
         .height
@@ -1762,6 +1841,17 @@ impl Coefficients {
         output_len: usize,
         filter: ResizeFilter,
     ) -> Result<Self, ResizeError> {
+        Self::new_window_with_alignment(input, output, output_start, output_len, filter, false)
+    }
+
+    fn new_window_with_alignment(
+        input: usize,
+        output: usize,
+        output_start: usize,
+        output_len: usize,
+        filter: ResizeFilter,
+        align_corners: bool,
+    ) -> Result<Self, ResizeError> {
         if input == 0 || output == 0 {
             return Err(ResizeError::InvalidSize {
                 height: input,
@@ -1783,7 +1873,15 @@ impl Coefficients {
         }
 
         let filter_support = filter_support(filter);
-        let scale = input as f64 / output as f64;
+        let scale = if align_corners {
+            if output > 1 {
+                (input - 1) as f64 / (output - 1) as f64
+            } else {
+                0.0
+            }
+        } else {
+            input as f64 / output as f64
+        };
         let filter_scale = scale.max(1.0);
         let support = filter_support * filter_scale;
         let window = (support * 2.0).ceil() as usize + 3;

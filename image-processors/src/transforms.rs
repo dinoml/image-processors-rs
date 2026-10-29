@@ -1577,6 +1577,41 @@ pub(crate) fn resize_f32_image_torchvision_bilinear(
     })
 }
 
+/// Resizes interleaved floating image values with antialiased bilinear filtering.
+///
+/// Use `align_corners = true` for PyTorch interpolation with aligned corners.
+/// Values remain floating point, so crop, rescale, resize and normalization can
+/// be composed without a round trip through byte pixels.
+///
+/// # Errors
+///
+/// Returns an error for invalid geometry, storage lengths, channel counts or
+/// nonfinite pixel values.
+pub fn resize_f32_bilinear_antialiased(
+    values: &[f32],
+    source_size: ImageSize,
+    channels: usize,
+    target_size: ImageSize,
+    align_corners: bool,
+) -> Result<Vec<f32>, TransformError> {
+    image_resize_kernels::resize_f32_bilinear_antialiased(
+        values,
+        KernelImageSize {
+            height: source_size.height,
+            width: source_size.width,
+        },
+        channels,
+        KernelImageSize {
+            height: target_size.height,
+            width: target_size.width,
+        },
+        align_corners,
+    )
+    .map_err(|error| TransformError::ResizeKernel {
+        message: error.to_string(),
+    })
+}
+
 /// Resizes and center-crops contiguous floating-point image planes.
 ///
 /// Planes are stored consecutively in row-major order. Resizing uses
