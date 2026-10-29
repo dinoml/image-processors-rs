@@ -128,7 +128,7 @@ impl ImageSize {
 
     /// Qwen-VL style resize shape computation.
     ///
-    /// Dimensions are rounded to a multiple of `factor`, constrained by total
+    /// Dimensions use ties-to-even rounding to a multiple of `factor`, constrained by total
     /// pixel bounds, and kept close to the source aspect ratio.
     ///
     /// # Errors
@@ -160,11 +160,11 @@ impl ImageSize {
 
         let factor_f = limits.factor as f64;
         let mut resized_height = multiple_from_units(
-            (self.height as f64 / factor_f).round().max(1.0),
+            (self.height as f64 / factor_f).round_ties_even(),
             limits.factor,
         )?;
         let mut resized_width = multiple_from_units(
-            (self.width as f64 / factor_f).round().max(1.0),
+            (self.width as f64 / factor_f).round_ties_even(),
             limits.factor,
         )?;
         let pixel_count = checked_area(resized_height, resized_width)?;
@@ -1245,7 +1245,6 @@ fn multiple_from_units(units: f64, factor: usize) -> Result<usize, TransformErro
         return Err(TransformError::ImageSizeOverflow);
     }
 
-    let units = units.max(1.0);
     if units > (usize::MAX / factor) as f64 {
         return Err(TransformError::ImageSizeOverflow);
     }
