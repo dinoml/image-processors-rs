@@ -256,6 +256,8 @@ pub struct EncoderImageProcessorConfig {
     /// Resize filter.
     pub resample: ResizeFilter,
     /// Resize parity implementation.
+    /// Compatibility also places odd center-crop padding before the image,
+    /// matching Transformers' PIL path; other policies retain padding after it.
     pub resize_parity: ResizeParity,
     /// Decode backend used by path entrypoints.
     pub decode_backend: ImageDecodeBackend,
@@ -1123,6 +1125,7 @@ fn prepare_encoder_geometry(
     decision: ResizeDecision,
     ties_even: bool,
 ) -> Result<ImageFrame, PresetProcessorError> {
+    let pil_padding = decision.parity() == ResizeParity::Compatibility && !ties_even;
     match geometry {
         EncoderGeometry::Fixed { size } => Ok(resize_frame_with_decision(
             image,
@@ -1132,14 +1135,14 @@ fn prepare_encoder_geometry(
         )?),
         EncoderGeometry::FixedThenCenterCrop { size, crop_size } => {
             let resized = resize_frame_with_decision(image, size, decision, ResizeMode::Default)?;
-            center_crop_with_padding(&resized, crop_size)
+            center_crop_with_padding(&resized, crop_size, pil_padding)
         }
         EncoderGeometry::ShortestEdgeThenCenterCrop {
             shortest_edge,
             crop_size,
         } => {
             let resized = resize_shortest_edge(image, shortest_edge, decision)?;
-            center_crop_with_padding(&resized, crop_size)
+            center_crop_with_padding(&resized, crop_size, pil_padding)
         }
         EncoderGeometry::ScaledShortestEdgeThenCenterCrop {
             shortest_edge,
@@ -1155,7 +1158,7 @@ fn prepare_encoder_geometry(
                 .ok_or(TransformError::ImageSizeOverflow)?
                 / scale_denominator;
             let resized = resize_shortest_edge(image, scaled, decision)?;
-            center_crop_with_padding(&resized, crop_size)
+            center_crop_with_padding(&resized, crop_size, pil_padding)
         }
         EncoderGeometry::CropPercentage {
             output_edge,
@@ -1176,7 +1179,7 @@ fn prepare_encoder_geometry(
             } else {
                 let resized_edge = (output_edge as f64 / crop_percentage) as usize;
                 let resized = resize_shortest_edge(image, resized_edge, decision)?;
-                center_crop_with_padding_rounding(&resized, output, ties_even)
+                center_crop_with_padding_rounding(&resized, output, ties_even, pil_padding)
             }
         }
         EncoderGeometry::PerceiverCropThenResize {
@@ -1188,7 +1191,7 @@ fn prepare_encoder_geometry(
                 checked_ratio(size.height, min_dimension, crop_reference.height)?,
                 checked_ratio(size.width, min_dimension, crop_reference.width)?,
             )?;
-            let cropped = center_crop_with_padding(image, crop_size)?;
+            let cropped = center_crop_with_padding(image, crop_size, pil_padding)?;
             Ok(resize_frame_with_decision(
                 &cropped,
                 size,
@@ -1219,7 +1222,7 @@ fn prepare_encoder_geometry(
                 decision,
                 ResizeMode::Default,
             )?;
-            center_crop_with_padding(&resized, crop_size)
+            center_crop_with_padding(&resized, crop_size, pil_padding)
         }
     }
 }
@@ -1245,22 +1248,34 @@ fn resize_shortest_edge(
 fn center_crop_with_padding(
     image: &ImageFrame,
     crop_size: ImageSize,
+    pil_padding: bool,
 ) -> Result<ImageFrame, PresetProcessorError> {
-    center_crop_with_padding_rounding(image, crop_size, false)
+    center_crop_with_padding_rounding(image, crop_size, false, pil_padding)
 }
 
 fn center_crop_with_padding_rounding(
     image: &ImageFrame,
     crop_size: ImageSize,
     ties_even: bool,
+    pil_padding: bool,
 ) -> Result<ImageFrame, PresetProcessorError> {
     let missing_height = crop_size.height.saturating_sub(image.height());
     let missing_width = crop_size.width.saturating_sub(image.width());
     let padded = if missing_height == 0 && missing_width == 0 {
         None
     } else {
-        let top = missing_height / 2;
-        let left = missing_width / 2;
+        // Transformers' PIL center_crop uses ceil for top/left padding. Keep
+        // the existing floor placement for other parity policies and timm.
+        let top = if pil_padding {
+            missing_height.div_ceil(2)
+        } else {
+            missing_height / 2
+        };
+        let left = if pil_padding {
+            missing_width.div_ceil(2)
+        } else {
+            missing_width / 2
+        };
         Some(pad_frame(
             image,
             Padding::new(top, missing_width - left, missing_height - top, left),
