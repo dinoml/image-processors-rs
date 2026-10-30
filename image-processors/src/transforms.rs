@@ -1254,6 +1254,59 @@ fn multiple_from_units(units: f64, factor: usize) -> Result<usize, TransformErro
         .ok_or(TransformError::ImageSizeOverflow)
 }
 
+/// Transformers' capped shortest-edge geometry keeps the unrounded scale for
+/// the long axis and uses Python halfway-to-even rounding for the short axis.
+pub(crate) fn transformers_shortest_edge_resize_size(
+    source: ImageSize,
+    shortest_edge: usize,
+    longest_edge: Option<usize>,
+) -> Result<ImageSize, TransformError> {
+    validate_size(source)?;
+    if shortest_edge == 0 || longest_edge == Some(0) {
+        return Err(TransformError::InvalidScaleFactor(0));
+    }
+    let short = source.height.min(source.width);
+    let long = source.height.max(source.width);
+    if let Some(maximum) = longest_edge {
+        if long as f64 / short as f64 * shortest_edge as f64 > maximum as f64 {
+            let raw = maximum as f64 * short as f64 / long as f64;
+            let rounded = checked_float_resize_dimension(raw.round_ties_even())?;
+            if short == rounded {
+                return Ok(source);
+            }
+            let long_output = checked_float_resize_dimension(raw * long as f64 / short as f64)?;
+            return if source.width < source.height {
+                ImageSize::new(long_output, rounded)
+            } else {
+                ImageSize::new(rounded, long_output)
+            };
+        }
+    }
+    shortest_edge_resize_size(source, shortest_edge, None)
+}
+
+/// Transformers max-height/max-width geometry also enlarges small inputs.
+pub(crate) fn max_height_width_resize_size(
+    source: ImageSize,
+    maximum: ImageSize,
+) -> Result<ImageSize, TransformError> {
+    validate_size(source)?;
+    validate_size(maximum)?;
+    let scale = (maximum.height as f64 / source.height as f64)
+        .min(maximum.width as f64 / source.width as f64);
+    ImageSize::new(
+        checked_float_resize_dimension(source.height as f64 * scale)?,
+        checked_float_resize_dimension(source.width as f64 * scale)?,
+    )
+}
+
+fn checked_float_resize_dimension(value: f64) -> Result<usize, TransformError> {
+    if !value.is_finite() || value < 0.0 || value >= usize::MAX as f64 {
+        return Err(TransformError::ImageSizeOverflow);
+    }
+    Ok(value as usize)
+}
+
 fn checked_ratio_dimension(
     numerator: usize,
     multiplier: usize,
