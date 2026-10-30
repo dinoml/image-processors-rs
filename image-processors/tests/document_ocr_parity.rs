@@ -173,8 +173,10 @@ fn reference_f32(reference: &TensorSummary) -> Vec<f32> {
         .expect("float32 base64 should decode");
     assert_eq!(bytes.len() % size_of::<f32>(), 0);
     bytes
-        .chunks_exact(size_of::<f32>())
-        .map(|chunk| f32::from_le_bytes(chunk.try_into().expect("chunk length is 4")))
+        .as_chunks::<{ size_of::<f32>() }>()
+        .0
+        .iter()
+        .map(|&chunk| f32::from_le_bytes(chunk))
         .collect()
 }
 

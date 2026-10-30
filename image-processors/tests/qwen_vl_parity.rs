@@ -360,7 +360,9 @@ fn reference_grid_thw(case: &ParityCase, output_name: &str) -> Vec<[usize; 3]> {
     assert_eq!(reference.shape.len(), 2);
     assert_eq!(reference.shape[1], 3);
     reference_i64(reference)
-        .chunks_exact(3)
+        .as_chunks::<3>()
+        .0
+        .iter()
         .map(|chunk| {
             [
                 usize::try_from(chunk[0]).expect("temporal grid should fit usize"),
@@ -388,8 +390,10 @@ fn reference_f32(reference: &TensorSummary) -> Vec<f32> {
         .expect("float32 base64 should decode");
     assert_eq!(bytes.len() % size_of::<f32>(), 0);
     bytes
-        .chunks_exact(size_of::<f32>())
-        .map(|chunk| f32::from_le_bytes(chunk.try_into().expect("chunk length is 4")))
+        .as_chunks::<{ size_of::<f32>() }>()
+        .0
+        .iter()
+        .map(|&chunk| f32::from_le_bytes(chunk))
         .collect()
 }
 
@@ -401,8 +405,10 @@ fn reference_i64(reference: &TensorSummary) -> Vec<i64> {
         .expect("int64 base64 should decode");
     assert_eq!(bytes.len() % size_of::<i64>(), 0);
     bytes
-        .chunks_exact(size_of::<i64>())
-        .map(|chunk| i64::from_le_bytes(chunk.try_into().expect("chunk length is 8")))
+        .as_chunks::<{ size_of::<i64>() }>()
+        .0
+        .iter()
+        .map(|&chunk| i64::from_le_bytes(chunk))
         .collect()
 }
 

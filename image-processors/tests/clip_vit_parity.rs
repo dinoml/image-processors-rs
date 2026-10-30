@@ -334,8 +334,10 @@ fn reference_f32(reference: &TensorSummary) -> Vec<f32> {
         "float32 payload should be aligned"
     );
     bytes
-        .chunks_exact(size_of::<f32>())
-        .map(|chunk| f32::from_le_bytes(chunk.try_into().expect("chunk length is 4")))
+        .as_chunks::<{ size_of::<f32>() }>()
+        .0
+        .iter()
+        .map(|&chunk| f32::from_le_bytes(chunk))
         .collect()
 }
 

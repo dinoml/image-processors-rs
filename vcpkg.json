@@ -2,6 +2,14 @@
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
   "name": "image-processors-native-deps",
   "version-string": "0.1.0",
+  "builtin-baseline": "d4c0a46cb8f63e5c9fa007d13baf1cb3e43bf7e3",
+  "overrides": [
+    {
+      "name": "ffmpeg",
+      "version": "8.1.2",
+      "port-version": 3
+    }
+  ],
   "dependencies": [
     "ffmpeg"
   ]
