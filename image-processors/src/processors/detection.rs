@@ -575,68 +575,147 @@ fn preprocess_detr_images_output(
     config: &DetrImageProcessorConfig,
     images: &[ImageFrame],
 ) -> Result<ProcessorOutput, ImageProcessorError> {
-    if images.is_empty() {
-        return Err(ImageProcessorError::EmptyBatch);
-    }
-
-    let mut resized = Vec::with_capacity(images.len());
-    let mut original_sizes = Vec::with_capacity(images.len());
-    let mut reshaped_sizes = Vec::with_capacity(images.len());
-    for image in images {
-        let (frame, original_size, reshaped_size) = prepare_detr_frame(config, image)?;
-        resized.push(frame);
-        original_sizes.push(original_size);
-        reshaped_sizes.push(reshaped_size);
-    }
-
-    let tensor_processor = tensor_only_processor(config.image_processor_config())?;
-    let (tensor, pixel_mask) = if config.do_pad {
-        let target = padded_batch_target_for_sizes(
-            &reshaped_sizes,
-            config.pad_size,
-            config.pad_to_multiple,
-        )?;
-        // DETR pads after normalization, so invisible pixels are tensor zeros.
-        let tensors = resized
-            .iter()
-            .map(|frame| tensor_processor.preprocess_images(std::slice::from_ref(frame)))
-            .collect::<Result<Vec<_>, _>>()?;
-        (
-            pad_spatial_tensors(tensors, target, config.output_layout)?,
-            pixel_mask_for_valid_sizes(&reshaped_sizes, target)?,
-        )
-    } else {
-        let tensor = tensor_processor.preprocess_images(&resized)?;
-        let pixel_mask = full_pixel_mask_for(&tensor)?;
-        (tensor, pixel_mask)
-    };
-
-    let mut output = ProcessorOutput::from_pixel_values(tensor);
-    output.insert_tensor(ProcessorTensorName::PixelMask, pixel_mask);
-    output.insert_metadata(
-        ProcessorMetadataName::OriginalSizes,
-        ProcessorMetadataValue::ImageSizes(original_sizes),
-    );
-    output.insert_metadata(
-        ProcessorMetadataName::ReshapedInputSizes,
-        ProcessorMetadataValue::ImageSizes(reshaped_sizes),
-    );
-    Ok(output)
+    ImageProcessor::new(config.image_processor_config())?.preprocess_detection_images_output(
+        images,
+        Some(RecipeResizeStage::shortest_edge(
+            config.resize_size.shortest_edge,
+            config.resize_size.longest_edge,
+            config.resample,
+            config.resize_parity,
+        )),
+        None,
+        config.do_pad,
+        config.pad_size,
+        config.pad_to_multiple,
+    )
 }
 
-fn prepare_detr_frame(
-    config: &DetrImageProcessorConfig,
-    image: &ImageFrame,
-) -> Result<(ImageFrame, ImageSize, ImageSize), ImageProcessorError> {
-    let original_size = ImageSize::new(image.height(), image.width())?;
-    let reshaped_size = shortest_edge_resize_output_size(original_size, config.resize_size)?;
-    let resized = resize_frame_with_decision(
-        image,
-        reshaped_size,
-        config.resize_decision(),
-        ResizeMode::Default,
-    )?;
-    Ok((resized, original_size, reshaped_size))
+impl ImageProcessor {
+    /// Preprocess detection images with configurable pixel conversion and normalization.
+    ///
+    /// Pixel conversion, rescaling, normalization and output layout come from this
+    /// processor's configuration. Geometry is selected here instead of applying
+    /// the configuration's fixed resize again. `resize` supports fixed,
+    /// shortest-edge and longest-edge recipes. `fit_within` instead fits each
+    /// image into a height/width bound while preserving its aspect ratio. With
+    /// neither geometry option, image dimensions are preserved.
+    ///
+    /// Padding is applied after normalization and produces tensor zeros. The
+    /// output includes pixel values, a boolean valid-pixel mask, original sizes
+    /// and resized sizes, using the same helpers as the typed DETR processor.
+    ///
+    /// # Errors
+    /// Returns an error for an empty batch, conflicting or unsupported geometry,
+    /// invalid dimensions, incompatible unpadded shapes or preprocessing failures.
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Positive image bounds use the upstream aspect-preserving floating-point size calculation"
+    )]
+    pub fn preprocess_detection_images_output(
+        &self,
+        images: &[ImageFrame],
+        resize: Option<RecipeResizeStage>,
+        fit_within: Option<ImageSize>,
+        do_pad: bool,
+        pad_size: Option<ImageSize>,
+        pad_to_multiple: Option<usize>,
+    ) -> Result<ProcessorOutput, ImageProcessorError> {
+        if images.is_empty() {
+            return Err(ImageProcessorError::EmptyBatch);
+        }
+        if resize.is_some() && fit_within.is_some() {
+            return Err(ImageProcessorError::UnsupportedProcessorOption {
+                field: "resize and fit_within together",
+            });
+        }
+        let config = self.config();
+        let output_layout = config.output_image_layout();
+        let mut resized = Vec::with_capacity(images.len());
+        let mut original_sizes = Vec::with_capacity(images.len());
+        let mut reshaped_sizes = Vec::with_capacity(images.len());
+        for image in images {
+            let original = ImageSize::new(image.height(), image.width())?;
+            let reshaped = if let Some(bounds) = fit_within {
+                let bounds = ImageSize::new(bounds.height, bounds.width)?;
+                let scale = (bounds.height as f64 / original.height as f64)
+                    .min(bounds.width as f64 / original.width as f64);
+                ImageSize::new(
+                    (original.height as f64 * scale) as usize,
+                    (original.width as f64 * scale) as usize,
+                )?
+            } else if let Some(stage) = resize.as_ref() {
+                match stage.target {
+                    crate::recipe::RecipeResizeTarget::Fixed { size } => {
+                        ImageSize::new(size.height, size.width)?
+                    }
+                    crate::recipe::RecipeResizeTarget::ShortestEdge {
+                        shortest_edge,
+                        longest_edge,
+                    } => shortest_edge_resize_output_size(
+                        original,
+                        ShortestEdgeResizeConfig {
+                            shortest_edge,
+                            longest_edge,
+                        },
+                    )?,
+                    crate::recipe::RecipeResizeTarget::LongestEdge { longest_edge } => {
+                        crate::transforms::longest_edge_resize_size(original, longest_edge)?
+                    }
+                    _ => {
+                        return Err(ImageProcessorError::UnsupportedProcessorOption {
+                            field: "detection resize recipe target",
+                        })
+                    }
+                }
+            } else {
+                original
+            };
+            let decision = resize.as_ref().map_or_else(
+                || config.resize_decision(),
+                |stage| resize_decision_for_parts(stage.filter, stage.parity),
+            );
+            let mode = resize
+                .as_ref()
+                .map_or(ResizeMode::Default, |stage| stage.mode);
+            let frame = if resize.is_none() && fit_within.is_none() {
+                image.clone()
+            } else {
+                resize_frame_with_decision(image, reshaped, decision, mode)?
+            };
+            resized.push(frame);
+            original_sizes.push(original);
+            reshaped_sizes.push(reshaped);
+        }
+        let tensor_processor = tensor_only_processor(config.clone())?;
+        let (tensor, pixel_mask) = if do_pad {
+            let target = padded_batch_target_for_sizes(&reshaped_sizes, pad_size, pad_to_multiple)?;
+            let tensors = resized
+                .iter()
+                .map(|frame| tensor_processor.preprocess_images(std::slice::from_ref(frame)))
+                .collect::<Result<Vec<_>, _>>()?;
+            (
+                pad_spatial_tensors(tensors, target, output_layout)?,
+                pixel_mask_for_valid_sizes(&reshaped_sizes, target)?,
+            )
+        } else {
+            let tensor = tensor_processor.preprocess_images(&resized)?;
+            let pixel_mask = full_pixel_mask_for(&tensor)?;
+            (tensor, pixel_mask)
+        };
+        let mut output = ProcessorOutput::from_pixel_values(tensor);
+        output.insert_tensor(ProcessorTensorName::PixelMask, pixel_mask);
+        output.insert_metadata(
+            ProcessorMetadataName::OriginalSizes,
+            ProcessorMetadataValue::ImageSizes(original_sizes),
+        );
+        output.insert_metadata(
+            ProcessorMetadataName::ReshapedInputSizes,
+            ProcessorMetadataValue::ImageSizes(reshaped_sizes),
+        );
+        Ok(output)
+    }
 }
 
 pub(super) fn shortest_edge_resize_output_size(
