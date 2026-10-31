@@ -92,6 +92,14 @@ Invalid dimensions, normalization values, layouts, or incompatible options are
 reported when the processor is constructed or called. Library code returns
 typed errors and does not require callers to catch panics.
 
+For configurable encoder geometry, `EncoderGeometry::ResizeWithCrop` combines
+any supported resize target with an optional `RecipeCropStage`. Select
+`CenterTiesEven` for Torchvision-style nearest-even crop origins and symmetric
+zero padding, independently of the preset identity. The processor's recipe
+reports the same selected crop. Floating rescale-before-resize execution supports
+this nearest-even crop or no crop; other crop policies return an unsupported
+geometry error on that floating path.
+
 ## Supply media
 
 ### Filesystem paths
