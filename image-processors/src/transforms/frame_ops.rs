@@ -1267,6 +1267,45 @@ pub fn resize_f32(
     .map_err(transform_error_from_resize)
 }
 
+/// Resize FP32 pixels with an explicit interpolation mode, without byte conversion.
+/// # Errors
+/// Rejects invalid geometry, storage, channels or nonfinite samples.
+pub fn resize_f32_opencv(
+    values: &[f32],
+    source: ImageSize,
+    channels: usize,
+    target: ImageSize,
+    interpolation: OpenCvInterpolation,
+) -> Result<Vec<f32>, TransformError> {
+    image_resize_kernels::resize_f32_opencv(
+        values,
+        kernel_size(source),
+        channels,
+        kernel_size(target),
+        interpolation,
+    )
+    .map_err(transform_error_from_resize)
+}
+/// Resize FP64 pixels while retaining their precision.
+/// # Errors
+/// Rejects invalid geometry, storage, channels or nonfinite samples.
+pub fn resize_f64_opencv(
+    values: &[f64],
+    source: ImageSize,
+    channels: usize,
+    target: ImageSize,
+    interpolation: OpenCvInterpolation,
+) -> Result<Vec<f64>, TransformError> {
+    image_resize_kernels::resize_f64_opencv(
+        values,
+        kernel_size(source),
+        channels,
+        kernel_size(target),
+        interpolation,
+    )
+    .map_err(transform_error_from_resize)
+}
+
 fn resize_image_data(
     values: &[u8],
     source: ImageSize,
