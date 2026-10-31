@@ -75,6 +75,7 @@ pub(super) fn kernel_profile(parity: ResizeParity) -> KernelResizeProfile {
         ResizeParity::Torchvision => KernelResizeProfile::Torchvision,
         ResizeParity::TorchvisionNoAntialias => KernelResizeProfile::TorchvisionNoAntialias,
         ResizeParity::OpenCvLinear => KernelResizeProfile::OpenCvLinear,
+        ResizeParity::OpenCvScaleDependent => KernelResizeProfile::OpenCvScaleDependent,
         ResizeParity::Resampling | ResizeParity::PixelExact => KernelResizeProfile::Fast,
     }
 }

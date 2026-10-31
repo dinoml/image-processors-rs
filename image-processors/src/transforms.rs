@@ -2,6 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+pub use image_resize_kernels::OpenCvInterpolation;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -36,10 +37,10 @@ pub use frame_ops::{
     pad_video_clip_frames_with_canvas_fill, padded_image_size, repeat_last_frame_batch_to_multiple,
     repeat_last_image_sequence_to_multiple, repeat_last_video_clip_to_multiple,
     resize_center_crop_frame, resize_center_crop_frame_with_decision, resize_center_crop_plan,
-    resize_fill_plan, resize_frame, resize_frame_to_area_limit,
-    resize_frame_to_bottom_right_padded_frame, resize_frame_to_fill_frame,
-    resize_frame_with_decision, resize_rgb_to_fill_frame, temporal_repeat_last_plan,
-    unpad_frame_to_size, validate_padding_fill,
+    resize_fill_plan, resize_frame, resize_frame_opencv, resize_frame_opencv_scale_dependent,
+    resize_frame_to_area_limit, resize_frame_to_bottom_right_padded_frame,
+    resize_frame_to_fill_frame, resize_frame_with_decision, resize_rgb_to_fill_frame,
+    temporal_repeat_last_plan, unpad_frame_to_size, validate_padding_fill,
 };
 use frame_ops::{crop_image_data, frame_size, new_frame};
 pub(crate) use frame_ops::{
@@ -577,9 +578,12 @@ impl ResizeFilter {
     }
 }
 
-/// Concrete resize kernel used by the resize path.
+/// Resize kernel or geometry-dependent kernel policy used by the resize path.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum ResizeKernel {
+    /// INTER_AREA reduction or the selected OpenCV enlargement kernel,
+    /// resolved against source and target dimensions at execution.
+    OpenCvScaleDependent,
     /// Nearest-neighbor sampling.
     Nearest,
     /// Triangle filter used for bilinear-style resizing.
@@ -605,6 +609,9 @@ pub enum ResizeParity {
     TorchvisionNoAntialias,
     /// OpenCV CPU byte INTER_LINEAR with quantized coefficients and byte rounding.
     OpenCvLinear,
+    /// Use INTER_AREA when neither spatial axis grows; otherwise use the
+    /// selected OpenCV interpolation (Lanczos means INTER_LANCZOS4).
+    OpenCvScaleDependent,
     /// Preserve pixel identities with nearest-neighbor sampling.
     PixelExact,
 }
@@ -673,6 +680,16 @@ impl ResizeDecision {
         }
     }
 
+    /// Creates a scale-dependent OpenCV byte-image resize decision. The filter
+    /// selects enlargement behavior; reduction uses INTER_AREA.
+    pub fn opencv_scale_dependent(filter: ResizeFilter) -> Self {
+        Self {
+            filter,
+            kernel: ResizeKernel::OpenCvScaleDependent,
+            parity: ResizeParity::OpenCvScaleDependent,
+        }
+    }
+
     /// Creates a resize decision from a filter and parity policy.
     ///
     /// # Errors
@@ -681,6 +698,7 @@ impl ResizeDecision {
     /// `OpenCvLinear` is requested with a filter other than `Bilinear`.
     pub fn new(filter: ResizeFilter, parity: ResizeParity) -> Result<Self, TransformError> {
         match parity {
+            ResizeParity::OpenCvScaleDependent => Ok(Self::opencv_scale_dependent(filter)),
             ResizeParity::OpenCvLinear if filter == ResizeFilter::Bilinear => {
                 Ok(Self::opencv_linear())
             }
