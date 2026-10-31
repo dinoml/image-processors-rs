@@ -12,6 +12,8 @@ use image_resize_kernels::{
     ResizeFilter as KernelResizeFilter, ResizeProfile, ResizeWorkspace as KernelResizeWorkspace,
 };
 
+mod color;
+pub use color::{matlab_rgb_to_ycbcr_f32, matlab_ycbcr_to_rgb_f32};
 mod detection;
 pub(crate) use detection::post_process_oneformer_panoptic_segmentation;
 pub use detection::{
