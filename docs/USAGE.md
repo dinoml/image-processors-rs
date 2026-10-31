@@ -462,3 +462,20 @@ and byte-to-normalized-tensor paths; normalization runs after byte rounding.
 Other filters are rejected. Floating-point tensor interpolation continues to
 use its explicit tensor policy. Optional OpenCV acceleration backends are
 outside this parity contract.
+
+For scale-dependent OpenCV preprocessing, `ResizeParity::OpenCvScaleDependent`
+in `ImageProcessorConfig` and recipe resize stages selects `INTER_AREA` when
+neither axis grows. On enlargement, the configured nearest, bilinear, bicubic
+or Lanczos filter selects OpenCV nearest, linear, cubic (A=-0.75) or Lanczos4
+respectively. The corresponding explicit decision is
+`ResizeDecision::opencv_scale_dependent(filter)`. Crops use the full logical
+resize dimensions when selecting the interpolation path. Tensor normalization
+and rescaling follow the final byte-rounding boundary.
+
+`resize_frame_opencv` and `resize_frame_opencv_scale_dependent` expose the same
+byte kernels through decoded-frame operations, preserving pixel format and
+timing. `OpenCvInterpolation` also permits explicit area enlargement using the
+OpenCV area-coordinate fallback. These APIs follow the scalar CPU algorithms
+in OpenCV 4.10.0 (`71d3237a093b60a27601c20e9ee6c3e52154e8b1`); they do not
+select OpenCL, IPP or architecture-specific OpenCV acceleration. Existing
+resize defaults and the `OpenCvLinear` profile remain unchanged.

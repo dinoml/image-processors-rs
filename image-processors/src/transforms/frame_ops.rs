@@ -2,6 +2,60 @@
 
 use super::*;
 
+/// Resize a decoded byte frame with an explicit OpenCV interpolation mode.
+/// Pixel format and frame timing are preserved.
+///
+/// # Errors
+/// Reports invalid dimensions, pixel storage, channel counts or size overflow.
+pub fn resize_frame_opencv(
+    frame: &ImageFrame,
+    target: ImageSize,
+    interpolation: OpenCvInterpolation,
+) -> Result<ImageFrame, TransformError> {
+    let data = image_resize_kernels::resize_u8_opencv(
+        frame.data(),
+        kernel_size(frame_size(frame)),
+        frame.channels(),
+        kernel_size(target),
+        interpolation,
+    )
+    .map_err(transform_error_from_resize)?;
+    new_frame(
+        target.width,
+        target.height,
+        frame.pixel_format(),
+        data,
+        frame.timing(),
+    )
+}
+
+/// Resize a byte frame with INTER_AREA reduction and a selected OpenCV
+/// enlargement mode. Pixel format and frame timing are preserved.
+///
+/// # Errors
+/// Reports invalid dimensions, pixel storage, channel counts or size overflow.
+pub fn resize_frame_opencv_scale_dependent(
+    frame: &ImageFrame,
+    target: ImageSize,
+    enlargement: OpenCvInterpolation,
+) -> Result<ImageFrame, TransformError> {
+    let data = image_resize_kernels::resize_u8_opencv_scale_dependent(
+        frame.data(),
+        kernel_size(frame_size(frame)),
+        frame.channels(),
+        kernel_size(target),
+        enlargement,
+    )
+    .map_err(transform_error_from_resize)?;
+    new_frame(
+        target.width,
+        target.height,
+        frame.pixel_format(),
+        data,
+        frame.timing(),
+    )
+}
+
 /// Resizes a frame to target dimensions.
 ///
 /// # Errors
@@ -1279,6 +1333,7 @@ fn resize_profile(parity: ResizeParity) -> ResizeProfile {
         ResizeParity::Torchvision => ResizeProfile::Torchvision,
         ResizeParity::TorchvisionNoAntialias => ResizeProfile::TorchvisionNoAntialias,
         ResizeParity::OpenCvLinear => ResizeProfile::OpenCvLinear,
+        ResizeParity::OpenCvScaleDependent => ResizeProfile::OpenCvScaleDependent,
         ResizeParity::Resampling | ResizeParity::PixelExact => ResizeProfile::Fast,
     }
 }

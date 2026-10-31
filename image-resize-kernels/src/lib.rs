@@ -8,6 +8,12 @@ use half::f16;
 use rayon::prelude::*;
 use thiserror::Error;
 
+mod opencv;
+pub use opencv::{
+    resize_u8_opencv, resize_u8_opencv_scale_dependent, resize_u8_opencv_with_crop,
+    OpenCvInterpolation,
+};
+
 /// Image dimensions in height-width order.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ImageSize {
@@ -115,6 +121,10 @@ pub enum ResizeProfile {
     TorchvisionNoAntialias,
     /// OpenCV CPU byte INTER_LINEAR: half-pixel coordinates and 11-bit coefficients.
     OpenCvLinear,
+    /// INTER_AREA reduction or the selected OpenCV enlargement filter.
+    /// Nearest, bilinear, bicubic and Lanczos select INTER_NEAREST, INTER_LINEAR,
+    /// INTER_CUBIC and INTER_LANCZOS4 respectively for enlargement.
+    OpenCvScaleDependent,
 }
 
 /// Output layout for direct resized `f32` image writes.
@@ -234,6 +244,13 @@ pub fn resize_u8(
 ) -> Result<Vec<u8>, ResizeError> {
     validate_image_data(values.len(), source, channels)?;
     match profile {
+        ResizeProfile::OpenCvScaleDependent => resize_u8_opencv_scale_dependent(
+            values,
+            source,
+            channels,
+            target,
+            opencv::enlargement_filter(filter),
+        ),
         ResizeProfile::OpenCvLinear => {
             resize_u8_opencv_linear(values, source, channels, target, filter)
         }
@@ -366,6 +383,13 @@ pub fn resize_u8_owned(
 ) -> Result<Vec<u8>, ResizeError> {
     validate_image_data(values.len(), source, channels)?;
     match profile {
+        ResizeProfile::OpenCvScaleDependent => resize_u8_opencv_scale_dependent(
+            &values,
+            source,
+            channels,
+            target,
+            opencv::enlargement_filter(filter),
+        ),
         ResizeProfile::OpenCvLinear => {
             resize_u8_opencv_linear(&values, source, channels, target, filter)
         }
@@ -404,6 +428,9 @@ pub fn resize_u8_crop(
 ) -> Result<Vec<u8>, ResizeError> {
     validate_image_data(values.len(), source, channels)?;
     match profile {
+        ResizeProfile::OpenCvScaleDependent => {
+            resize_u8_opencv_scale_dependent_crop(values, source, channels, crop, filter)
+        }
         ResizeProfile::OpenCvLinear => {
             resize_u8_opencv_crop(values, source, channels, crop, filter)
         }
@@ -439,6 +466,9 @@ pub fn resize_u8_crop_owned(
 ) -> Result<Vec<u8>, ResizeError> {
     validate_image_data(values.len(), source, channels)?;
     match profile {
+        ResizeProfile::OpenCvScaleDependent => {
+            resize_u8_opencv_scale_dependent_crop(&values, source, channels, crop, filter)
+        }
         ResizeProfile::OpenCvLinear => {
             resize_u8_opencv_crop(&values, source, channels, crop, filter)
         }
@@ -486,6 +516,9 @@ pub fn resize_u8_crop_with_workspace(
 ) -> Result<Vec<u8>, ResizeError> {
     validate_image_data(values.len(), source, channels)?;
     match profile {
+        ResizeProfile::OpenCvScaleDependent => {
+            resize_u8_opencv_scale_dependent_crop(values, source, channels, crop, filter)
+        }
         ResizeProfile::OpenCvLinear => {
             resize_u8_opencv_crop(values, source, channels, crop, filter)
         }
@@ -611,6 +644,19 @@ fn resize_u8_crop_into_transformed_with_workspace<T: TransformedOutput>(
     validate_image_data(values.len(), source, channels)?;
     validate_f32_output(output.len(), crop.target, channels, multiplier, offset)?;
     match profile {
+        ResizeProfile::OpenCvScaleDependent => {
+            let resized =
+                resize_u8_opencv_scale_dependent_crop(values, source, channels, crop, filter)?;
+            write_interleaved_u8_to_output(
+                &resized,
+                crop.target,
+                channels,
+                output,
+                layout,
+                multiplier,
+                offset,
+            )
+        }
         ResizeProfile::OpenCvLinear => {
             let resized = resize_u8_opencv_crop(values, source, channels, crop, filter)?;
             write_interleaved_u8_to_output(
@@ -726,6 +772,30 @@ fn resize_u8_full_then_crop(
     let resized_values = resize_u8_fast(values, source, channels, crop.resized, filter)?;
     crop_image_data(
         &resized_values,
+        crop.resized,
+        channels,
+        crop.origin_x,
+        crop.origin_y,
+        crop.target,
+    )
+}
+
+fn resize_u8_opencv_scale_dependent_crop(
+    values: &[u8],
+    source: ImageSize,
+    channels: usize,
+    crop: ResizeCrop,
+    filter: ResizeFilter,
+) -> Result<Vec<u8>, ResizeError> {
+    let resized = resize_u8_opencv_scale_dependent(
+        values,
+        source,
+        channels,
+        crop.resized,
+        opencv::enlargement_filter(filter),
+    )?;
+    crop_image_data(
+        &resized,
         crop.resized,
         channels,
         crop.origin_x,
