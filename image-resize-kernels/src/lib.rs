@@ -1864,7 +1864,7 @@ fn write_interleaved_rgb_u8_to_output<T: TransformedOutput>(
     match layout {
         F32ImageLayout::Chw => {
             let pixels = target.height * target.width;
-            for (pixel_index, pixel) in values.chunks_exact(3).enumerate() {
+            for (pixel_index, pixel) in values.as_chunks::<3>().0.iter().enumerate() {
                 output[pixel_index] =
                     T::from_f32(transform_u8_parts(pixel[0], red_multiplier, red_offset));
                 output[pixels + pixel_index] =
@@ -1874,7 +1874,7 @@ fn write_interleaved_rgb_u8_to_output<T: TransformedOutput>(
             }
         }
         F32ImageLayout::Hwc => {
-            for (pixel_index, pixel) in values.chunks_exact(3).enumerate() {
+            for (pixel_index, pixel) in values.as_chunks::<3>().0.iter().enumerate() {
                 let output_index = pixel_index * 3;
                 output[output_index] =
                     T::from_f32(transform_u8_parts(pixel[0], red_multiplier, red_offset));
@@ -3534,7 +3534,7 @@ mod pillow_parallel_tests {
                 .map(|i| u8::try_from((i * 73 + (i / 11) * 17) % 256).expect("byte"))
                 .collect::<Vec<_>>();
             if channels == 4 {
-                for pixel in input.chunks_exact_mut(4) {
+                for pixel in input.as_chunks_mut::<4>().0 {
                     pixel[3] = 255;
                 }
             }
