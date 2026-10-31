@@ -145,6 +145,43 @@ pub(crate) fn resize_frame_owned_with_decision_workspace(
     }
 }
 
+/// Converts interleaved pixels to RGB, compositing RGBA over a fixed background.
+///
+/// Gray pixels are replicated and RGB pixels are copied unchanged. RGBA blending
+/// uses separate FP32 multiply/add operations with alpha in 0..=1, clamps to the
+/// byte range and truncates. This matches NumPy HWC3-style image preparation;
+/// it intentionally differs from the rounded integer blending used by overlays.
+/// The returned storage owns exactly three bytes per input pixel.
+///
+/// # Errors
+///
+/// Returns an error when the input does not contain complete pixels.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Composited channels are clamped to 0..=255 before truncating"
+)]
+pub fn composite_alpha_to_rgb(
+    values: &[u8],
+    pixel_format: PixelFormat,
+    background: [u8; 3],
+) -> Result<Vec<u8>, TransformError> {
+    if pixel_format != PixelFormat::Rgba8 {
+        return convert_to_rgb(values, pixel_format.channels());
+    }
+    validate_pixel_chunks(values, 4)?;
+    let mut output = Vec::with_capacity(values.len() / 4 * 3);
+    for pixel in values.as_chunks::<4>().0 {
+        let alpha = f32::from(pixel[3]) / 255.0;
+        for channel in 0..3 {
+            let foreground = f32::from(pixel[channel]) * alpha;
+            let background = f32::from(background[channel]) * (1.0 - alpha);
+            output.push((foreground + background).clamp(0.0, 255.0) as u8);
+        }
+    }
+    Ok(output)
+}
+
 /// Converts a frame to another pixel format.
 ///
 /// # Errors

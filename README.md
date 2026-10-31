@@ -670,3 +670,7 @@ accumulation, rounding and clipping order within each pixel are unchanged.
 Tests compare full and workspace output against 36 independently generated
 Pillow pixel hashes across bilinear, bicubic and Lanczos filters, channel counts
 and resize geometries. Direct transformed crop APIs retain their existing paths.
+
+### Alpha-aware byte conversion
+
+`composite_alpha_to_rgb(bytes, pixel_format, background)` converts borrowed gray, RGB or RGBA bytes to owned RGB. RGBA uses FP32 alpha compositing over the supplied RGB background followed by clamping and truncation, for NumPy HWC3-compatible preparation. Existing pixel-format conversion and rounded overlay behavior are unchanged.
