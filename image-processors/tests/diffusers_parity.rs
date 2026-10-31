@@ -958,7 +958,7 @@ fn deterministic_luma_frame(width: usize, height: usize) -> ImageFrame {
 fn horizontal_flip_rgb_frame(frame: &ImageFrame) -> ImageFrame {
     let mut values = Vec::with_capacity(frame.data().len());
     for row in frame.data().chunks_exact(frame.width() * 3) {
-        for pixel in row.chunks_exact(3).rev() {
+        for pixel in row.as_chunks::<3>().0.iter().rev() {
             values.extend_from_slice(pixel);
         }
     }
@@ -1004,7 +1004,7 @@ fn execute_video_tensor_recipe(recipe: &ProcessorRecipe, tensor: Tensor) -> Tens
 fn expand_video_fixture_values(values: &[f32]) -> Vec<f32> {
     let mut expanded = Vec::with_capacity(values.len() * 4);
     for _ in 0..2 {
-        for pixel in values.chunks_exact(3) {
+        for pixel in values.as_chunks::<3>().0 {
             expanded.extend_from_slice(pixel);
             expanded.extend_from_slice(pixel);
         }
@@ -1194,17 +1194,23 @@ fn f32_values(summary: &TensorSummary) -> Vec<f32> {
         .expect("fixture full payload should be valid base64");
     match summary.dtype.as_str() {
         "float32" => bytes
-            .chunks_exact(4)
-            .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|&chunk| f32::from_le_bytes(chunk))
             .collect(),
         "uint8" => bytes.into_iter().map(f32::from).collect(),
         "uint16" => bytes
-            .chunks_exact(2)
-            .map(|chunk| f32::from(u16::from_le_bytes(chunk.try_into().unwrap())))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|&chunk| f32::from(u16::from_le_bytes(chunk)))
             .collect(),
         "int64" => bytes
-            .chunks_exact(8)
-            .map(|chunk| i64::from_le_bytes(chunk.try_into().unwrap()) as f32)
+            .as_chunks::<8>()
+            .0
+            .iter()
+            .map(|&chunk| i64::from_le_bytes(chunk) as f32)
             .collect(),
         dtype => panic!("unsupported fixture dtype {dtype}"),
     }
@@ -1222,8 +1228,10 @@ fn u16_values(summary: &TensorSummary) -> Vec<u16> {
     STANDARD
         .decode(&summary.data_base64)
         .expect("fixture uint16 payload should be valid base64")
-        .chunks_exact(2)
-        .map(|chunk| u16::from_le_bytes(chunk.try_into().unwrap()))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|&chunk| u16::from_le_bytes(chunk))
         .collect()
 }
 
@@ -1232,8 +1240,10 @@ fn i64_values(summary: &TensorSummary) -> Vec<i64> {
     STANDARD
         .decode(&summary.data_base64)
         .expect("fixture int64 payload should be valid base64")
-        .chunks_exact(8)
-        .map(|chunk| i64::from_le_bytes(chunk.try_into().expect("int64 chunk")))
+        .as_chunks::<8>()
+        .0
+        .iter()
+        .map(|&chunk| i64::from_le_bytes(chunk))
         .collect()
 }
 

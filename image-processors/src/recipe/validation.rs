@@ -632,7 +632,7 @@ fn validate_constant_fill(
 
 fn validate_resize_stage(index: usize, resize: RecipeResizeStage) -> Result<(), RecipeError> {
     match resize.target {
-        RecipeResizeTarget::Fixed { size } => {
+        RecipeResizeTarget::Fixed { size } | RecipeResizeTarget::MaxHeightWidth { size } => {
             if size.height == 0 || size.width == 0 {
                 return Err(RecipeError::InvalidResizeTarget { size });
             }

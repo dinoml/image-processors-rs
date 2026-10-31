@@ -523,6 +523,11 @@ impl RecipeResizeStage {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RecipeResizeTarget {
+    /// Preserve aspect ratio within both bounds, enlarging or shrinking as needed.
+    MaxHeightWidth {
+        /// Maximum output height and width; at least one bound is reached.
+        size: ImageSize,
+    },
     /// Resize to a fixed height and width.
     Fixed {
         /// Fixed resize dimensions.
@@ -563,6 +568,7 @@ pub enum RecipeResizeTarget {
 impl RecipeResizeTarget {
     pub(super) fn kind(self) -> &'static str {
         match self {
+            Self::MaxHeightWidth { .. } => "resize_max_height_width",
             Self::Fixed { .. } => "resize_fixed",
             Self::Dynamic => "resize_dynamic",
             Self::SmartResize { .. } => "resize_smart",

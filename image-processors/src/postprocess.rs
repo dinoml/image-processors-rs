@@ -951,7 +951,7 @@ pub fn post_process_coordinates(
     }
 
     let mut points = Vec::with_capacity(point_count);
-    for point in coordinates.as_chunks::<2>().0.iter() {
+    for point in coordinates.as_chunks::<2>().0 {
         let normalized = [point[0], point[1]];
         validate_coordinate_point(normalized)?;
         points.push(CoordinatePoint::new(

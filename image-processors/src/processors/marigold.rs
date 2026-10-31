@@ -884,7 +884,7 @@ fn marigold_visualize_normals(
         .into());
     }
     let mut data = Vec::with_capacity(normals.values().len());
-    for pixel in normals.values().as_chunks::<3>().0.iter() {
+    for pixel in normals.values().as_chunks::<3>().0 {
         for (channel, value) in pixel.iter().copied().enumerate() {
             let value = if flips[channel] { -value } else { value };
             data.push(float_to_u8((value + 1.0) * 0.5 * 255.0)?);

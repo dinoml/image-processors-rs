@@ -996,22 +996,28 @@ fn array_bytes(value: &Value) -> Vec<u8> {
 
 fn decode_f32_array(value: &Value) -> Vec<f32> {
     array_bytes(value)
-        .chunks_exact(4)
-        .map(|bytes| f32::from_le_bytes(bytes.try_into().expect("f32 chunk")))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|&bytes| f32::from_le_bytes(bytes))
         .collect()
 }
 
 fn decode_i32_array(value: &Value) -> Vec<i32> {
     array_bytes(value)
-        .chunks_exact(4)
-        .map(|bytes| i32::from_le_bytes(bytes.try_into().expect("i32 chunk")))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|&bytes| i32::from_le_bytes(bytes))
         .collect()
 }
 
 fn decode_i64_array(value: &Value) -> Vec<i64> {
     array_bytes(value)
-        .chunks_exact(8)
-        .map(|bytes| i64::from_le_bytes(bytes.try_into().expect("i64 chunk")))
+        .as_chunks::<8>()
+        .0
+        .iter()
+        .map(|&bytes| i64::from_le_bytes(bytes))
         .collect()
 }
 

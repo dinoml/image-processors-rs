@@ -513,8 +513,10 @@ fn reference_f32(reference: &TensorReference) -> Vec<f32> {
     let bytes = decode_blob(&reference.data);
     assert_eq!(bytes.len() % size_of::<f32>(), 0, "unaligned float fixture");
     bytes
-        .chunks_exact(size_of::<f32>())
-        .map(|chunk| f32::from_le_bytes(chunk.try_into().expect("float chunk is four bytes")))
+        .as_chunks::<{ size_of::<f32>() }>()
+        .0
+        .iter()
+        .map(|&chunk| f32::from_le_bytes(chunk))
         .collect()
 }
 
@@ -522,8 +524,10 @@ fn reference_i64(reference: &TensorReference) -> Vec<i64> {
     let bytes = decode_blob(&reference.data);
     assert_eq!(bytes.len() % size_of::<i64>(), 0, "unaligned int64 fixture");
     bytes
-        .chunks_exact(size_of::<i64>())
-        .map(|chunk| i64::from_le_bytes(chunk.try_into().expect("int64 chunk is eight bytes")))
+        .as_chunks::<{ size_of::<i64>() }>()
+        .0
+        .iter()
+        .map(|&chunk| i64::from_le_bytes(chunk))
         .collect()
 }
 

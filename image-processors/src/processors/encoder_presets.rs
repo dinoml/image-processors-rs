@@ -20,14 +20,16 @@ use crate::output::{ProcessorOutput, ProcessorTensorName};
 use crate::postprocess::{post_process_image_tensor, TensorPostprocessError};
 use crate::recipe::{
     ProcessorRecipe, ProcessorRecipeInput, ProcessorRecipeOutput, ProcessorRecipeStage,
-    RecipeCropStage, RecipeError, RecipeResizeStage,
+    RecipeCropStage, RecipeError, RecipeResizeStage, RecipeResizeTarget,
 };
 use crate::tensor::{ImageLayout, Layout, Tensor, TensorData, TensorError, TensorLeadingAxis};
 use crate::transforms::{
-    center_crop_frame, convert_frame_pixel_format, crop_frame, pad_frame,
+    center_crop_frame, centered_padding, convert_frame_pixel_format, crop_frame,
+    longest_edge_resize_size, max_height_width_resize_size, pad_frame,
     pad_frame_symmetric_to_next_multiple, resize_frame_to_f32_torchvision,
-    resize_frame_with_decision, shortest_edge_resize_size, ImageCropBox, ImageSize, Padding,
-    ResizeDecision, ResizeFilter, ResizeMode, ResizeParity, TransformError,
+    resize_frame_with_decision, shortest_edge_resize_size, transformers_shortest_edge_resize_size,
+    ImageCropBox, ImageSize, Padding, ResizeDecision, ResizeFilter, ResizeMode, ResizeParity,
+    TransformError,
 };
 
 const RESCALE_FACTOR: f32 = 1.0 / 255.0;
@@ -187,6 +189,17 @@ impl EncoderImageProcessorPreset {
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
 pub enum EncoderGeometry {
+    /// Resolve a resize target, then optionally center-crop with zero padding.
+    ///
+    /// Supports fixed dimensions, dynamic identity geometry, shortest-edge
+    /// geometry with an optional longest-edge cap, longest-edge geometry and
+    /// max-height/max-width bounds. Aspect geometry follows Transformers.
+    Resize {
+        /// Resize geometry; `Dynamic` preserves the input dimensions.
+        target: RecipeResizeTarget,
+        /// Post-resize center crop, with padding when the image is too small.
+        crop_size: Option<ImageSize>,
+    },
     /// Warp directly to a fixed height and width.
     Fixed {
         /// Fixed output dimensions.
@@ -256,6 +269,8 @@ pub struct EncoderImageProcessorConfig {
     /// Resize filter.
     pub resample: ResizeFilter,
     /// Resize parity implementation.
+    /// Compatibility also places odd center-crop padding before the image,
+    /// matching Transformers' PIL path; other policies retain padding after it.
     pub resize_parity: ResizeParity,
     /// Decode backend used by path entrypoints.
     pub decode_backend: ImageDecodeBackend,
@@ -565,6 +580,18 @@ impl EncoderGeometry {
             },
         };
         match self {
+            Self::Resize { target, crop_size } => {
+                let mut stages = vec![resize(RecipeResizeStage {
+                    target,
+                    mode: ResizeMode::Default,
+                    filter,
+                    parity,
+                })];
+                if let Some(size) = crop_size {
+                    stages.push(crop(size));
+                }
+                stages
+            }
             Self::Fixed { size } | Self::PerceiverCropThenResize { size, .. } => {
                 vec![resize(RecipeResizeStage::fixed(
                     size,
@@ -689,8 +716,11 @@ pub enum PresetProcessorError {
     #[error("unsupported encoder image-processor class `{0}`")]
     UnsupportedClassName(String),
     /// Rescale-before-resize was requested for unsupported spatial geometry.
-    #[error("rescale-before-resize requires fixed resize geometry")]
+    #[error("rescale-before-resize does not support the selected encoder geometry")]
     UnsupportedRescaleBeforeResizeGeometry,
+    /// The selected recipe resize target is not supported by encoder geometry.
+    #[error("unsupported encoder recipe resize target: {0:?}")]
+    UnsupportedEncoderResizeTarget(RecipeResizeTarget),
     /// Rescale-before-resize was requested without the Torchvision backend.
     #[error("rescale-before-resize requires Torchvision resize parity")]
     UnsupportedRescaleBeforeResizeBackend,
@@ -877,8 +907,21 @@ impl EncoderImageProcessor {
         if self.config.resize_parity != ResizeParity::Torchvision {
             return Err(PresetProcessorError::UnsupportedRescaleBeforeResizeBackend);
         }
-        let EncoderGeometry::Fixed { size: target } = self.config.geometry else {
-            return Err(PresetProcessorError::UnsupportedRescaleBeforeResizeGeometry);
+        let source_size = ImageSize::new(image.height(), image.width())?;
+        let (target, crop_size) = match self.config.geometry {
+            EncoderGeometry::Fixed { size } => (size, None),
+            EncoderGeometry::FixedThenCenterCrop { size, crop_size } => (size, Some(crop_size)),
+            EncoderGeometry::ShortestEdgeThenCenterCrop {
+                shortest_edge,
+                crop_size,
+            } => (
+                transformers_shortest_edge_resize_size(source_size, shortest_edge, None)?,
+                Some(crop_size),
+            ),
+            EncoderGeometry::Resize { target, crop_size } => {
+                (resolve_encoder_resize(source_size, target)?, crop_size)
+            }
+            _ => return Err(PresetProcessorError::UnsupportedRescaleBeforeResizeGeometry),
         };
 
         let converted;
@@ -898,6 +941,12 @@ impl EncoderImageProcessor {
             self.config.resample,
             self.config.rescale_factor,
         )?;
+        let output_size = if let Some(size) = crop_size {
+            values = center_crop_interleaved_f32(&values, target, image.channels(), size)?;
+            size
+        } else {
+            target
+        };
         if normalize && self.config.do_normalize {
             normalize_interleaved_f32(
                 &mut values,
@@ -906,8 +955,12 @@ impl EncoderImageProcessor {
                 &self.config.image_std,
             )?;
         }
-        let tensor =
-            interleaved_f32_tensor(values, target, image.channels(), self.config.output_layout)?;
+        let tensor = interleaved_f32_tensor(
+            values,
+            output_size,
+            image.channels(),
+            self.config.output_layout,
+        )?;
         finish_encoder_tensor(&self.config, tensor)
     }
 }
@@ -1123,7 +1176,18 @@ fn prepare_encoder_geometry(
     decision: ResizeDecision,
     ties_even: bool,
 ) -> Result<ImageFrame, PresetProcessorError> {
+    let pil_padding = decision.parity() == ResizeParity::Compatibility && !ties_even;
     match geometry {
+        EncoderGeometry::Resize { target, crop_size } => {
+            let size =
+                resolve_encoder_resize(ImageSize::new(image.height(), image.width())?, target)?;
+            let resized = resize_frame_with_decision(image, size, decision, ResizeMode::Default)?;
+            if let Some(crop_size) = crop_size {
+                center_crop_with_padding(&resized, crop_size, pil_padding)
+            } else {
+                Ok(resized)
+            }
+        }
         EncoderGeometry::Fixed { size } => Ok(resize_frame_with_decision(
             image,
             size,
@@ -1132,14 +1196,14 @@ fn prepare_encoder_geometry(
         )?),
         EncoderGeometry::FixedThenCenterCrop { size, crop_size } => {
             let resized = resize_frame_with_decision(image, size, decision, ResizeMode::Default)?;
-            center_crop_with_padding(&resized, crop_size)
+            center_crop_with_padding(&resized, crop_size, pil_padding)
         }
         EncoderGeometry::ShortestEdgeThenCenterCrop {
             shortest_edge,
             crop_size,
         } => {
             let resized = resize_shortest_edge(image, shortest_edge, decision)?;
-            center_crop_with_padding(&resized, crop_size)
+            center_crop_with_padding(&resized, crop_size, pil_padding)
         }
         EncoderGeometry::ScaledShortestEdgeThenCenterCrop {
             shortest_edge,
@@ -1155,7 +1219,7 @@ fn prepare_encoder_geometry(
                 .ok_or(TransformError::ImageSizeOverflow)?
                 / scale_denominator;
             let resized = resize_shortest_edge(image, scaled, decision)?;
-            center_crop_with_padding(&resized, crop_size)
+            center_crop_with_padding(&resized, crop_size, pil_padding)
         }
         EncoderGeometry::CropPercentage {
             output_edge,
@@ -1176,7 +1240,7 @@ fn prepare_encoder_geometry(
             } else {
                 let resized_edge = (output_edge as f64 / crop_percentage) as usize;
                 let resized = resize_shortest_edge(image, resized_edge, decision)?;
-                center_crop_with_padding_rounding(&resized, output, ties_even)
+                center_crop_with_padding_rounding(&resized, output, ties_even, pil_padding)
             }
         }
         EncoderGeometry::PerceiverCropThenResize {
@@ -1188,7 +1252,7 @@ fn prepare_encoder_geometry(
                 checked_ratio(size.height, min_dimension, crop_reference.height)?,
                 checked_ratio(size.width, min_dimension, crop_reference.width)?,
             )?;
-            let cropped = center_crop_with_padding(image, crop_size)?;
+            let cropped = center_crop_with_padding(image, crop_size, pil_padding)?;
             Ok(resize_frame_with_decision(
                 &cropped,
                 size,
@@ -1219,7 +1283,7 @@ fn prepare_encoder_geometry(
                 decision,
                 ResizeMode::Default,
             )?;
-            center_crop_with_padding(&resized, crop_size)
+            center_crop_with_padding(&resized, crop_size, pil_padding)
         }
     }
 }
@@ -1245,22 +1309,34 @@ fn resize_shortest_edge(
 fn center_crop_with_padding(
     image: &ImageFrame,
     crop_size: ImageSize,
+    pil_padding: bool,
 ) -> Result<ImageFrame, PresetProcessorError> {
-    center_crop_with_padding_rounding(image, crop_size, false)
+    center_crop_with_padding_rounding(image, crop_size, false, pil_padding)
 }
 
 fn center_crop_with_padding_rounding(
     image: &ImageFrame,
     crop_size: ImageSize,
     ties_even: bool,
+    pil_padding: bool,
 ) -> Result<ImageFrame, PresetProcessorError> {
     let missing_height = crop_size.height.saturating_sub(image.height());
     let missing_width = crop_size.width.saturating_sub(image.width());
     let padded = if missing_height == 0 && missing_width == 0 {
         None
     } else {
-        let top = missing_height / 2;
-        let left = missing_width / 2;
+        // Transformers' PIL center_crop uses ceil for top/left padding. Keep
+        // the existing floor placement for other parity policies and timm.
+        let top = if pil_padding {
+            missing_height.div_ceil(2)
+        } else {
+            missing_height / 2
+        };
+        let left = if pil_padding {
+            missing_width.div_ceil(2)
+        } else {
+            missing_width / 2
+        };
         Some(pad_frame(
             image,
             Padding::new(top, missing_width - left, missing_height - top, left),
@@ -1270,9 +1346,8 @@ fn center_crop_with_padding_rounding(
     let image = padded.as_ref().unwrap_or(image);
     if ties_even {
         // torchvision CenterCrop uses Python round(), including halfway-to-even ties.
-        let origin = |delta: usize| delta / 2 + usize::from(delta % 4 == 3);
-        let left = origin(image.width() - crop_size.width);
-        let top = origin(image.height() - crop_size.height);
+        let left = center_crop_origin_ties_even(image.width() - crop_size.width);
+        let top = center_crop_origin_ties_even(image.height() - crop_size.height);
         Ok(crop_frame(
             image,
             ImageCropBox::new(left, top, left + crop_size.width, top + crop_size.height),
@@ -1280,6 +1355,72 @@ fn center_crop_with_padding_rounding(
     } else {
         Ok(center_crop_frame(image, crop_size)?)
     }
+}
+
+fn resolve_encoder_resize(
+    source: ImageSize,
+    target: RecipeResizeTarget,
+) -> Result<ImageSize, PresetProcessorError> {
+    Ok(match target {
+        RecipeResizeTarget::Dynamic => source,
+        RecipeResizeTarget::Fixed { size } => ImageSize::new(size.height, size.width)?,
+        RecipeResizeTarget::ShortestEdge {
+            shortest_edge,
+            longest_edge,
+        } => transformers_shortest_edge_resize_size(source, shortest_edge, longest_edge)?,
+        RecipeResizeTarget::LongestEdge { longest_edge } => {
+            longest_edge_resize_size(source, longest_edge)?
+        }
+        RecipeResizeTarget::MaxHeightWidth { size } => max_height_width_resize_size(source, size)?,
+        _ => return Err(PresetProcessorError::UnsupportedEncoderResizeTarget(target)),
+    })
+}
+
+fn center_crop_origin_ties_even(delta: usize) -> usize {
+    delta / 2 + usize::from(delta % 4 == 3)
+}
+
+fn center_crop_interleaved_f32(
+    values: &[f32],
+    source: ImageSize,
+    channels: usize,
+    target: ImageSize,
+) -> Result<Vec<f32>, PresetProcessorError> {
+    // Reuse the shared geometry. Torchvision places an odd extra padding pixel
+    // after the image; the separate PIL byte path retains its existing policy.
+    let padded = ImageSize::new(
+        source.height.max(target.height),
+        source.width.max(target.width),
+    )?;
+    let padding = centered_padding(source, padded)?;
+    let left = center_crop_origin_ties_even(padded.width - target.width);
+    let top = center_crop_origin_ties_even(padded.height - target.height);
+    let crop = ImageCropBox::new(left, top, left + target.width, top + target.height);
+    let count = target
+        .height
+        .checked_mul(target.width)
+        .and_then(|value| value.checked_mul(channels))
+        .ok_or(TransformError::ImageSizeOverflow)?;
+    let mut output = vec![0.0; count];
+    let source_left = crop.x_min.saturating_sub(padding.left);
+    let target_left = padding.left.saturating_sub(crop.x_min).min(target.width);
+    let copy_width = source
+        .width
+        .saturating_sub(source_left)
+        .min(target.width - target_left);
+    for row in 0..target.height {
+        let Some(source_row) = (crop.y_min + row)
+            .checked_sub(padding.top)
+            .filter(|&value| value < source.height)
+        else {
+            continue;
+        };
+        let start = (source_row * source.width + source_left) * channels;
+        let destination = (row * target.width + target_left) * channels;
+        let length = copy_width * channels;
+        output[destination..destination + length].copy_from_slice(&values[start..start + length]);
+    }
+    Ok(output)
 }
 
 fn normalize_interleaved_f32(
