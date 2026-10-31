@@ -454,7 +454,7 @@ a domain error with `#[source]` rather than discard its context.
 
 For InsightFace-style byte images, select `ResizeDecision::opencv_linear()`
 (or `ResizeFilter::Bilinear` with `ResizeParity::OpenCvLinear` in processor
-configuration). The serialized parity is `open_cv_linear`. This policy uses
+configuration). The serialized parity is `OpenCvLinear`. This policy uses
 the OpenCV CPU `INTER_LINEAR` byte reference path: half-pixel coordinates,
 11-bit interpolation coefficients, clamped border samples, and staged integer
 rounding. It supports the existing interleaved byte resize, resize-and-crop,
