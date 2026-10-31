@@ -9,14 +9,10 @@ use rayon::prelude::*;
 use thiserror::Error;
 
 mod opencv;
-#[cfg(feature = "opencv-f32")]
-mod opencv_f32;
 pub use opencv::{
     resize_u8_opencv, resize_u8_opencv_scale_dependent, resize_u8_opencv_with_crop,
     OpenCvInterpolation,
 };
-#[cfg(feature = "opencv-f32")]
-pub use opencv_f32::{resize_f32_opencv_linear, resize_u8_to_f32_opencv_linear};
 
 /// Image dimensions in height-width order.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2485,19 +2481,6 @@ pub enum ResizeError {
     /// A floating-point scale was not finite.
     #[error("scale factor must be finite, got {0}")]
     InvalidScaleFactor(f32),
-    /// A byte-to-float division used an invalid divisor.
-    #[cfg(feature = "opencv-f32")]
-    #[error("rescale divisor must be finite and positive, got {0}")]
-    InvalidRescaleDivisor(f64),
-    /// The optional native floating-point OpenCV resize failed.
-    #[cfg(feature = "opencv-f32")]
-    #[error("OpenCV floating-point resize failed ({code}): {message}")]
-    OpenCv {
-        /// Native OpenCV error code.
-        code: i32,
-        /// Native OpenCV error message.
-        message: String,
-    },
     /// An input floating-point value was not finite.
     #[error("input value at index {index} must be finite")]
     NonFiniteValue {

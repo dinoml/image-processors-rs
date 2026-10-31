@@ -32,16 +32,11 @@ use image_resize_kernels::{
 
 mod config;
 mod error;
-#[cfg(feature = "opencv-f32")]
-mod float_resize;
 mod resize_kernel;
 mod stack;
 mod validation;
 mod workspace;
 mod writer;
-
-#[cfg(feature = "opencv-f32")]
-pub use float_resize::resize_f32_opencv_linear;
 
 pub use config::{
     default_batch_execution, BatchExecution, ImageProcessorConfig, ImageProcessorOptions,
