@@ -1277,6 +1277,7 @@ fn resize_profile(parity: ResizeParity) -> ResizeProfile {
     match parity {
         ResizeParity::Compatibility => ResizeProfile::Pillow,
         ResizeParity::Torchvision => ResizeProfile::Torchvision,
+        ResizeParity::TorchvisionNoAntialias => ResizeProfile::TorchvisionNoAntialias,
         ResizeParity::Resampling | ResizeParity::PixelExact => ResizeProfile::Fast,
     }
 }
