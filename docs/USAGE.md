@@ -1,5 +1,10 @@
 # Rust API usage guide
 
+`matlab_rgb_to_ycbcr_f32` and `matlab_ycbcr_to_rgb_f32` convert copied three-channel
+FP32 pixels using MATLAB-style limited-range YCbCr. They preserve KAIR's FP32
+scaling and FP64 matrix boundaries; the inverse clips after its offset. These
+helpers do not allocate image buffers or mutate their inputs.
+
 This guide covers the main ways to use `image-processors` from Rust. For the
 full list of supported upstream processor families and their parity evidence,
 see [Processor Parity](PARITY.md).
