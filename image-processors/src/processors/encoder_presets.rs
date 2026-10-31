@@ -189,6 +189,17 @@ impl EncoderImageProcessorPreset {
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
 pub enum EncoderGeometry {
+    /// Resolve a resize target, then apply an explicitly selected crop policy.
+    ///
+    /// Integer-frame processing supports every recipe crop. Floating processing
+    /// supports no crop or `CenterTiesEven`, preserving floating pixels through
+    /// the existing Torchvision crop implementation.
+    ResizeWithCrop {
+        /// Resize geometry; `Dynamic` preserves input dimensions.
+        target: RecipeResizeTarget,
+        /// Optional crop, including nearest-even centering with zero padding.
+        crop: Option<RecipeCropStage>,
+    },
     /// Resolve a resize target, then optionally center-crop with zero padding.
     ///
     /// Supports fixed dimensions, dynamic identity geometry, shortest-edge
@@ -580,6 +591,18 @@ impl EncoderGeometry {
             },
         };
         match self {
+            Self::ResizeWithCrop { target, crop } => {
+                let mut stages = vec![resize(RecipeResizeStage {
+                    target,
+                    mode: ResizeMode::Default,
+                    filter,
+                    parity,
+                })];
+                if let Some(crop) = crop {
+                    stages.push(ProcessorRecipeStage::Crop { crop });
+                }
+                stages
+            }
             Self::Resize { target, crop_size } => {
                 let mut stages = vec![resize(RecipeResizeStage {
                     target,
@@ -909,6 +932,16 @@ impl EncoderImageProcessor {
         }
         let source_size = ImageSize::new(image.height(), image.width())?;
         let (target, crop_size) = match self.config.geometry {
+            EncoderGeometry::ResizeWithCrop { target, crop } => {
+                let crop_size = match crop {
+                    None => None,
+                    Some(RecipeCropStage::CenterTiesEven { size }) => Some(size),
+                    Some(_) => {
+                        return Err(PresetProcessorError::UnsupportedRescaleBeforeResizeGeometry);
+                    }
+                };
+                (resolve_encoder_resize(source_size, target)?, crop_size)
+            }
             EncoderGeometry::Fixed { size } => (size, None),
             EncoderGeometry::FixedThenCenterCrop { size, crop_size } => (size, Some(crop_size)),
             EncoderGeometry::ShortestEdgeThenCenterCrop {
@@ -1178,6 +1211,21 @@ fn prepare_encoder_geometry(
 ) -> Result<ImageFrame, PresetProcessorError> {
     let pil_padding = decision.parity() == ResizeParity::Compatibility && !ties_even;
     match geometry {
+        EncoderGeometry::ResizeWithCrop { target, crop } => {
+            let size =
+                resolve_encoder_resize(ImageSize::new(image.height(), image.width())?, target)?;
+            let resized = resize_frame_with_decision(image, size, decision, ResizeMode::Default)?;
+            match crop {
+                None => Ok(resized),
+                Some(RecipeCropStage::CenterTiesEven { size }) => {
+                    center_crop_with_padding_rounding(&resized, size, true, false)
+                }
+                Some(RecipeCropStage::Center { size }) => {
+                    center_crop_with_padding(&resized, size, pil_padding)
+                }
+                Some(RecipeCropStage::Absolute { crop_box }) => Ok(crop_frame(&resized, crop_box)?),
+            }
+        }
         EncoderGeometry::Resize { target, crop_size } => {
             let size =
                 resolve_encoder_resize(ImageSize::new(image.height(), image.width())?, target)?;
