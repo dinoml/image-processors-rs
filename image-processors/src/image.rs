@@ -40,7 +40,7 @@ mod writer;
 
 pub use config::{
     default_batch_execution, BatchExecution, ImageProcessorConfig, ImageProcessorOptions,
-    DEFAULT_PARALLEL_BATCH_THRESHOLD,
+    ImageProcessorPrecision, DEFAULT_PARALLEL_BATCH_THRESHOLD,
 };
 pub use error::ImageProcessorError;
 pub use workspace::ImageProcessorWorkspace;
@@ -304,11 +304,90 @@ impl ImageProcessor {
         image: &ImageFrame,
         options: ImageProcessorOptions,
     ) -> Result<Tensor, ImageProcessorError> {
-        self.preprocess_image_batch_with_options(
-            std::slice::from_ref(image),
-            options,
-            TensorLeadingAxis::Batch,
-        )
+        self.preprocess_image_with_precision(image, options, ImageProcessorPrecision::Byte)
+    }
+
+    /// Preprocess one decoded frame with an explicit intermediate precision.
+    ///
+    /// Byte precision uses the unchanged batch writer. FP32 precision performs
+    /// pixel conversion and optional FP64 division before the configured resize,
+    /// then reuses tensor rescaling, normalization, binarization and layout.
+    /// Set `do_rescale = false` when pre-resize division is the only rescaling.
+    /// FP32 supports direct resize with the floating profiles of `ResizeProfile`;
+    /// unsupported profiles/modes return errors rather than quantizing to bytes.
+    ///
+    /// # Errors
+    /// Reports invalid division, unsupported FP32 resize modes/profiles, invalid
+    /// geometry, pixel conversion, normalization or tensor conversion failures.
+    pub fn preprocess_image_with_precision(
+        &self,
+        image: &ImageFrame,
+        options: ImageProcessorOptions,
+        precision: ImageProcessorPrecision,
+    ) -> Result<Tensor, ImageProcessorError> {
+        let ImageProcessorPrecision::Float32 { rescale_divisor } = precision else {
+            return self.preprocess_image_batch_with_options(
+                std::slice::from_ref(image),
+                options,
+                TensorLeadingAxis::Batch,
+            );
+        };
+        if rescale_divisor.is_some_and(|divisor| !divisor.is_finite() || divisor <= 0.0) {
+            return Err(ImageProcessorError::InvalidRescaleDivisor);
+        }
+        let mut frame = Cow::Borrowed(image);
+        if let Some(format) = self.config.pixel_format {
+            if frame.pixel_format() != format {
+                frame = Cow::Owned(convert_frame_pixel_format(frame.as_ref(), format)?);
+            }
+        }
+        let source = ImageSize::new(frame.height(), frame.width())?;
+        let channels = frame.pixel_format().channels();
+        let mut values = frame
+            .data()
+            .iter()
+            .map(|value| {
+                rescale_divisor.map_or(f32::from(*value), |divisor| {
+                    (f64::from(*value) / divisor) as f32
+                })
+            })
+            .collect::<Vec<_>>();
+        if values.iter().any(|value| !value.is_finite()) {
+            return Err(ImageProcessorError::InvalidRescaleDivisor);
+        }
+        let target = if self.config.do_resize {
+            if options.resize_mode.unwrap_or(self.config.resize_mode) != ResizeMode::Default {
+                return Err(ImageProcessorError::UnsupportedProcessorOption {
+                    field: "FP32 intermediate resize mode",
+                });
+            }
+            let target = self.target_size_for_frame(frame.as_ref(), options)?;
+            values = crate::transforms::resize_f32(
+                &values,
+                source,
+                channels,
+                target,
+                self.config.resize_decision(),
+            )?;
+            target
+        } else {
+            source
+        };
+        let mut tensor = Tensor::new(
+            TensorData::F32(values),
+            vec![1, target.height, target.width, channels],
+            Layout::NHWC,
+        )?;
+        if self.config.do_rescale {
+            tensor = tensor.rescale(self.config.rescale_factor)?;
+        }
+        if self.config.do_normalize {
+            tensor = tensor.normalize_channels(&self.config.image_mean, &self.config.image_std)?;
+        }
+        if self.config.do_binarize {
+            tensor = tensor.binarize();
+        }
+        Ok(tensor.to_layout(self.config.output_layout)?)
     }
 
     /// Preprocesses one decoded image frame with per-call options as typed output.

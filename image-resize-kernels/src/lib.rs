@@ -119,7 +119,8 @@ pub enum ResizeProfile {
     Torchvision,
     /// Torchvision tensor interpolation without antialiasing; rounds once after interpolation.
     TorchvisionNoAntialias,
-    /// OpenCV CPU byte INTER_LINEAR: half-pixel coordinates and 11-bit coefficients.
+    /// OpenCV CPU INTER_LINEAR: half-pixel coordinates with FP32 coefficients.
+    /// Byte output uses the existing 11-bit coefficient quantization.
     OpenCvLinear,
     /// INTER_AREA reduction or the selected OpenCV enlargement filter.
     /// Nearest, bilinear, bicubic and Lanczos select INTER_NEAREST, INTER_LINEAR,
@@ -311,6 +312,91 @@ pub fn resize_f32_torchvision(
     filter: ResizeFilter,
 ) -> Result<Vec<f32>, ResizeError> {
     resize_f32_antialiased(values, source, channels, target, filter, false)
+}
+
+/// Resize interleaved FP32 values using an explicit existing resize profile.
+///
+/// `Torchvision` retains the existing antialiased floating-point path.
+/// `OpenCvLinear` uses the byte profile's coordinate and border rules with
+/// unquantized FP32 coefficients and FP32 separable interpolation. It performs
+/// no byte conversion, coefficient quantization or antialiasing.
+///
+/// # Errors
+/// Rejects invalid dimensions, buffer lengths, nonfinite values, unsupported
+/// floating-point profiles and non-bilinear filters for `OpenCvLinear`.
+pub fn resize_f32(
+    values: &[f32],
+    source: ImageSize,
+    channels: usize,
+    target: ImageSize,
+    filter: ResizeFilter,
+    profile: ResizeProfile,
+) -> Result<Vec<f32>, ResizeError> {
+    ImageSize::new(source.height, source.width)?;
+    validate_image_data(values.len(), source, channels)?;
+    ImageSize::new(target.height, target.width)?;
+    let output_len = image_len(target, channels)?;
+    if let Some(index) = values.iter().position(|value| !value.is_finite()) {
+        return Err(ResizeError::NonFiniteValue { index });
+    }
+    match profile {
+        ResizeProfile::Torchvision => resize_f32_torchvision_interleaved_with_alignment(
+            values, source, channels, target, filter, false,
+        ),
+        ResizeProfile::OpenCvLinear => {
+            if filter != ResizeFilter::Bilinear {
+                return Err(ResizeError::UnsupportedOpenCvFilter);
+            }
+            validate_opencv_dimensions(source, target)?;
+            if source == target {
+                return Ok(values.to_vec());
+            }
+            let columns = opencv_linear_axis_with_scale(
+                target.width,
+                source.width,
+                true,
+                1.0 / (target.width as f64 / source.width as f64),
+            );
+            let rows = opencv_linear_axis_with_scale(
+                target.height,
+                source.height,
+                false,
+                1.0 / (target.height as f64 / source.height as f64),
+            );
+            let area_two = source.width / target.width == 2
+                && source.width.is_multiple_of(target.width)
+                && source.height / target.height == 2
+                && source.height.is_multiple_of(target.height);
+            let mut output = vec![0.0_f32; output_len];
+            output
+                .par_chunks_exact_mut(target.width * channels)
+                .enumerate()
+                .for_each(|(y, row)| {
+                    let (y0, y1, upper, lower) = rows[y];
+                    for (x, &(x0, x1, left, right)) in columns.iter().enumerate() {
+                        for channel in 0..channels {
+                            let sample = |yy: usize, xx: usize| {
+                                values[(yy * source.width + xx) * channels + channel]
+                            };
+                            // OpenCV routes exact 2x reduction through its FP32 area
+                            // kernel. Retain that sum-before-scale rounding order.
+                            row[x * channels + channel] = if area_two {
+                                ((sample(y0, x0) + sample(y0, x1))
+                                    + sample(y1, x0)
+                                    + sample(y1, x1))
+                                    * 0.25
+                            } else {
+                                let top = sample(y0, x0) * left + sample(y0, x1) * right;
+                                let bottom = sample(y1, x0) * left + sample(y1, x1) * right;
+                                top * upper + bottom * lower
+                            };
+                        }
+                    }
+                });
+            Ok(output)
+        }
+        _ => Err(ResizeError::UnsupportedFloatProfile(profile)),
+    }
 }
 
 /// Resizes interleaved finite `f32` values with antialiased bilinear filtering.
@@ -822,17 +908,7 @@ fn resize_u8_opencv_crop(
     )
 }
 
-fn resize_u8_opencv_linear(
-    values: &[u8],
-    source: ImageSize,
-    channels: usize,
-    target: ImageSize,
-    filter: ResizeFilter,
-) -> Result<Vec<u8>, ResizeError> {
-    if filter != ResizeFilter::Bilinear {
-        return Err(ResizeError::UnsupportedOpenCvFilter);
-    }
-    ImageSize::new(target.height, target.width)?;
+fn validate_opencv_dimensions(source: ImageSize, target: ImageSize) -> Result<(), ResizeError> {
     for (dimension, value) in [
         ("source height", source.height),
         ("source width", source.width),
@@ -847,27 +923,62 @@ fn resize_u8_opencv_linear(
             });
         }
     }
+    Ok(())
+}
+
+fn opencv_linear_axis(
+    output: usize,
+    input: usize,
+    horizontal: bool,
+) -> Vec<(usize, usize, f32, f32)> {
+    opencv_linear_axis_with_scale(output, input, horizontal, input as f64 / output as f64)
+}
+
+fn opencv_linear_axis_with_scale(
+    output: usize,
+    input: usize,
+    horizontal: bool,
+    scale: f64,
+) -> Vec<(usize, usize, f32, f32)> {
+    // Coordinates are formed in FP64 and rounded to FP32 before extracting
+    // their fraction. Only horizontal borders reset that fraction.
+    (0..output)
+        .map(|index| {
+            let coordinate = ((index as f64 + 0.5) * scale - 0.5) as f32;
+            let mut origin = coordinate.floor() as i64;
+            let mut fraction = coordinate - origin as f32;
+            if horizontal && (origin < 0 || origin >= input as i64 - 1) {
+                origin = origin.clamp(0, input as i64 - 1);
+                fraction = 0.0;
+            }
+            let first = origin.clamp(0, input as i64 - 1) as usize;
+            let second = (origin + 1).clamp(0, input as i64 - 1) as usize;
+            (first, second, 1.0 - fraction, fraction)
+        })
+        .collect()
+}
+
+fn resize_u8_opencv_linear(
+    values: &[u8],
+    source: ImageSize,
+    channels: usize,
+    target: ImageSize,
+    filter: ResizeFilter,
+) -> Result<Vec<u8>, ResizeError> {
+    if filter != ResizeFilter::Bilinear {
+        return Err(ResizeError::UnsupportedOpenCvFilter);
+    }
+    ImageSize::new(target.height, target.width)?;
+    validate_opencv_dimensions(source, target)?;
     if source == target {
         return Ok(values.to_vec());
     }
-    // OpenCV forms the coordinate in double precision, then stores its fraction
-    // in float. Horizontal borders reset the fraction; vertical borders clamp
-    // row access while retaining the interpolation coefficients.
     let axis = |output: usize, input: usize, horizontal: bool| {
-        let scale = input as f64 / output as f64;
-        (0..output)
-            .map(|index| {
-                let coordinate = ((index as f64 + 0.5) * scale - 0.5) as f32;
-                let mut origin = coordinate.floor() as i64;
-                let mut fraction = coordinate - origin as f32;
-                if horizontal && (origin < 0 || origin >= input as i64 - 1) {
-                    origin = origin.clamp(0, input as i64 - 1);
-                    fraction = 0.0;
-                }
-                let first = origin.clamp(0, input as i64 - 1) as usize;
-                let second = (origin + 1).clamp(0, input as i64 - 1) as usize;
-                let left = ((1.0 - fraction) * 2048.0).round_ties_even() as i32;
-                let right = (fraction * 2048.0).round_ties_even() as i32;
+        opencv_linear_axis(output, input, horizontal)
+            .into_iter()
+            .map(|(first, second, left, right)| {
+                let left = (left * 2048.0).round_ties_even() as i32;
+                let right = (right * 2048.0).round_ties_even() as i32;
                 (first, second, left, right)
             })
             .collect::<Vec<_>>()
@@ -2481,6 +2592,9 @@ pub enum ResizeError {
     /// A floating-point scale was not finite.
     #[error("scale factor must be finite, got {0}")]
     InvalidScaleFactor(f32),
+    /// A resize profile has no floating-point implementation.
+    #[error("resize profile {0:?} does not support FP32 input")]
+    UnsupportedFloatProfile(ResizeProfile),
     /// An input floating-point value was not finite.
     #[error("input value at index {index} must be finite")]
     NonFiniteValue {

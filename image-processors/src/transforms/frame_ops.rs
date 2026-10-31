@@ -1241,6 +1241,32 @@ pub fn composite_mask_frame(
     )
 }
 
+/// Resize interleaved FP32 values with an existing resize decision.
+///
+/// Uses the same profile/filter mapping as byte-frame resizing while retaining
+/// floating values throughout. No byte conversion is used as a fallback.
+///
+/// # Errors
+/// Reports invalid geometry, storage lengths, channels, nonfinite values or an
+/// unsupported floating-point resize profile/filter.
+pub fn resize_f32(
+    values: &[f32],
+    source: ImageSize,
+    channels: usize,
+    target: ImageSize,
+    decision: ResizeDecision,
+) -> Result<Vec<f32>, TransformError> {
+    image_resize_kernels::resize_f32(
+        values,
+        kernel_size(source),
+        channels,
+        kernel_size(target),
+        kernel_filter(decision.filter()),
+        resize_profile(decision.parity()),
+    )
+    .map_err(transform_error_from_resize)
+}
+
 fn resize_image_data(
     values: &[u8],
     source: ImageSize,
