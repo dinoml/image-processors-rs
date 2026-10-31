@@ -1278,6 +1278,7 @@ fn resize_profile(parity: ResizeParity) -> ResizeProfile {
         ResizeParity::Compatibility => ResizeProfile::Pillow,
         ResizeParity::Torchvision => ResizeProfile::Torchvision,
         ResizeParity::TorchvisionNoAntialias => ResizeProfile::TorchvisionNoAntialias,
+        ResizeParity::OpenCvLinear => ResizeProfile::OpenCvLinear,
         ResizeParity::Resampling | ResizeParity::PixelExact => ResizeProfile::Fast,
     }
 }

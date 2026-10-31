@@ -113,6 +113,8 @@ pub enum ResizeProfile {
     Torchvision,
     /// Torchvision tensor interpolation without antialiasing; rounds once after interpolation.
     TorchvisionNoAntialias,
+    /// OpenCV CPU byte INTER_LINEAR: half-pixel coordinates and 11-bit coefficients.
+    OpenCvLinear,
 }
 
 /// Output layout for direct resized `f32` image writes.
@@ -232,6 +234,9 @@ pub fn resize_u8(
 ) -> Result<Vec<u8>, ResizeError> {
     validate_image_data(values.len(), source, channels)?;
     match profile {
+        ResizeProfile::OpenCvLinear => {
+            resize_u8_opencv_linear(values, source, channels, target, filter)
+        }
         ResizeProfile::Fast => resize_u8_fast(values, source, channels, target, filter),
         ResizeProfile::Pillow => resize_u8_pillow(values, source, channels, target, filter),
         ResizeProfile::Torchvision | ResizeProfile::TorchvisionNoAntialias => {
@@ -361,6 +366,9 @@ pub fn resize_u8_owned(
 ) -> Result<Vec<u8>, ResizeError> {
     validate_image_data(values.len(), source, channels)?;
     match profile {
+        ResizeProfile::OpenCvLinear => {
+            resize_u8_opencv_linear(&values, source, channels, target, filter)
+        }
         ResizeProfile::Fast => resize_u8_fast_owned(values, source, channels, target, filter),
         ResizeProfile::Pillow => resize_u8_pillow(&values, source, channels, target, filter),
         ResizeProfile::Torchvision | ResizeProfile::TorchvisionNoAntialias => {
@@ -396,6 +404,9 @@ pub fn resize_u8_crop(
 ) -> Result<Vec<u8>, ResizeError> {
     validate_image_data(values.len(), source, channels)?;
     match profile {
+        ResizeProfile::OpenCvLinear => {
+            resize_u8_opencv_crop(values, source, channels, crop, filter)
+        }
         ResizeProfile::Fast => resize_u8_full_then_crop(values, source, channels, crop, filter),
         ResizeProfile::Pillow => resize_u8_pillow_crop(values, source, channels, crop, filter),
         ResizeProfile::Torchvision | ResizeProfile::TorchvisionNoAntialias => {
@@ -428,6 +439,9 @@ pub fn resize_u8_crop_owned(
 ) -> Result<Vec<u8>, ResizeError> {
     validate_image_data(values.len(), source, channels)?;
     match profile {
+        ResizeProfile::OpenCvLinear => {
+            resize_u8_opencv_crop(&values, source, channels, crop, filter)
+        }
         ResizeProfile::Fast => {
             let resized_values =
                 resize_u8_fast_owned(values, source, channels, crop.resized, filter)?;
@@ -472,6 +486,9 @@ pub fn resize_u8_crop_with_workspace(
 ) -> Result<Vec<u8>, ResizeError> {
     validate_image_data(values.len(), source, channels)?;
     match profile {
+        ResizeProfile::OpenCvLinear => {
+            resize_u8_opencv_crop(values, source, channels, crop, filter)
+        }
         ResizeProfile::Fast => resize_u8_full_then_crop(values, source, channels, crop, filter),
         ResizeProfile::Pillow => {
             resize_u8_pillow_crop_with_workspace(values, source, channels, crop, filter, workspace)
@@ -594,6 +611,18 @@ fn resize_u8_crop_into_transformed_with_workspace<T: TransformedOutput>(
     validate_image_data(values.len(), source, channels)?;
     validate_f32_output(output.len(), crop.target, channels, multiplier, offset)?;
     match profile {
+        ResizeProfile::OpenCvLinear => {
+            let resized = resize_u8_opencv_crop(values, source, channels, crop, filter)?;
+            write_interleaved_u8_to_output(
+                &resized,
+                crop.target,
+                channels,
+                output,
+                layout,
+                multiplier,
+                offset,
+            )
+        }
         ResizeProfile::Pillow => resize_u8_pillow_crop_into_with_workspace(
             values, source, channels, crop, filter, output, layout, multiplier, offset, workspace,
         ),
@@ -703,6 +732,100 @@ fn resize_u8_full_then_crop(
         crop.origin_y,
         crop.target,
     )
+}
+
+fn resize_u8_opencv_crop(
+    values: &[u8],
+    source: ImageSize,
+    channels: usize,
+    crop: ResizeCrop,
+    filter: ResizeFilter,
+) -> Result<Vec<u8>, ResizeError> {
+    let resized = resize_u8_opencv_linear(values, source, channels, crop.resized, filter)?;
+    crop_image_data(
+        &resized,
+        crop.resized,
+        channels,
+        crop.origin_x,
+        crop.origin_y,
+        crop.target,
+    )
+}
+
+fn resize_u8_opencv_linear(
+    values: &[u8],
+    source: ImageSize,
+    channels: usize,
+    target: ImageSize,
+    filter: ResizeFilter,
+) -> Result<Vec<u8>, ResizeError> {
+    if filter != ResizeFilter::Bilinear {
+        return Err(ResizeError::UnsupportedOpenCvFilter);
+    }
+    ImageSize::new(target.height, target.width)?;
+    for (dimension, value) in [
+        ("source height", source.height),
+        ("source width", source.width),
+        ("target height", target.height),
+        ("target width", target.width),
+    ] {
+        if value > i32::MAX as usize {
+            return Err(ResizeError::DimensionTooLarge {
+                dimension,
+                value,
+                max: i32::MAX as usize,
+            });
+        }
+    }
+    if source == target {
+        return Ok(values.to_vec());
+    }
+    // OpenCV forms the coordinate in double precision, then stores its fraction
+    // in float. Horizontal borders reset the fraction; vertical borders clamp
+    // row access while retaining the interpolation coefficients.
+    let axis = |output: usize, input: usize, horizontal: bool| {
+        let scale = input as f64 / output as f64;
+        (0..output)
+            .map(|index| {
+                let coordinate = ((index as f64 + 0.5) * scale - 0.5) as f32;
+                let mut origin = coordinate.floor() as i64;
+                let mut fraction = coordinate - origin as f32;
+                if horizontal && (origin < 0 || origin >= input as i64 - 1) {
+                    origin = origin.clamp(0, input as i64 - 1);
+                    fraction = 0.0;
+                }
+                let first = origin.clamp(0, input as i64 - 1) as usize;
+                let second = (origin + 1).clamp(0, input as i64 - 1) as usize;
+                let left = ((1.0 - fraction) * 2048.0).round_ties_even() as i32;
+                let right = (fraction * 2048.0).round_ties_even() as i32;
+                (first, second, left, right)
+            })
+            .collect::<Vec<_>>()
+    };
+    let columns = axis(target.width, source.width, true);
+    let rows = axis(target.height, source.height, false);
+    let mut output = vec![0; image_len(target, channels)?];
+    output
+        .par_chunks_exact_mut(target.width * channels)
+        .enumerate()
+        .for_each(|(y, row)| {
+            let (y0, y1, upper, lower) = rows[y];
+            for (x, &(x0, x1, left, right)) in columns.iter().enumerate() {
+                for channel in 0..channels {
+                    let sample = |yy: usize, xx: usize| {
+                        i32::from(values[(yy * source.width + xx) * channels + channel])
+                    };
+                    let top = sample(y0, x0) * left + sample(y0, x1) * right;
+                    let bottom = sample(y1, x0) * left + sample(y1, x1) * right;
+                    // Preserve the byte-linear vertical path's staged integer shifts.
+                    let upper_value = (upper * (top >> 4)) >> 16;
+                    let lower_value = (lower * (bottom >> 4)) >> 16;
+                    row[x * channels + channel] =
+                        ((upper_value + lower_value + 2) >> 2).clamp(0, 255) as u8;
+                }
+            }
+        });
+    Ok(output)
 }
 
 // ATen UpSample.h uses half-pixel positions and A=-0.75 for non-AA cubic.
@@ -2313,6 +2436,9 @@ pub enum ResizeError {
     /// Torchvision non-antialiased tensors support nearest, bilinear and bicubic only.
     #[error("non-antialiased tensor resize supports nearest, bilinear and bicubic only")]
     UnsupportedNonAntialiasedFilter,
+    /// OpenCV byte linear parity requires the bilinear filter.
+    #[error("OpenCV byte linear parity requires bilinear filtering")]
+    UnsupportedOpenCvFilter,
     /// The requested crop window was outside the resized image.
     #[error(
         "crop window origin=({origin_x}, {origin_y}) size={target_width}x{target_height} exceeds resized image {resized_width}x{resized_height}"

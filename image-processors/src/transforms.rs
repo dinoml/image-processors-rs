@@ -603,6 +603,8 @@ pub enum ResizeParity {
     Torchvision,
     /// Torchvision tensor resize without antialiasing; final u8 rounding only.
     TorchvisionNoAntialias,
+    /// OpenCV CPU byte INTER_LINEAR with quantized coefficients and byte rounding.
+    OpenCvLinear,
     /// Preserve pixel identities with nearest-neighbor sampling.
     PixelExact,
 }
@@ -662,13 +664,29 @@ impl ResizeDecision {
         }
     }
 
+    /// Creates an OpenCV-compatible byte bilinear resize decision.
+    pub fn opencv_linear() -> Self {
+        Self {
+            filter: ResizeFilter::Bilinear,
+            kernel: ResizeKernel::Triangle,
+            parity: ResizeParity::OpenCvLinear,
+        }
+    }
+
     /// Creates a resize decision from a filter and parity policy.
     ///
     /// # Errors
     ///
-    /// Returns an error when `PixelExact` is requested with a blending filter.
+    /// Returns an error when `PixelExact` is requested with a blending filter, or
+    /// `OpenCvLinear` is requested with a filter other than `Bilinear`.
     pub fn new(filter: ResizeFilter, parity: ResizeParity) -> Result<Self, TransformError> {
         match parity {
+            ResizeParity::OpenCvLinear if filter == ResizeFilter::Bilinear => {
+                Ok(Self::opencv_linear())
+            }
+            ResizeParity::OpenCvLinear => {
+                Err(TransformError::InvalidResizeParity { filter, parity })
+            }
             ResizeParity::Resampling => Ok(Self::resampling(filter)),
             ResizeParity::Compatibility => Ok(Self::compatibility(filter)),
             ResizeParity::Torchvision => Ok(Self::torchvision(filter)),

@@ -32,6 +32,7 @@ pub(super) fn resize_decision_for_parts(
         ResizeParity::Compatibility => ResizeDecision::compatibility(filter),
         ResizeParity::Torchvision => ResizeDecision::torchvision(filter),
         ResizeParity::TorchvisionNoAntialias => ResizeDecision::torchvision_no_antialias(filter),
+        ResizeParity::OpenCvLinear => ResizeDecision::opencv_linear(),
         ResizeParity::PixelExact => ResizeDecision::pixel_exact(),
     }
 }
