@@ -13,6 +13,14 @@ The current focus is the Rust crate architecture. Bindings are intentionally out
 - resize, crop, mask, normalization, and binarization kernels
 - processor configs and concrete entrypoints that keep ownership in Rust
 
+The `TaskVisionProcessorPreset::Owlv2` preset follows Transformers'
+`Owlv2ImageProcessorPil` policy: rescaling, zero square padding, Gaussian
+antialiasing with SciPy's four-sigma support, grid-mode bilinear resize with
+whole-sample mirrored edges, input-range clipping, and checkpoint normalization.
+Filtering uses double-precision coefficients and accumulation with FP32 storage
+between the separable passes. This policy also applies to the corresponding
+`Owlv2AntialiasedResize` recipe stage.
+
 ## Getting started
 
 The workspace requires Rust 1.95 or newer. Until the crates are published,
