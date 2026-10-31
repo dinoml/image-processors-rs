@@ -115,6 +115,83 @@ pub struct ImageSize {
 }
 
 impl ImageSize {
+    /// Qwen3-VL video resize target under a clip-wide temporal pixel budget.
+    ///
+    /// `max_video_tokens` enables the source per-frame cap. Spatial and temporal
+    /// patch rounding follow ties-to-even; short clips occupy one temporal patch.
+    ///
+    /// # Errors
+    /// Returns an error for zero dimensions, invalid limits or arithmetic overflow.
+    pub fn smart_resize_video(
+        self,
+        frames: usize,
+        temporal_patch: usize,
+        limits: ResizeLimits,
+        max_video_tokens: Option<usize>,
+    ) -> Result<Self, TransformError> {
+        validate_size(self)?;
+        if frames == 0
+            || temporal_patch == 0
+            || limits.factor == 0
+            || limits.min_pixels == 0
+            || limits.max_pixels < limits.min_pixels
+            || max_video_tokens == Some(0)
+        {
+            return Err(TransformError::InvalidSmartResizeParams);
+        }
+        let frames = frames.max(temporal_patch);
+        let max_pixels = if let Some(tokens) = max_video_tokens {
+            let token_pixels = tokens
+                .checked_mul(limits.factor)
+                .and_then(|value| value.checked_mul(limits.factor))
+                .ok_or(TransformError::ImageSizeOverflow)?;
+            let minimum = limits.min_pixels as f64 * 1.05;
+            if minimum >= usize::MAX as f64 {
+                return Err(TransformError::ImageSizeOverflow);
+            }
+            token_pixels
+                .min(limits.max_pixels / frames)
+                .max(minimum as usize)
+                .checked_mul(frames)
+                .ok_or(TransformError::ImageSizeOverflow)?
+        } else {
+            limits.max_pixels
+        };
+        let factor = limits.factor as f64;
+        let mut height = self.height as f64;
+        let mut width = self.width as f64;
+        if height.min(width) < factor {
+            let scale = (factor / height).max(factor / width);
+            height = (height * scale).floor();
+            width = (width * scale).floor();
+        }
+        let mut rows = multiple_from_units((height / factor).round_ties_even(), limits.factor)?;
+        let mut columns = multiple_from_units((width / factor).round_ties_even(), limits.factor)?;
+        let time = multiple_from_units(
+            (frames as f64 / temporal_patch as f64).round_ties_even(),
+            temporal_patch,
+        )?;
+        let pixels = checked_area(rows, columns)?
+            .checked_mul(time)
+            .ok_or(TransformError::ImageSizeOverflow)?;
+        if pixels > max_pixels {
+            let beta = (frames as f64 * height * width / max_pixels as f64).sqrt();
+            rows = limits.factor.max(multiple_from_units(
+                (height / beta / factor).floor(),
+                limits.factor,
+            )?);
+            columns = limits.factor.max(multiple_from_units(
+                (width / beta / factor).floor(),
+                limits.factor,
+            )?);
+        } else if pixels < limits.min_pixels {
+            let beta = (limits.min_pixels as f64 / (frames as f64 * height * width)).sqrt();
+            rows = multiple_from_units((height * beta / factor).ceil(), limits.factor)?;
+            columns = multiple_from_units((width * beta / factor).ceil(), limits.factor)?;
+        }
+        Self::new(rows, columns)
+    }
+
     /// Creates an image size with positive dimensions.
     ///
     /// # Errors
