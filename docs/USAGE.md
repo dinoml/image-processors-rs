@@ -1,13 +1,5 @@
 # Rust API usage guide
 
-Enable `opencv-f32` to use native OpenCV `INTER_LINEAR` on floating-point images.
-This optional feature needs OpenCV development headers and libraries. The resize
-helpers retain FP32 interpolation without intermediate byte quantization.
-`ImageProcessor::preprocess_image_divided_opencv_f32` divides decoded pixels in
-FP64, converts to FP32 before resizing, then applies configured tensor rescaling,
-normalization, binarization and output layout. Set `do_rescale` to false when the
-initial division already supplies the required scaling.
-
 `matlab_rgb_to_ycbcr_f32` and `matlab_ycbcr_to_rgb_f32` convert copied three-channel
 FP32 pixels using MATLAB-style limited-range YCbCr. They preserve KAIR's FP32
 scaling and FP64 matrix boundaries; the inverse clips after its offset. These

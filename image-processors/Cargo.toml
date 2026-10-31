@@ -29,7 +29,6 @@ harness = false
 [features]
 default = ["parallel"]
 parallel = ["dep:rayon"]
-opencv-f32 = ["image-resize-kernels/opencv-f32"]
 turbojpeg = ["dep:turbojpeg", "turbojpeg/cmake", "turbojpeg/pkg-config"]
 url = ["dep:reqwest"]
 video = ["dep:video-rs"]
