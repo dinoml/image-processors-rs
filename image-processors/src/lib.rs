@@ -42,7 +42,7 @@ pub use catalog::{
 #[doc(inline)]
 pub use image::{
     default_batch_execution, BatchExecution, ImageProcessor, ImageProcessorConfig,
-    ImageProcessorError, ImageProcessorOptions, ImageProcessorWorkspace,
+    ImageProcessorError, ImageProcessorOptions, ImageProcessorPrecision, ImageProcessorWorkspace,
     DEFAULT_PARALLEL_BATCH_THRESHOLD,
 };
 #[doc(inline)]

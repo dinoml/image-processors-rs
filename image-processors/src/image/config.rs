@@ -128,6 +128,9 @@ pub const fn default_batch_execution() -> BatchExecution {
 }
 
 /// Per-call preprocessing overrides.
+///
+/// Intermediate precision is selected separately so existing option literals and
+/// all existing byte-processing entrypoints keep their source compatibility.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ImageProcessorOptions {
     /// Per-call resize height override.
@@ -136,4 +139,18 @@ pub struct ImageProcessorOptions {
     pub width: Option<usize>,
     /// Per-call resize mode override.
     pub resize_mode: Option<ResizeMode>,
+}
+
+/// Intermediate pixel precision for the existing image preprocessing pipeline.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum ImageProcessorPrecision {
+    /// Preserve the existing byte-resize, then floating tensor conversion path.
+    #[default]
+    Byte,
+    /// Convert bytes to FP32 before resizing, without intermediate quantization.
+    Float32 {
+        /// Optional division in FP64 followed by FP32 conversion, before resize.
+        /// This precedes any configured post-resize rescale/normalization.
+        rescale_divisor: Option<f64>,
+    },
 }

@@ -39,10 +39,11 @@ pub use frame_ops::{
     pad_video_clip_frames_with_canvas_fill, padded_image_size, repeat_last_frame_batch_to_multiple,
     repeat_last_image_sequence_to_multiple, repeat_last_video_clip_to_multiple,
     resize_center_crop_frame, resize_center_crop_frame_with_decision, resize_center_crop_plan,
-    resize_fill_plan, resize_frame, resize_frame_opencv, resize_frame_opencv_scale_dependent,
-    resize_frame_to_area_limit, resize_frame_to_bottom_right_padded_frame,
-    resize_frame_to_fill_frame, resize_frame_with_decision, resize_rgb_to_fill_frame,
-    temporal_repeat_last_plan, unpad_frame_to_size, validate_padding_fill,
+    resize_f32, resize_fill_plan, resize_frame, resize_frame_opencv,
+    resize_frame_opencv_scale_dependent, resize_frame_to_area_limit,
+    resize_frame_to_bottom_right_padded_frame, resize_frame_to_fill_frame,
+    resize_frame_with_decision, resize_rgb_to_fill_frame, temporal_repeat_last_plan,
+    unpad_frame_to_size, validate_padding_fill,
 };
 use frame_ops::{crop_image_data, frame_size, new_frame};
 pub(crate) use frame_ops::{

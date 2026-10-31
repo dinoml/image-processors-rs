@@ -31,7 +31,9 @@ pub enum ImageProcessorError {
         merge_size: usize,
     },
     /// A Qwen/VLM resized target could not be represented as merged patches.
-    #[error("target size {target_size:?} is not divisible by patch_size={patch_size} and merge_size={merge_size}")]
+    #[error(
+        "target size {target_size:?} is not divisible by patch_size={patch_size} and merge_size={merge_size}"
+    )]
     InvalidPatchTarget {
         /// Resized image dimensions.
         target_size: ImageSize,
@@ -107,6 +109,9 @@ pub enum ImageProcessorError {
     /// The configured rescale factor was not finite.
     #[error("rescale_factor must be finite, got {0}")]
     NonFiniteRescaleFactor(f32),
+    /// Pre-resize FP64 division requires a finite positive divisor.
+    #[error("pre-resize divisor must be finite and positive")]
+    InvalidRescaleDivisor,
     /// A configured target dimension was zero.
     #[error("{field} must be positive when configured, got {value}")]
     InvalidConfiguredDimension {

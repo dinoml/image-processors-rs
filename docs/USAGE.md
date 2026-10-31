@@ -1,5 +1,17 @@
 # Rust API usage guide
 
+`ImageProcessor::preprocess_image_with_precision` selects either the existing
+byte path or `ImageProcessorPrecision::Float32 { rescale_divisor }`. The float
+option converts decoded pixels before resizing; an optional divisor is applied
+in FP64 before the FP32 cast. Configured rescaling and normalization still run
+after resize, so disable `do_rescale` when the initial division is sufficient.
+`transforms::resize_f32` uses the existing resize decision for floating masks.
+The supported floating profiles are Torchvision antialiased interpolation and
+the existing linear compatibility profile without antialiasing. Both use Rust
+kernels, with no native image-processing dependency or additional feature flag.
+Unsupported floating profiles and resize modes return errors. The original byte
+entrypoints retain their existing behavior.
+
 `matlab_rgb_to_ycbcr_f32` and `matlab_ycbcr_to_rgb_f32` convert copied three-channel
 FP32 pixels using MATLAB-style limited-range YCbCr. They preserve KAIR's FP32
 scaling and FP64 matrix boundaries; the inverse clips after its offset. These
