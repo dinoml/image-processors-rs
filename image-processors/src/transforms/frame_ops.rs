@@ -182,6 +182,30 @@ pub fn composite_alpha_to_rgb(
     Ok(output)
 }
 
+/// Convert planar RGB floating-point pixels to one NTSC grayscale plane.
+///
+/// Values retain their current scale and precision; callers choose whether to
+/// replicate the resulting plane and when to apply this conversion.
+///
+/// # Errors
+/// Returns an error when the slice cannot contain three equally sized planes.
+pub fn rgb_planar_f32_to_grayscale(values: &[f32]) -> Result<Vec<f32>, TransformError> {
+    if !values.len().is_multiple_of(3) {
+        return Err(TransformError::InvalidChannelDataLength {
+            channels: 3,
+            actual: values.len(),
+        });
+    }
+    let plane = values.len() / 3;
+    Ok((0..plane)
+        .map(|index| {
+            values[index] * 0.2989
+                + values[plane + index] * 0.5870
+                + values[2 * plane + index] * 0.1140
+        })
+        .collect())
+}
+
 /// Converts a frame to another pixel format.
 ///
 /// # Errors

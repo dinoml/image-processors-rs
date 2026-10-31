@@ -50,8 +50,8 @@ pub use frame_ops::{
     resize_f32, resize_fill_plan, resize_frame, resize_frame_opencv,
     resize_frame_opencv_scale_dependent, resize_frame_to_area_limit,
     resize_frame_to_bottom_right_padded_frame, resize_frame_to_fill_frame,
-    resize_frame_with_decision, resize_rgb_to_fill_frame, temporal_repeat_last_plan,
-    unpad_frame_to_size, validate_padding_fill,
+    resize_frame_with_decision, resize_rgb_to_fill_frame, rgb_planar_f32_to_grayscale,
+    temporal_repeat_last_plan, unpad_frame_to_size, validate_padding_fill,
 };
 use frame_ops::{crop_image_data, frame_size, new_frame};
 pub(crate) use frame_ops::{
