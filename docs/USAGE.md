@@ -449,3 +449,16 @@ a domain error with `#[source]` rather than discard its context.
 - [FFmpeg Development Libraries](FFMPEG.md): native setup for `video`.
 - [Roadmap](ROADMAP.md): implemented scope and future work.
 - Generated crate docs: item-level methods, errors, and layout contracts.
+
+## OpenCV byte linear resizing
+
+For InsightFace-style byte images, select `ResizeDecision::opencv_linear()`
+(or `ResizeFilter::Bilinear` with `ResizeParity::OpenCvLinear` in processor
+configuration). The serialized parity is `OpenCvLinear`. This policy uses
+the OpenCV CPU `INTER_LINEAR` byte reference path: half-pixel coordinates,
+11-bit interpolation coefficients, clamped border samples, and staged integer
+rounding. It supports the existing interleaved byte resize, resize-and-crop,
+and byte-to-normalized-tensor paths; normalization runs after byte rounding.
+Other filters are rejected. Floating-point tensor interpolation continues to
+use its explicit tensor policy. Optional OpenCV acceleration backends are
+outside this parity contract.
