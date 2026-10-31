@@ -2,6 +2,10 @@
 
 Rust-first media loading and image processor primitives for model image processors.
 
+`transforms::resize_f32_bilinear_interleaved` supports FP32 bilinear interpolation
+without antialiasing, using aligned corners or half-pixel coordinates. Values
+remain floating point throughout resizing, including depth-map restoration.
+
 For a workflow-oriented introduction to the public crate surface, see the
 **[Rust API usage guide](docs/USAGE.md)**.
 
