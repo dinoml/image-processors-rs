@@ -951,7 +951,7 @@ pub fn post_process_coordinates(
     }
 
     let mut points = Vec::with_capacity(point_count);
-    for point in coordinates.chunks_exact(2) {
+    for point in coordinates.as_chunks::<2>().0.iter() {
         let normalized = [point[0], point[1]];
         validate_coordinate_point(normalized)?;
         points.push(CoordinatePoint::new(
@@ -1891,7 +1891,9 @@ fn detection_center_boxes_from_tensor(
     }
 
     values
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|bbox| DetectionCenterBox::new(bbox[0], bbox[1], bbox[2], bbox[3]))
         .collect::<Result<Vec<_>, _>>()
         .map_err(RecipePostprocessError::Transform)

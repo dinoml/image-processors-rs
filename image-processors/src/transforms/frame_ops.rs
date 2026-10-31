@@ -1807,7 +1807,9 @@ pub(super) fn convert_to_rgb(values: &[u8], channels: usize) -> Result<Vec<u8>, 
             .collect()),
         3 => Ok(values.to_vec()),
         4 => Ok(values
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .flat_map(|pixel| [pixel[0], pixel[1], pixel[2]])
             .collect()),
         _ => Err(TransformError::UnsupportedChannels(channels)),
@@ -1834,7 +1836,9 @@ fn convert_to_rgba(values: &[u8], channels: usize) -> Result<Vec<u8>, TransformE
             .flat_map(|value| [*value, *value, *value, 255])
             .collect()),
         3 => Ok(values
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .flat_map(|pixel| [pixel[0], pixel[1], pixel[2], 255])
             .collect()),
         4 => Ok(values.to_vec()),
