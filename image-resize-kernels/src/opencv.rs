@@ -6,6 +6,216 @@
 
 use rayon::prelude::*;
 
+trait FloatSample: Copy + Send + Sync {
+    const ZERO: Self;
+    fn finite(self) -> bool;
+    fn add(self, other: Self) -> Self;
+    fn weighted(self, weight: f32) -> Self;
+}
+impl FloatSample for f32 {
+    const ZERO: Self = 0.0;
+    fn finite(self) -> bool {
+        self.is_finite()
+    }
+    fn add(self, other: Self) -> Self {
+        self + other
+    }
+    fn weighted(self, weight: f32) -> Self {
+        self * weight
+    }
+}
+impl FloatSample for f64 {
+    const ZERO: Self = 0.0;
+    fn finite(self) -> bool {
+        self.is_finite()
+    }
+    fn add(self, other: Self) -> Self {
+        self + other
+    }
+    fn weighted(self, weight: f32) -> Self {
+        self * f64::from(weight)
+    }
+}
+
+/// Resize finite interleaved FP32 values without byte quantization.
+///
+/// # Errors
+/// Reports invalid dimensions, storage, channels, overflow or nonfinite values.
+pub fn resize_f32_opencv(
+    values: &[f32],
+    source: ImageSize,
+    channels: usize,
+    target: ImageSize,
+    interpolation: OpenCvInterpolation,
+) -> Result<Vec<f32>, ResizeError> {
+    resize_float(values, source, channels, target, interpolation)
+}
+
+/// Resize finite interleaved FP64 values with floating interpolation coefficients.
+///
+/// # Errors
+/// Reports invalid dimensions, storage, channels, overflow or nonfinite values.
+pub fn resize_f64_opencv(
+    values: &[f64],
+    source: ImageSize,
+    channels: usize,
+    target: ImageSize,
+    interpolation: OpenCvInterpolation,
+) -> Result<Vec<f64>, ResizeError> {
+    resize_float(values, source, channels, target, interpolation)
+}
+
+fn float_axis(
+    input: usize,
+    output: usize,
+    mode: OpenCvInterpolation,
+    horizontal: bool,
+    area_reduction: bool,
+) -> Vec<Vec<(usize, f32)>> {
+    if mode == OpenCvInterpolation::Area && area_reduction {
+        return area_axis(input, output);
+    }
+    let scale = axis_scale(input, output);
+    (0..output)
+        .map(|index| {
+            if mode == OpenCvInterpolation::Nearest {
+                return vec![(
+                    ((index as f64 * scale).floor() as usize).min(input - 1),
+                    1.0,
+                )];
+            }
+            let (mut origin, mut fraction) = if mode == OpenCvInterpolation::Area {
+                let origin = (index as f64 * scale).floor() as i64;
+                let fraction = ((index + 1) as f64
+                    - (origin + 1) as f64 * output as f64 / input as f64)
+                    as f32;
+                (
+                    origin,
+                    if fraction <= 0.0 {
+                        0.0
+                    } else {
+                        fraction - fraction.floor()
+                    },
+                )
+            } else {
+                let coordinate = ((index as f64 + 0.5) * scale - 0.5) as f32;
+                let origin = coordinate.floor() as i64;
+                (origin, coordinate - origin as f32)
+            };
+            let (offset, count) = match mode {
+                OpenCvInterpolation::Cubic => (-1, 4),
+                OpenCvInterpolation::Lanczos4 => (-3, 8),
+                _ => (0, 2),
+            };
+            if horizontal && count == 2 && (origin < 0 || origin >= input as i64 - 1) {
+                origin = origin.clamp(0, input as i64 - 1);
+                fraction = 0.0;
+            }
+            let weights = match mode {
+                OpenCvInterpolation::Cubic => cubic_coefficients(fraction),
+                OpenCvInterpolation::Lanczos4 => lanczos4_coefficients(fraction),
+                _ => [1.0 - fraction, fraction, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            };
+            (0..count)
+                .map(|tap| {
+                    (
+                        (origin + offset + tap as i64).clamp(0, input as i64 - 1) as usize,
+                        weights[tap],
+                    )
+                })
+                .collect()
+        })
+        .collect()
+}
+
+fn resize_float<T: FloatSample>(
+    values: &[T],
+    source: ImageSize,
+    channels: usize,
+    target: ImageSize,
+    interpolation: OpenCvInterpolation,
+) -> Result<Vec<T>, ResizeError> {
+    ImageSize::new(source.height, source.width)?;
+    ImageSize::new(target.height, target.width)?;
+    super::validate_image_data(values.len(), source, channels)?;
+    let count = super::image_len(target, channels)?;
+    if let Some(index) = values.iter().position(|value| !value.finite()) {
+        return Err(ResizeError::NonFiniteValue { index });
+    }
+    if source == target {
+        return Ok(values.to_vec());
+    }
+    let mode = if interpolation == OpenCvInterpolation::Linear
+        && source.width.is_multiple_of(target.width)
+        && source.height.is_multiple_of(target.height)
+        && source.width / target.width == 2
+        && source.height / target.height == 2
+    {
+        OpenCvInterpolation::Area
+    } else {
+        interpolation
+    };
+    if mode == OpenCvInterpolation::Area
+        && source.width.is_multiple_of(target.width)
+        && source.height.is_multiple_of(target.height)
+    {
+        let sx = source.width / target.width;
+        let sy = source.height / target.height;
+        let mut result = vec![T::ZERO; count];
+        for y in 0..target.height {
+            for x in 0..target.width {
+                for c in 0..channels {
+                    let mut value = T::ZERO;
+                    for dy in 0..sy {
+                        for dx in 0..sx {
+                            value = value.add(
+                                values[((y * sy + dy) * source.width + x * sx + dx) * channels + c],
+                            );
+                        }
+                    }
+                    result[(y * target.width + x) * channels + c] =
+                        value.weighted(1.0 / (sx * sy) as f32);
+                }
+            }
+        }
+        return Ok(result);
+    }
+    let area_reduction = source.width >= target.width && source.height >= target.height;
+    let xs = float_axis(source.width, target.width, mode, true, area_reduction);
+    let ys = float_axis(source.height, target.height, mode, false, area_reduction);
+    let intermediate_len = source
+        .height
+        .checked_mul(target.width)
+        .and_then(|v| v.checked_mul(channels))
+        .ok_or(ResizeError::ImageSizeOverflow)?;
+    let mut intermediate = vec![T::ZERO; intermediate_len];
+    for y in 0..source.height {
+        for (x, weights) in xs.iter().enumerate() {
+            for c in 0..channels {
+                let mut sum = T::ZERO;
+                for &(sx, weight) in weights {
+                    sum = sum.add(values[(y * source.width + sx) * channels + c].weighted(weight));
+                }
+                intermediate[(y * target.width + x) * channels + c] = sum;
+            }
+        }
+    }
+    let mut result = vec![T::ZERO; count];
+    for (y, weights) in ys.iter().enumerate() {
+        for x in 0..target.width {
+            for c in 0..channels {
+                let mut sum = T::ZERO;
+                for &(sy, weight) in weights {
+                    sum = sum
+                        .add(intermediate[(sy * target.width + x) * channels + c].weighted(weight));
+                }
+                result[(y * target.width + x) * channels + c] = sum;
+            }
+        }
+    }
+    Ok(result)
+}
+
 use super::{ImageSize, ResizeCrop, ResizeError, ResizeFilter};
 
 /// OpenCV interpolation choices for interleaved byte images.

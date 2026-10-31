@@ -1,5 +1,24 @@
 # Rust API usage guide
 
+## Floating filters and face geometry
+
+`transforms::resize_f32_opencv` and `resize_f64_opencv` extend the existing Rust
+resize kernels to floating storage, including nearest, linear, area, cubic and
+Lanczos4 interpolation. They preserve floating intermediates instead of
+quantizing masks or gradients to bytes. The compatibility name identifies the
+coordinate and coefficient convention; these functions do not link OpenCV.
+
+`gaussian_blur_f32`, `gaussian_blur_u8`, `sobel_xy_f64`, `dilate_f32` and
+`dilate_rect_f64` provide shared host filtering with explicit image geometry.
+Gaussian and Sobel filters use reflect-101 borders; dilation uses neutral
+out-of-image samples. Floating Gaussian support can be supplied explicitly.
+
+`estimate_similarity_lmeds` fits corresponding landmarks robustly.
+`warp_affine_u8` retains one to four byte channels with explicit constant border
+values; `warp_affine_rgb` is its RGB convenience entrypoint. `ellipse_polygon`,
+`fill_convex_polygon_rgb` and `fill_circle_rgb` retain integer keypoint drawing
+without a native dependency. All mutating drawing functions validate storage.
+
 `ImageProcessor::preprocess_image_with_precision` selects either the existing
 byte path or `ImageProcessorPrecision::Float32 { rescale_divisor }`. The float
 option converts decoded pixels before resizing; an optional divisor is applied

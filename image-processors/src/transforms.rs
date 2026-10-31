@@ -27,7 +27,15 @@ pub use detection::{
     ObjectDetectionPrediction, SegmentationPostProcessOptions, SegmentationPostProcessPrediction,
     SegmentationSegmentInfo, SemanticSegmentationPrediction,
 };
+mod face_geometry;
 mod frame_ops;
+mod raster_drawing;
+pub use face_geometry::{
+    estimate_similarity_lmeds, warp_affine_rgb, warp_affine_u8, FaceGeometryError,
+};
+pub use frame_ops::{resize_f32_opencv, resize_f64_opencv};
+pub use raster_drawing::{ellipse_polygon, fill_circle_rgb, fill_convex_polygon_rgb};
+mod spatial_filters;
 #[cfg(test)]
 use frame_ops::convert_to_rgb;
 pub use frame_ops::{
@@ -49,6 +57,10 @@ use frame_ops::{crop_image_data, frame_size, new_frame};
 pub(crate) use frame_ops::{
     resize_frame_owned_with_decision, resize_frame_owned_with_decision_workspace,
     resize_frame_to_f32_torchvision,
+};
+pub use spatial_filters::{
+    dilate_f32, dilate_rect_f64, gaussian_blur_f32, gaussian_blur_u8, sobel_xy_f64,
+    SpatialFilterError,
 };
 mod layout_plans;
 use layout_plans::compare_ratios_less;
