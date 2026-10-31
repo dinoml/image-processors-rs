@@ -601,6 +601,8 @@ pub enum ResizeParity {
     Compatibility,
     /// Use Torchvision's antialiased tensor-resize rounding behavior.
     Torchvision,
+    /// Torchvision tensor resize without antialiasing; final u8 rounding only.
+    TorchvisionNoAntialias,
     /// Preserve pixel identities with nearest-neighbor sampling.
     PixelExact,
 }
@@ -650,6 +652,16 @@ impl ResizeDecision {
         }
     }
 
+    /// Creates a non-antialiased Torchvision resize decision.
+    /// Validate the filter with `new` when accepting untrusted settings.
+    pub fn torchvision_no_antialias(filter: ResizeFilter) -> Self {
+        Self {
+            filter,
+            kernel: kernel_for_filter(filter),
+            parity: ResizeParity::TorchvisionNoAntialias,
+        }
+    }
+
     /// Creates a resize decision from a filter and parity policy.
     ///
     /// # Errors
@@ -660,6 +672,12 @@ impl ResizeDecision {
             ResizeParity::Resampling => Ok(Self::resampling(filter)),
             ResizeParity::Compatibility => Ok(Self::compatibility(filter)),
             ResizeParity::Torchvision => Ok(Self::torchvision(filter)),
+            ResizeParity::TorchvisionNoAntialias if filter != ResizeFilter::Lanczos => {
+                Ok(Self::torchvision_no_antialias(filter))
+            }
+            ResizeParity::TorchvisionNoAntialias => {
+                Err(TransformError::InvalidResizeParity { filter, parity })
+            }
             ResizeParity::PixelExact if filter == ResizeFilter::Nearest => Ok(Self::pixel_exact()),
             ResizeParity::PixelExact => Err(TransformError::InvalidResizeParity { filter, parity }),
         }

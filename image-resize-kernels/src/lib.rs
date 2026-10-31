@@ -111,6 +111,8 @@ pub enum ResizeProfile {
     /// This profile quantizes normalized filter weights at Torchvision's dynamic
     /// signed-16-bit precision and rounds each separable `u8` pass.
     Torchvision,
+    /// Torchvision tensor interpolation without antialiasing; rounds once after interpolation.
+    TorchvisionNoAntialias,
 }
 
 /// Output layout for direct resized `f32` image writes.
@@ -232,8 +234,15 @@ pub fn resize_u8(
     match profile {
         ResizeProfile::Fast => resize_u8_fast(values, source, channels, target, filter),
         ResizeProfile::Pillow => resize_u8_pillow(values, source, channels, target, filter),
-        ResizeProfile::Torchvision => {
-            resize_u8_torchvision(values, source, channels, target, filter)
+        ResizeProfile::Torchvision | ResizeProfile::TorchvisionNoAntialias => {
+            resize_u8_torchvision(
+                values,
+                source,
+                channels,
+                target,
+                filter,
+                profile == ResizeProfile::Torchvision,
+            )
         }
     }
 }
@@ -354,8 +363,15 @@ pub fn resize_u8_owned(
     match profile {
         ResizeProfile::Fast => resize_u8_fast_owned(values, source, channels, target, filter),
         ResizeProfile::Pillow => resize_u8_pillow(&values, source, channels, target, filter),
-        ResizeProfile::Torchvision => {
-            resize_u8_torchvision(&values, source, channels, target, filter)
+        ResizeProfile::Torchvision | ResizeProfile::TorchvisionNoAntialias => {
+            resize_u8_torchvision(
+                &values,
+                source,
+                channels,
+                target,
+                filter,
+                profile == ResizeProfile::Torchvision,
+            )
         }
     }
 }
@@ -382,8 +398,15 @@ pub fn resize_u8_crop(
     match profile {
         ResizeProfile::Fast => resize_u8_full_then_crop(values, source, channels, crop, filter),
         ResizeProfile::Pillow => resize_u8_pillow_crop(values, source, channels, crop, filter),
-        ResizeProfile::Torchvision => {
-            resize_u8_torchvision_crop(values, source, channels, crop, filter)
+        ResizeProfile::Torchvision | ResizeProfile::TorchvisionNoAntialias => {
+            resize_u8_torchvision_crop(
+                values,
+                source,
+                channels,
+                crop,
+                filter,
+                profile == ResizeProfile::Torchvision,
+            )
         }
     }
 }
@@ -418,8 +441,15 @@ pub fn resize_u8_crop_owned(
             )
         }
         ResizeProfile::Pillow => resize_u8_pillow_crop(&values, source, channels, crop, filter),
-        ResizeProfile::Torchvision => {
-            resize_u8_torchvision_crop(&values, source, channels, crop, filter)
+        ResizeProfile::Torchvision | ResizeProfile::TorchvisionNoAntialias => {
+            resize_u8_torchvision_crop(
+                &values,
+                source,
+                channels,
+                crop,
+                filter,
+                profile == ResizeProfile::Torchvision,
+            )
         }
     }
 }
@@ -446,8 +476,15 @@ pub fn resize_u8_crop_with_workspace(
         ResizeProfile::Pillow => {
             resize_u8_pillow_crop_with_workspace(values, source, channels, crop, filter, workspace)
         }
-        ResizeProfile::Torchvision => {
-            resize_u8_torchvision_crop(values, source, channels, crop, filter)
+        ResizeProfile::Torchvision | ResizeProfile::TorchvisionNoAntialias => {
+            resize_u8_torchvision_crop(
+                values,
+                source,
+                channels,
+                crop,
+                filter,
+                profile == ResizeProfile::Torchvision,
+            )
         }
     }
 }
@@ -572,8 +609,15 @@ fn resize_u8_crop_into_transformed_with_workspace<T: TransformedOutput>(
                 offset,
             )
         }
-        ResizeProfile::Torchvision => {
-            let resized = resize_u8_torchvision_crop(values, source, channels, crop, filter)?;
+        ResizeProfile::Torchvision | ResizeProfile::TorchvisionNoAntialias => {
+            let resized = resize_u8_torchvision_crop(
+                values,
+                source,
+                channels,
+                crop,
+                filter,
+                profile == ResizeProfile::Torchvision,
+            )?;
             write_interleaved_u8_to_output(
                 &resized,
                 crop.target,
@@ -661,13 +705,105 @@ fn resize_u8_full_then_crop(
     )
 }
 
-fn resize_u8_torchvision(
+// ATen UpSample.h uses half-pixel positions and A=-0.75 for non-AA cubic.
+// Torchvision casts u8 to f32 first, then clamps/rounds once on the final image.
+fn resize_u8_torchvision_no_antialias(
     values: &[u8],
     source: ImageSize,
     channels: usize,
     target: ImageSize,
     filter: ResizeFilter,
 ) -> Result<Vec<u8>, ResizeError> {
+    if !matches!(
+        filter,
+        ResizeFilter::Nearest | ResizeFilter::Bilinear | ResizeFilter::Bicubic
+    ) {
+        return Err(ResizeError::UnsupportedNonAntialiasedFilter);
+    }
+    if source == target {
+        return Ok(values.to_vec());
+    }
+    let mut output = vec![0; image_len(target, channels)?];
+    let scale_x = source.width as f32 / target.width as f32;
+    let scale_y = source.height as f32 / target.height as f32;
+    let axis = |out: usize, scale: f32, length: usize| {
+        let position = scale * (out as f32 + 0.5) - 0.5;
+        let position = if filter == ResizeFilter::Bilinear {
+            position.max(0.0)
+        } else {
+            position
+        };
+        let base = position.floor() as isize;
+        let fraction = position - base as f32;
+        let (offset, weights) = if filter == ResizeFilter::Bicubic {
+            let cubic1 = |x: f32| ((1.25 * x - 2.25) * x * x) + 1.0;
+            let cubic2 = |x: f32| ((-0.75 * x + 3.75) * x - 6.0) * x + 3.0;
+            (
+                -1,
+                [
+                    cubic2(fraction + 1.0),
+                    cubic1(fraction),
+                    cubic1(1.0 - fraction),
+                    cubic2(2.0 - fraction),
+                ],
+            )
+        } else {
+            (0, [1.0 - fraction, fraction, 0.0, 0.0])
+        };
+        let indices = std::array::from_fn::<_, 4, _>(|i| {
+            (base + offset + i as isize).clamp(0, length as isize - 1) as usize
+        });
+        (indices, weights)
+    };
+    output
+        .par_chunks_exact_mut(target.width * channels)
+        .enumerate()
+        .for_each(|(y, row)| {
+            for x in 0..target.width {
+                if filter == ResizeFilter::Nearest {
+                    let source_x = ((x as f32 * scale_x).floor() as usize).min(source.width - 1);
+                    let source_y = ((y as f32 * scale_y).floor() as usize).min(source.height - 1);
+                    let start = (source_y * source.width + source_x) * channels;
+                    row[x * channels..(x + 1) * channels]
+                        .copy_from_slice(&values[start..start + channels]);
+                    continue;
+                }
+                let (xs, wx) = axis(x, scale_x, source.width);
+                let (ys, wy) = axis(y, scale_y, source.height);
+                let taps = if filter == ResizeFilter::Bicubic {
+                    4
+                } else {
+                    2
+                };
+                for channel in 0..channels {
+                    let mut value = 0.0_f32;
+                    for j in 0..taps {
+                        let mut horizontal = 0.0_f32;
+                        for i in 0..taps {
+                            horizontal += f32::from(
+                                values[(ys[j] * source.width + xs[i]) * channels + channel],
+                            ) * wx[i];
+                        }
+                        value += horizontal * wy[j];
+                    }
+                    row[x * channels + channel] = value.clamp(0.0, 255.0).round_ties_even() as u8;
+                }
+            }
+        });
+    Ok(output)
+}
+
+fn resize_u8_torchvision(
+    values: &[u8],
+    source: ImageSize,
+    channels: usize,
+    target: ImageSize,
+    filter: ResizeFilter,
+    antialias: bool,
+) -> Result<Vec<u8>, ResizeError> {
+    if !antialias {
+        return resize_u8_torchvision_no_antialias(values, source, channels, target, filter);
+    }
     if source == target {
         return Ok(values.to_vec());
     }
@@ -683,8 +819,9 @@ fn resize_u8_torchvision_crop(
     channels: usize,
     crop: ResizeCrop,
     filter: ResizeFilter,
+    antialias: bool,
 ) -> Result<Vec<u8>, ResizeError> {
-    let resized = resize_u8_torchvision(values, source, channels, crop.resized, filter)?;
+    let resized = resize_u8_torchvision(values, source, channels, crop.resized, filter, antialias)?;
     crop_image_data(
         &resized,
         crop.resized,
@@ -2173,6 +2310,9 @@ pub enum ResizeError {
     /// The channel count is unsupported.
     #[error("unsupported channel count {0}")]
     UnsupportedChannels(usize),
+    /// Torchvision non-antialiased tensors support nearest, bilinear and bicubic only.
+    #[error("non-antialiased tensor resize supports nearest, bilinear and bicubic only")]
+    UnsupportedNonAntialiasedFilter,
     /// The requested crop window was outside the resized image.
     #[error(
         "crop window origin=({origin_x}, {origin_y}) size={target_width}x{target_height} exceeds resized image {resized_width}x{resized_height}"

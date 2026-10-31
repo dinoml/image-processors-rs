@@ -1493,6 +1493,7 @@ fn resize_decision_for_parts(filter: ResizeFilter, parity: ResizeParity) -> Resi
         ResizeParity::Resampling => ResizeDecision::resampling(filter),
         ResizeParity::Compatibility => ResizeDecision::compatibility(filter),
         ResizeParity::Torchvision => ResizeDecision::torchvision(filter),
+        ResizeParity::TorchvisionNoAntialias => ResizeDecision::torchvision_no_antialias(filter),
         ResizeParity::PixelExact => ResizeDecision::pixel_exact(),
     }
 }

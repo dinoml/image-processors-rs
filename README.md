@@ -461,6 +461,14 @@ image-processors = { git = "https://github.com/dinoml/image-processors-rs", feat
   - `ResizeFilter`
   - `ResizeParity`
 
+Torchvision tensor processors that explicitly disable antialiasing can select
+`ResizeParity::TorchvisionNoAntialias` in `ImageProcessorConfig` or recipe resize
+stages. This supports nearest, bilinear and bicubic interpolation, using
+half-pixel coordinates for blended modes, border replication, and one final
+clamp/round-to-even conversion to uint8 before rescaling and normalization.
+Bicubic uses the tensor interpolation coefficient `A = -0.75`. Lanczos is
+rejected for this tensor profile. Existing resize profiles retain their behavior.
+
 ## Usage
 
 ### Preprocess a file with CLIP defaults
