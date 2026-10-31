@@ -38,7 +38,9 @@ pub enum TaskVisionProcessorPreset {
     GroundingDino,
     /// `OwlViTImageProcessor`.
     OwlVit,
-    /// `Owlv2ImageProcessor`.
+    /// OWLv2's PIL/SciPy preprocessing policy (`Owlv2ImageProcessorPil`).
+    /// Uses four-sigma Gaussian support and whole-sample mirrored resize edges.
+    /// The torchvision backend has different filtering and boundary semantics.
     Owlv2,
     /// `PPDocLayoutV2ImageProcessor`.
     PpDocLayoutV2,
@@ -1686,8 +1688,8 @@ fn owlv2_antialiased_resize(
             actual: values.len(),
         });
     }
-    let sigma_y = ((source.height as f32 / target.height as f32) - 1.0).max(0.0) * 0.5;
-    let sigma_x = ((source.width as f32 / target.width as f32) - 1.0).max(0.0) * 0.5;
+    let sigma_y = ((source.height as f64 / target.height as f64) - 1.0).max(0.0) * 0.5;
+    let sigma_x = ((source.width as f64 / target.width as f64) - 1.0).max(0.0) * 0.5;
     let filtered_y = gaussian_filter_owlv2(values, source, sigma_y, true)?;
     let filtered = gaussian_filter_owlv2(&filtered_y, source, sigma_x, false)?;
     let output_len = target
@@ -1696,6 +1698,8 @@ fn owlv2_antialiased_resize(
         .and_then(|pixels| pixels.checked_mul(3))
         .ok_or(TransformError::ImageSizeOverflow)?;
     let mut output = vec![0.0_f32; output_len];
+    let minimum = values.iter().copied().fold(f32::INFINITY, f32::min);
+    let maximum = values.iter().copied().fold(f32::NEG_INFINITY, f32::max);
     let scale_y = source.height as f64 / target.height as f64;
     let scale_x = source.width as f64 / target.width as f64;
     for target_y in 0..target.height {
@@ -1703,22 +1707,24 @@ fn owlv2_antialiased_resize(
             mirror_zoom_coordinate((target_y as f64 + 0.5) * scale_y - 0.5, source.height);
         let y0 = source_y.floor() as usize;
         let y1 = (y0 + 1).min(source.height - 1);
-        let y_weight = (source_y - y0 as f64) as f32;
+        let y_weight = source_y - y0 as f64;
         for target_x in 0..target.width {
             let source_x =
                 mirror_zoom_coordinate((target_x as f64 + 0.5) * scale_x - 0.5, source.width);
             let x0 = source_x.floor() as usize;
             let x1 = (x0 + 1).min(source.width - 1);
-            let x_weight = (source_x - x0 as f64) as f32;
+            let x_weight = source_x - x0 as f64;
             let output_start = (target_y * target.width + target_x) * 3;
             for channel in 0..3 {
-                let top_left = filtered[(y0 * source.width + x0) * 3 + channel];
-                let top_right = filtered[(y0 * source.width + x1) * 3 + channel];
-                let bottom_left = filtered[(y1 * source.width + x0) * 3 + channel];
-                let bottom_right = filtered[(y1 * source.width + x1) * 3 + channel];
+                let top_left = f64::from(filtered[(y0 * source.width + x0) * 3 + channel]);
+                let top_right = f64::from(filtered[(y0 * source.width + x1) * 3 + channel]);
+                let bottom_left = f64::from(filtered[(y1 * source.width + x0) * 3 + channel]);
+                let bottom_right = f64::from(filtered[(y1 * source.width + x1) * 3 + channel]);
                 let top = top_left + (top_right - top_left) * x_weight;
                 let bottom = bottom_left + (bottom_right - bottom_left) * x_weight;
-                output[output_start + channel] = top + (bottom - top) * y_weight;
+                output[output_start + channel] = ((top + (bottom - top) * y_weight) as f32)
+                    .max(minimum)
+                    .min(maximum);
             }
         }
     }
@@ -1834,20 +1840,23 @@ fn float_hwc_to_tensor(
 fn gaussian_filter_owlv2(
     values: &[f32],
     size: ImageSize,
-    sigma: f32,
+    sigma: f64,
     vertical: bool,
 ) -> Result<Vec<f32>, TransformError> {
-    if sigma <= f32::EPSILON {
+    if sigma <= 1e-15 {
         return Ok(values.to_vec());
     }
-    let radius = (3.0 * sigma).ceil() as isize;
+    // scipy.ndimage.gaussian_filter1d uses int(truncate * sigma + 0.5),
+    // with truncate=4.0. Its kernel and accumulation use double precision;
+    // each separable pass is stored in the input/output array's FP32 dtype.
+    let radius = (4.0 * sigma + 0.5).floor() as isize;
     let mut weights = (-radius..=radius)
         .map(|offset| {
-            let offset = offset as f32;
+            let offset = offset as f64;
             (-0.5 * offset * offset / (sigma * sigma)).exp()
         })
         .collect::<Vec<_>>();
-    let weight_sum: f32 = weights.iter().sum();
+    let weight_sum: f64 = weights.iter().sum();
     for weight in &mut weights {
         *weight /= weight_sum;
     }
@@ -1866,7 +1875,7 @@ fn gaussian_filter_owlv2(
     for y in 0..size.height {
         for x in 0..size.width {
             for channel in 0..3 {
-                let mut value = 0.0_f32;
+                let mut value = 0.0_f64;
                 for (weight_index, &weight) in weights.iter().enumerate() {
                     let offset = weight_index as isize - radius;
                     let (source_y, source_x) = if vertical {
@@ -1874,9 +1883,10 @@ fn gaussian_filter_owlv2(
                     } else {
                         (y, mirror_index(x as isize + offset, size.width))
                     };
-                    value += values[(source_y * size.width + source_x) * 3 + channel] * weight;
+                    value += f64::from(values[(source_y * size.width + source_x) * 3 + channel])
+                        * weight;
                 }
-                output[(y * size.width + x) * 3 + channel] = value;
+                output[(y * size.width + x) * 3 + channel] = value as f32;
             }
         }
     }
