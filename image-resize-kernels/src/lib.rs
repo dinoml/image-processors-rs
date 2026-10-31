@@ -299,6 +299,71 @@ pub fn resize_u8_to_f32_torchvision(
     resize_f32_torchvision_interleaved(&values, source, channels, target, filter)
 }
 
+/// Resize interleaved FP32 values with bilinear interpolation, without antialiasing.
+///
+/// Aligned corners retain the endpoints; otherwise half-pixel coordinates and
+/// border replication match tensor interpolation. A singleton output axis samples
+/// coordinate zero with aligned corners. Nonfinite values propagate arithmetically.
+///
+/// # Errors
+/// Returns an error for invalid dimensions, channel counts, storage or size overflow.
+pub fn resize_f32_bilinear_interleaved(
+    values: &[f32],
+    source: ImageSize,
+    channels: usize,
+    target: ImageSize,
+    align_corners: bool,
+) -> Result<Vec<f32>, ResizeError> {
+    ImageSize::new(source.height, source.width)?;
+    ImageSize::new(target.height, target.width)?;
+    validate_image_data(values.len(), source, channels)?;
+    let output_len = image_len(target, channels)?;
+    if source == target {
+        return Ok(values.to_vec());
+    }
+    let axis = |input: usize, output: usize| {
+        let scale = if align_corners {
+            if output > 1 {
+                (input - 1) as f32 / (output - 1) as f32
+            } else {
+                0.0
+            }
+        } else {
+            input as f32 / output as f32
+        };
+        (0..output)
+            .map(|index| {
+                let position = if align_corners {
+                    index as f32 * scale
+                } else {
+                    ((index as f32 + 0.5) * scale - 0.5).max(0.0)
+                };
+                let first = (position.floor() as usize).min(input - 1);
+                (first, (first + 1).min(input - 1), position - first as f32)
+            })
+            .collect::<Vec<_>>()
+    };
+    let rows = axis(source.height, target.height);
+    let columns = axis(source.width, target.width);
+    let mut output = vec![0.0; output_len];
+    output
+        .par_chunks_exact_mut(target.width * channels)
+        .enumerate()
+        .for_each(|(row, pixels)| {
+            let (y0, y1, wy) = rows[row];
+            for (column, &(x0, x1, wx)) in columns.iter().enumerate() {
+                for channel in 0..channels {
+                    let sample =
+                        |y: usize, x: usize| values[(y * source.width + x) * channels + channel];
+                    let upper = sample(y0, x0) * (1.0 - wx) + sample(y0, x1) * wx;
+                    let lower = sample(y1, x0) * (1.0 - wx) + sample(y1, x1) * wx;
+                    pixels[column * channels + channel] = upper * (1.0 - wy) + lower * wy;
+                }
+            }
+        });
+    Ok(output)
+}
+
 /// Resizes interleaved finite `f32` image values with Torchvision semantics.
 ///
 /// # Errors
