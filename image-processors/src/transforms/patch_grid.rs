@@ -159,19 +159,18 @@ pub fn patch_grid_output_size(
 }
 
 #[allow(missing_docs)]
-pub fn aspect_ratio_tile_frames(
-    image: &ImageFrame,
+pub fn aspect_ratio_tile_grid(
+    original_size: ImageSize,
     tile_size: ImageSize,
     minimum: usize,
     maximum: usize,
-    use_thumbnail: bool,
-    decision: ResizeDecision,
-) -> Result<Vec<ImageFrame>, TransformError> {
+) -> Result<(usize, usize), TransformError> {
+    validate_size(original_size)?;
     validate_size(tile_size)?;
     if minimum == 0 || maximum < minimum {
         return Err(TransformError::EmptyResolutionCandidates);
     }
-    let source_area = checked_pixels(frame_size(image))?;
+    let source_area = checked_pixels(original_size)?;
     let tile_area = checked_pixels(tile_size)?;
     let mut grids = Vec::new();
     for columns in 1..=maximum {
@@ -185,7 +184,7 @@ pub fn aspect_ratio_tile_frames(
         }
     }
     grids.sort_by_key(|&(columns, rows)| columns * rows);
-    let ratio = image.width() as f64 / image.height() as f64;
+    let ratio = original_size.width as f64 / original_size.height as f64;
     let mut best = (1, 1);
     let mut difference = f64::INFINITY;
     for (columns, rows) in grids {
@@ -201,6 +200,19 @@ pub fn aspect_ratio_tile_frames(
             best = (columns, rows);
         }
     }
+    Ok(best)
+}
+
+#[allow(missing_docs)]
+pub fn aspect_ratio_tile_frames(
+    image: &ImageFrame,
+    tile_size: ImageSize,
+    minimum: usize,
+    maximum: usize,
+    use_thumbnail: bool,
+    decision: ResizeDecision,
+) -> Result<Vec<ImageFrame>, TransformError> {
+    let best = aspect_ratio_tile_grid(frame_size(image), tile_size, minimum, maximum)?;
     let canvas_size = ImageSize::new(
         tile_size
             .height

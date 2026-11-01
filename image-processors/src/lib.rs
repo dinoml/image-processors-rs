@@ -133,6 +133,7 @@ pub use tensor::{
     TensorError, TensorLeadingAxis, TensorView, VideoLayout,
 };
 #[doc(inline)]
+pub use transforms::aspect_ratio_tile_grid;
 pub use transforms::{
     area_resize_plan, aspect_ratio_crop_batch_metadata, aspect_ratio_crop_plan,
     aspect_ratio_tile_frames, binarize_mask_to_unit_f32, bottom_right_resize_pad_plan,
