@@ -21,6 +21,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::tensor::{ImageLayout, TensorDataView, TensorError, TensorView};
+mod stream;
+pub use stream::{MediaStreamError, VideoStreamOptions, transcode_rgb_video};
 
 /// Pixel storage format for decoded image frames.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]

@@ -1,7 +1,31 @@
 //! Shared color transforms retaining source-specific precision and rounding.
 
-use super::{new_frame, TransformError};
+use super::{TransformError, new_frame};
 use crate::media::{ImageFrame, PixelFormat};
+
+/// Convert planar FP32 RGB predictions to grayscale before integer quantization.
+/// Uses the upstream BGR scalar evaluation order
+/// `(B * 0.114 + G * 0.587) + R * 0.299`, with FP32 intermediates and no
+/// clipping or integer rounding. This fixes a scalar policy rather than assuming
+/// platform-dependent SIMD fusion. The existing NTSC and byte contracts are unchanged.
+///
+/// # Errors
+/// Rejects data that cannot contain three equally sized channel planes.
+pub fn rgb_planar_f32_to_grayscale_opencv(values: &[f32]) -> Result<Vec<f32>, TransformError> {
+    if !values.len().is_multiple_of(3) {
+        return Err(TransformError::InvalidChannelDataLength {
+            channels: 3,
+            actual: values.len(),
+        });
+    }
+    let plane = values.len() / 3;
+    Ok((0..plane)
+        .map(|index| {
+            (values[2 * plane + index] * 0.114_f32 + values[plane + index] * 0.587_f32)
+                + values[index] * 0.299_f32
+        })
+        .collect())
+}
 
 /// Convert decoded RGB/RGBA bytes to grayscale using the OpenCV CPU contract.
 ///
