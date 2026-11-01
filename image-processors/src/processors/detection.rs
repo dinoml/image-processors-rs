@@ -875,7 +875,8 @@ fn prepare_sam_frame(
     Ok((resized, original_size, reshaped_size))
 }
 
-pub(super) fn pad_spatial_tensors(
+#[allow(missing_docs)]
+pub fn pad_spatial_tensors(
     tensors: Vec<Tensor>,
     target: ImageSize,
     output_layout: ImageLayout,

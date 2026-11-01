@@ -87,8 +87,11 @@ pub use visual_cloze::{
 mod detection;
 #[cfg(test)]
 use detection::shortest_edge_resize_output_size;
-use detection::{checked_spatial_pad_mul, pad_spatial_tensors, validate_padding_target};
-pub use detection::{DetrImageProcessorConfig, SamImageProcessorConfig, ShortestEdgeResizeConfig};
+use detection::{checked_spatial_pad_mul, validate_padding_target};
+pub use detection::{
+    pad_spatial_tensors, DetrImageProcessorConfig, SamImageProcessorConfig,
+    ShortestEdgeResizeConfig,
+};
 mod hf_config;
 use hf_config::{default_true, HfPreprocessorConfig};
 mod video;
