@@ -1772,6 +1772,16 @@ fn image_frame_from_chw_unit_values(
     size: ImageSize,
     channels: usize,
 ) -> Result<ImageFrame, TensorPostprocessError> {
+    image_frame_from_chw_unit_values_with_rounding(values, size, channels, false)
+}
+
+#[allow(missing_docs)]
+pub fn image_frame_from_chw_unit_values_with_rounding(
+    values: &[f32],
+    size: ImageSize,
+    channels: usize,
+    ties_even: bool,
+) -> Result<ImageFrame, TensorPostprocessError> {
     let pixels = checked_transform_pixels(size)?;
     let expected = checked_dense_value_count(size, channels)?;
     validate_tensor_value_count(values.len(), expected)?;
@@ -1779,7 +1789,12 @@ fn image_frame_from_chw_unit_values(
     let mut data = Vec::with_capacity(expected);
     for pixel_index in 0..pixels {
         for channel in 0..channels {
-            data.push(unit_f32_to_u8(values[channel * pixels + pixel_index]));
+            let value = values[channel * pixels + pixel_index];
+            data.push(if ties_even {
+                (value.clamp(0.0, 1.0) * 255.0).round_ties_even() as u8
+            } else {
+                unit_f32_to_u8(value)
+            });
         }
     }
     Ok(ImageFrame::new(size.width, size.height, pixel_format, data)
