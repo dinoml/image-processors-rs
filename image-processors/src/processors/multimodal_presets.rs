@@ -2099,20 +2099,13 @@ fn preprocess_minicpm(
     let preset = processor.preset;
     let (values, edge) = f32_pixels(preset.class_name, frame, processor.resize_backend)?;
     let grid = edge / PATCH_SIZE;
-    let mut reshaped = Vec::with_capacity(values.len());
-    for channel in 0..3 {
-        for patch_y in 0..PATCH_SIZE {
-            for grid_y in 0..grid {
-                for grid_x in 0..grid {
-                    for patch_x in 0..PATCH_SIZE {
-                        let y = grid_y * PATCH_SIZE + patch_y;
-                        let x = grid_x * PATCH_SIZE + patch_x;
-                        reshaped.push(values[channel * edge * edge + y * edge + x]);
-                    }
-                }
-            }
-        }
-    }
+    let raster = super::minicpm::Raster {
+        values,
+        height: edge,
+        width: edge,
+    };
+    let reshaped = super::minicpm::pack(&raster, PATCH_SIZE)
+        .map_err(|error| MultimodalProcessorError::Image(error.into()))?;
     let mut output = MultimodalOutput::default();
     output.insert_array(
         "pixel_values",

@@ -51,6 +51,8 @@ pub use task_vision_presets::{
     TaskVisionPoseBox, TaskVisionProcessorFamily, TaskVisionProcessorPreset, TaskVisionResize,
     TaskVisionSegmentationRequest,
 };
+#[allow(missing_docs)]
+pub mod minicpm;
 mod multimodal_presets;
 pub use multimodal_presets::{
     multimodal_preset, normalize_ocr_word, post_process_document_rectification,
