@@ -2224,12 +2224,20 @@ fn apply_task_resize(
     .map_err(ImageProcessorError::Transform)
 }
 
-fn paddle_detection_size(
+#[allow(missing_docs)]
+pub fn paddle_detection_size(
     source: ImageSize,
     limit_side_len: usize,
     limit_type: PaddleDetectionLimit,
     max_side_limit: Option<usize>,
 ) -> Result<ImageSize, ImageProcessorError> {
+    ImageSize::new(source.height, source.width)?;
+    if limit_side_len == 0 {
+        return Err(ImageProcessorError::InvalidConfiguredDimension {
+            field: "limit_side_len",
+            value: 0,
+        });
+    }
     let height = source.height as f64;
     let width = source.width as f64;
     let min_edge = source.height.min(source.width);
@@ -2254,8 +2262,8 @@ fn paddle_detection_size(
             resize_width = (resize_width as f64 * ratio) as usize;
         }
     }
-    let height = ((resize_height as f64 / 32.0).round() as usize * 32).max(32);
-    let width = ((resize_width as f64 / 32.0).round() as usize * 32).max(32);
+    let height = ((resize_height as f64 / 32.0).round_ties_even() as usize * 32).max(32);
+    let width = ((resize_width as f64 / 32.0).round_ties_even() as usize * 32).max(32);
     Ok(ImageSize::new(height, width)?)
 }
 
