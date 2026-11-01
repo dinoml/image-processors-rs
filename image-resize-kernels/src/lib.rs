@@ -10,12 +10,12 @@ use thiserror::Error;
 
 mod opencv;
 mod planar;
-pub use opencv::{
-    OpenCvInterpolation, resize_u8_opencv, resize_u8_opencv_scale_dependent,
-    resize_u8_opencv_with_crop,
-};
 pub use opencv::{resize_f32_opencv, resize_f64_opencv};
-pub use planar::{TensorInterpolation, resize_f32_planes};
+pub use opencv::{
+    resize_u8_opencv, resize_u8_opencv_scale_dependent, resize_u8_opencv_with_crop,
+    OpenCvInterpolation,
+};
+pub use planar::{resize_f32_planes, TensorInterpolation};
 
 /// Image dimensions in height-width order.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -1,4 +1,4 @@
-use crate::{ImageSize, ResizeError, ResizeFilter, resize_f32_torchvision};
+use crate::{resize_f32_torchvision, ImageSize, ResizeError, ResizeFilter};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TensorInterpolation {
