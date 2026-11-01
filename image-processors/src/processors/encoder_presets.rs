@@ -749,6 +749,92 @@ pub enum PresetProcessorError {
     UnsupportedRescaleBeforeResizeBackend,
 }
 
+/// ImageGPT tensor preprocessing and color-distance arithmetic.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageGptPreprocessingPolicy {
+    /// PIL resize, FP64 rescale followed by FP32 normalization, and FP64 centers.
+    #[default]
+    Pil,
+    /// Torchvision resize, fused normalization statistics and FP32 centers/distances.
+    Torchvision,
+}
+
+impl ImageGptPreprocessingPolicy {
+    /// Resize implementation corresponding to the upstream image processor.
+    pub const fn resize_parity(self) -> ResizeParity {
+        match self {
+            Self::Pil => ResizeParity::Compatibility,
+            Self::Torchvision => ResizeParity::Torchvision,
+        }
+    }
+
+    /// Rescale and normalize spatially prepared pixels, optionally quantizing colors.
+    ///
+    /// `clusters=None` returns pixels. Supplying centers returns raster-order
+    /// Int64 `[batch, height*width]` IDs. JSON center precision is retained for PIL
+    /// and converted to FP32 for Torchvision, matching the upstream processors.
+    ///
+    /// # Errors
+    ///
+    /// Reports invalid scales, normalization statistics, layouts or color centers.
+    pub fn finish_tensor(
+        self,
+        mut tensor: Tensor,
+        rescale: Option<f64>,
+        normalize: Option<(&[f32], &[f32])>,
+        clusters: Option<&[[f64; 3]]>,
+    ) -> Result<Tensor, PresetProcessorError> {
+        if let Some(scale) = rescale {
+            if !scale.is_finite() {
+                return Err(TensorError::NonFiniteScale(scale as f32).into());
+            }
+        }
+        match self {
+            Self::Pil => {
+                if let Some(scale) = rescale {
+                    tensor = tensor.rescale_f64(scale)?;
+                }
+                if let Some((mean, std)) = normalize {
+                    tensor = tensor.normalize_channels(mean, std)?;
+                }
+            }
+            Self::Torchvision => {
+                if let Some((mean, std)) = normalize {
+                    // TorchvisionBackend scales the FP32 statistics by the
+                    // reciprocal factor, then subtracts and divides raw pixels.
+                    let factor = rescale.map_or(1.0, |scale| (1.0 / scale) as f32);
+                    let mean = mean.iter().map(|value| value * factor).collect::<Vec<_>>();
+                    let std = std.iter().map(|value| value * factor).collect::<Vec<_>>();
+                    tensor = tensor.normalize_channels(&mean, &std)?;
+                } else if let Some(scale) = rescale {
+                    tensor = tensor.rescale(scale as f32)?;
+                }
+            }
+        }
+        let Some(clusters) = clusters else {
+            return Ok(tensor);
+        };
+        for (cluster_index, center) in clusters.iter().enumerate() {
+            for (component_index, value) in center.iter().enumerate() {
+                if !value.is_finite() || (self == Self::Torchvision && !(*value as f32).is_finite())
+                {
+                    return Err(PresetProcessorError::NonFiniteColorCluster {
+                        cluster: cluster_index,
+                        component: component_index,
+                    });
+                }
+            }
+        }
+        let values = tensor.data().to_vec();
+        let quantization = match self {
+            Self::Pil => ImageGptQuantization::Pil(clusters),
+            Self::Torchvision => ImageGptQuantization::Torchvision(clusters),
+        };
+        quantize_imagegpt_values(&values, tensor.shape(), tensor.layout(), quantization)
+    }
+}
+
 /// Shared concrete processor for Transformers encoder/classifier presets.
 #[derive(Clone, Debug)]
 pub struct EncoderImageProcessor {
@@ -1650,6 +1736,36 @@ fn quantize_imagegpt(
     let clusters = clusters
         .filter(|clusters| !clusters.is_empty())
         .ok_or(PresetProcessorError::MissingColorClusters)?;
+    quantize_imagegpt_values(
+        values,
+        shape,
+        layout,
+        ImageGptQuantization::SquaredDifferences(clusters),
+    )
+}
+
+#[derive(Clone, Copy)]
+enum ImageGptQuantization<'a> {
+    SquaredDifferences(&'a [[f32; 3]]),
+    Pil(&'a [[f64; 3]]),
+    Torchvision(&'a [[f64; 3]]),
+}
+
+fn quantize_imagegpt_values(
+    values: &[f32],
+    shape: &[usize],
+    layout: Layout,
+    quantization: ImageGptQuantization<'_>,
+) -> Result<Tensor, PresetProcessorError> {
+    let cluster_count = match quantization {
+        ImageGptQuantization::SquaredDifferences(clusters) => clusters.len(),
+        ImageGptQuantization::Pil(clusters) | ImageGptQuantization::Torchvision(clusters) => {
+            clusters.len()
+        }
+    };
+    if cluster_count == 0 {
+        return Err(PresetProcessorError::MissingColorClusters);
+    }
     let (batch, channels, height, width) = image_batch_shape(shape, layout)?;
     if channels != 3 {
         return Err(ImageProcessorError::InvalidNormalizationStats {
@@ -1674,15 +1790,39 @@ fn quantize_imagegpt(
                     values[image_value_index(sample, 1, y, x, shape, layout)],
                     values[image_value_index(sample, 2, y, x, shape, layout)],
                 ];
-                let (nearest, _) = clusters
-                    .iter()
-                    .enumerate()
-                    .map(|(index, cluster)| {
-                        let distance = rgb
-                            .iter()
-                            .zip(cluster)
-                            .map(|(value, center)| (value - center).powi(2))
-                            .sum::<f32>();
+                let pixel_norm = rgb.iter().map(|value| value * value).sum::<f32>();
+                let (nearest, _) = (0..cluster_count)
+                    .map(|index| {
+                        let distance = match quantization {
+                            ImageGptQuantization::SquaredDifferences(clusters) => f64::from(
+                                rgb.iter()
+                                    .zip(&clusters[index])
+                                    .map(|(value, center)| (value - center).powi(2))
+                                    .sum::<f32>(),
+                            ),
+                            ImageGptQuantization::Pil(clusters) => {
+                                let center = &clusters[index];
+                                let center_norm =
+                                    center.iter().map(|value| value * value).sum::<f64>();
+                                let dot = rgb
+                                    .iter()
+                                    .zip(center)
+                                    .map(|(value, center)| f64::from(*value) * center)
+                                    .sum::<f64>();
+                                f64::from(pixel_norm) - 2.0 * dot + center_norm
+                            }
+                            ImageGptQuantization::Torchvision(clusters) => {
+                                let center = clusters[index].map(|value| value as f32);
+                                let center_norm =
+                                    center.iter().map(|value| value * value).sum::<f32>();
+                                let dot = rgb
+                                    .iter()
+                                    .zip(center)
+                                    .map(|(value, center)| value * center)
+                                    .sum::<f32>();
+                                f64::from(pixel_norm - 2.0 * dot + center_norm)
+                            }
+                        };
                         (index, distance)
                     })
                     .min_by(|left, right| left.1.total_cmp(&right.1))

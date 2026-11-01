@@ -41,8 +41,8 @@ mod encoder_presets;
 pub mod siglip2;
 pub use encoder_presets::{
     EncoderGeometry, EncoderImageProcessor, EncoderImageProcessorConfig,
-    EncoderImageProcessorPreset, PresetProcessorError, Swin2SrImageProcessor,
-    Swin2SrImageProcessorConfig,
+    EncoderImageProcessorPreset, ImageGptPreprocessingPolicy, PresetProcessorError,
+    Swin2SrImageProcessor, Swin2SrImageProcessorConfig,
 };
 mod task_vision_presets;
 pub use task_vision_presets::{
