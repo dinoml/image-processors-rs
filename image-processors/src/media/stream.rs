@@ -76,13 +76,17 @@ fn invalid(message: impl Into<String>) -> MediaStreamError {
 }
 
 fn tool_command(program: &Path) -> Command {
-    let mut command = Command::new(program);
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
+        let mut command = Command::new(program);
         command.creation_flags(0x0800_0000);
+        command
     }
-    command
+    #[cfg(not(windows))]
+    {
+        Command::new(program)
+    }
 }
 
 /// Probe a video and stream each RGB frame through a caller-owned transform.

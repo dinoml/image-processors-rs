@@ -1,6 +1,6 @@
 //! Planar floating-point padding, halo tiles and non-blended valid-region assembly.
 
-use super::{ImageCropBox, ImageSize, TransformError, validate_image_crop_box};
+use super::{validate_image_crop_box, ImageCropBox, ImageSize, TransformError};
 
 fn planar_len(size: ImageSize, channels: usize) -> Result<usize, TransformError> {
     ImageSize::new(size.height, size.width)?;

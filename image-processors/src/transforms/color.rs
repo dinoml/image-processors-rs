@@ -1,6 +1,6 @@
 //! Shared color transforms retaining source-specific precision and rounding.
 
-use super::{TransformError, new_frame};
+use super::{new_frame, TransformError};
 use crate::media::{ImageFrame, PixelFormat};
 
 /// Convert planar FP32 RGB predictions to grayscale before integer quantization.

@@ -22,7 +22,7 @@ use thiserror::Error;
 
 use crate::tensor::{ImageLayout, TensorDataView, TensorError, TensorView};
 mod stream;
-pub use stream::{MediaStreamError, VideoStreamOptions, transcode_rgb_video};
+pub use stream::{transcode_rgb_video, MediaStreamError, VideoStreamOptions};
 
 /// Pixel storage format for decoded image frames.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
