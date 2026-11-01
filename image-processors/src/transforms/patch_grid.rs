@@ -2,6 +2,7 @@
 
 use super::*;
 
+#[allow(missing_docs)]
 pub fn flatten_hwc_patches(
     values: &[f32],
     size: ImageSize,
@@ -12,8 +13,8 @@ pub fn flatten_hwc_patches(
     if patch == 0
         || size.height == 0
         || size.width == 0
-        || size.height % patch != 0
-        || size.width % patch != 0
+        || !size.height.is_multiple_of(patch)
+        || !size.width.is_multiple_of(patch)
     {
         return Err(TransformError::InvalidScaleFactor(patch));
     }
