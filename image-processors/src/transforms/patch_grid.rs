@@ -158,6 +158,7 @@ pub fn patch_grid_output_size(
     }
 }
 
+#[allow(missing_docs)]
 pub fn aspect_ratio_tile_frames(
     image: &ImageFrame,
     tile_size: ImageSize,
