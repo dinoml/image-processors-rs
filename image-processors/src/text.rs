@@ -139,7 +139,7 @@ impl TrueTypeFont {
                             let id = u32_at(sub, p + 8)?
                                 .checked_add(code - start)
                                 .ok_or_else(invalid)? as usize;
-                            if id >= self.glyphs {
+                            if id == 0 || id >= self.glyphs {
                                 return Err(invalid());
                             }
                             return Ok(id);
@@ -172,7 +172,7 @@ impl TrueTypeFont {
                                 id.wrapping_add(delta)
                             }
                         };
-                        if usize::from(id) >= self.glyphs {
+                        if id == 0 || usize::from(id) >= self.glyphs {
                             return Err(invalid());
                         }
                         return Ok(usize::from(id));
