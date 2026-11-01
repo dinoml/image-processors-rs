@@ -71,6 +71,51 @@ pub fn resize_frame(
     resize_frame_with_decision(frame, target, filter.decision(), mode)
 }
 
+#[allow(missing_docs)]
+pub fn halve_frame_box(image: &ImageFrame) -> Result<ImageFrame, TransformError> {
+    let width = image.width() / 2;
+    let height = image.height() / 2;
+    if width == 0 || height == 0 {
+        return Err(TransformError::InvalidSize { width, height });
+    }
+    let channels = image.channels();
+    let mut horizontal = vec![0_u8; image.height() * width * channels];
+    let mut output = vec![0_u8; height * width * channels];
+    for x in 0..width {
+        let scale = image.width() as f64 / width as f64;
+        let center = (x as f64 + 0.5) * scale;
+        let left = ((center - scale * 0.5 + 0.5) as usize).min(image.width() - 1);
+        let right = ((center + scale * 0.5 + 0.5) as usize).min(image.width());
+        let weight = ((1_u64 << 22) as f64 / (right - left) as f64 + 0.5) as u64;
+        for row in 0..image.height() {
+            for channel in 0..channels {
+                let sum = (left..right)
+                    .map(|index| {
+                        u64::from(image.data()[(row * image.width() + index) * channels + channel])
+                            * weight
+                    })
+                    .sum::<u64>();
+                horizontal[(row * width + x) * channels + channel] =
+                    ((sum + (1 << 21)) >> 22).min(255) as u8;
+            }
+        }
+    }
+    for y in 0..height {
+        let scale = image.height() as f64 / height as f64;
+        let center = (y as f64 + 0.5) * scale;
+        let top = ((center - scale * 0.5 + 0.5) as usize).min(image.height() - 1);
+        let bottom = ((center + scale * 0.5 + 0.5) as usize).min(image.height());
+        let weight = ((1_u64 << 22) as f64 / (bottom - top) as f64 + 0.5) as u64;
+        for x in 0..width * channels {
+            let sum = (top..bottom)
+                .map(|row| u64::from(horizontal[row * width * channels + x]) * weight)
+                .sum::<u64>();
+            output[y * width * channels + x] = ((sum + (1 << 21)) >> 22).min(255) as u8;
+        }
+    }
+    new_frame(width, height, image.pixel_format(), output, image.timing())
+}
+
 /// Resizes a frame with an explicit resize implementation decision.
 ///
 /// # Errors
