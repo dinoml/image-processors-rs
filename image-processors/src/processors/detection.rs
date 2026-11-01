@@ -622,6 +622,35 @@ impl ImageProcessor {
         pad_size: Option<ImageSize>,
         pad_to_multiple: Option<usize>,
     ) -> Result<ProcessorOutput, ImageProcessorError> {
+        self.preprocess_detection_images_output_with_precision(
+            images,
+            resize,
+            fit_within,
+            do_pad,
+            pad_size,
+            pad_to_multiple,
+            crate::ImageProcessorPrecision::Byte,
+        )
+    }
+
+    /// Prepare detection pixels with explicit intermediate precision and stage order.
+    /// FP32 paths reuse single-image preprocessing before the same batch padding
+    /// and valid-pixel mask construction used by the byte path.
+    ///
+    /// # Errors
+    /// Reports invalid geometry, incompatible unpadded shapes, unsupported resize
+    /// profiles, or pixel conversion/normalization failures.
+    #[allow(clippy::too_many_arguments)]
+    pub fn preprocess_detection_images_output_with_precision(
+        &self,
+        images: &[ImageFrame],
+        resize: Option<RecipeResizeStage>,
+        fit_within: Option<ImageSize>,
+        do_pad: bool,
+        pad_size: Option<ImageSize>,
+        pad_to_multiple: Option<usize>,
+        precision: crate::ImageProcessorPrecision,
+    ) -> Result<ProcessorOutput, ImageProcessorError> {
         if images.is_empty() {
             return Err(ImageProcessorError::EmptyBatch);
         }
@@ -633,6 +662,7 @@ impl ImageProcessor {
         let config = self.config();
         let output_layout = config.output_image_layout();
         let mut resized = Vec::with_capacity(images.len());
+        let mut floating_tensors = Vec::with_capacity(images.len());
         let mut original_sizes = Vec::with_capacity(images.len());
         let mut reshaped_sizes = Vec::with_capacity(images.len());
         for image in images {
@@ -679,17 +709,48 @@ impl ImageProcessor {
             let mode = resize
                 .as_ref()
                 .map_or(ResizeMode::Default, |stage| stage.mode);
-            let frame = if resize.is_none() && fit_within.is_none() {
-                image.clone()
+            if precision == crate::ImageProcessorPrecision::Byte {
+                let frame = if resize.is_none() && fit_within.is_none() {
+                    image.clone()
+                } else {
+                    resize_frame_with_decision(image, reshaped, decision, mode)?
+                };
+                resized.push(frame);
             } else {
-                resize_frame_with_decision(image, reshaped, decision, mode)?
-            };
-            resized.push(frame);
+                let mut per_image = config.clone();
+                per_image.output_layout = batched_layout_for_image_layout(output_layout);
+                per_image.do_resize = resize.is_some() || fit_within.is_some();
+                per_image.height = Some(reshaped.height);
+                per_image.width = Some(reshaped.width);
+                per_image.resize_mode = mode;
+                per_image.resample = decision.filter();
+                per_image.resize_parity = decision.parity();
+                let processor = ImageProcessor::new(per_image)?;
+                floating_tensors.push(processor.preprocess_image_with_precision(
+                    image,
+                    crate::ImageProcessorOptions::default(),
+                    precision,
+                )?);
+            }
             original_sizes.push(original);
             reshaped_sizes.push(reshaped);
         }
         let tensor_processor = tensor_only_processor(config.clone())?;
-        let (tensor, pixel_mask) = if do_pad {
+        let (tensor, pixel_mask) = if precision != crate::ImageProcessorPrecision::Byte {
+            let target = if do_pad {
+                padded_batch_target_for_sizes(&reshaped_sizes, pad_size, pad_to_multiple)?
+            } else {
+                let target = reshaped_sizes[0];
+                if reshaped_sizes.iter().any(|size| *size != target) {
+                    return Err(ImageProcessorError::IncompatibleBatchShapes);
+                }
+                target
+            };
+            (
+                pad_spatial_tensors(floating_tensors, target, output_layout)?,
+                pixel_mask_for_valid_sizes(&reshaped_sizes, target)?,
+            )
+        } else if do_pad {
             let target = padded_batch_target_for_sizes(&reshaped_sizes, pad_size, pad_to_multiple)?;
             let tensors = resized
                 .iter()

@@ -91,9 +91,10 @@ mod masks;
 mod patch_grid;
 pub use masks::{
     binarize_mask, binarize_mask_to_unit_f32, binary_mask_to_box, binary_mask_to_rle,
-    binary_rle_to_mask, box_near_crop_edge, filter_generated_masks, generate_layered_crop_boxes,
-    mask_stability_score, normalized_point_grid, pad_crop_mask, post_process_binary_mask,
-    post_process_generated_masks, resize_padded_mask_logits, scale_image_point, BinaryRleMask,
+    binary_mask_to_start_length_rle, binary_rle_to_mask, box_near_crop_edge,
+    filter_generated_masks, generate_layered_crop_boxes, mask_stability_score,
+    normalized_point_grid, pad_crop_mask, post_process_binary_mask, post_process_generated_masks,
+    resize_padded_mask_logits, scale_image_point, BinaryRleMask, BinaryStartLengthRleMask,
     CropGenerationOptions, FilteredMask, GeneratedMaskPrediction, ImagePoint, LayeredCropBox,
     MaskFilterOptions,
 };

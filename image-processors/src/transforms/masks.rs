@@ -95,6 +95,18 @@ pub struct BinaryRleMask {
     pub counts: Vec<usize>,
 }
 
+/// Binary mask encoded as one-based start/length pairs in row-major order.
+/// This is RF-DETR's `return_coco_annotation` representation, distinct from
+/// the column-major alternating run counts in BinaryRleMask.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BinaryStartLengthRleMask {
+    /// Mask dimensions in height-width order.
+    pub size: ImageSize,
+    /// Flattened [start, length, start, length, ...] pairs for true runs.
+    /// Empty masks have no pairs; each start is one-based.
+    pub runs: Vec<usize>,
+}
+
 /// One generated binary mask prediction after NMS.
 #[derive(Clone, Debug, PartialEq)]
 pub struct GeneratedMaskPrediction {
@@ -383,6 +395,43 @@ pub fn binary_mask_to_rle(mask: &[bool], size: ImageSize) -> Result<BinaryRleMas
     counts.push(run);
 
     Ok(BinaryRleMask { size, counts })
+}
+
+/// Encode a binary mask as RF-DETR's row-major, one-based start/length pairs.
+///
+/// # Errors
+/// Reports invalid dimensions, storage lengths or arithmetic overflow.
+pub fn binary_mask_to_start_length_rle(
+    mask: &[bool],
+    size: ImageSize,
+) -> Result<BinaryStartLengthRleMask, TransformError> {
+    validate_size(size)?;
+    validate_len(mask.len(), checked_pixels(size)?)?;
+    let mut runs = Vec::new();
+    let mut start = None;
+    for (index, &included) in mask.iter().enumerate() {
+        if included {
+            if start.is_none() {
+                start = Some(index);
+            }
+        } else if let Some(first) = start.take() {
+            runs.push(
+                first
+                    .checked_add(1)
+                    .ok_or(TransformError::ImageSizeOverflow)?,
+            );
+            runs.push(index - first);
+        }
+    }
+    if let Some(first) = start {
+        runs.push(
+            first
+                .checked_add(1)
+                .ok_or(TransformError::ImageSizeOverflow)?,
+        );
+        runs.push(mask.len() - first);
+    }
+    Ok(BinaryStartLengthRleMask { size, runs })
 }
 
 /// Decodes an uncompressed column-major RLE mask into row-major binary pixels.

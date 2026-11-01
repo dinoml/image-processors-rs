@@ -153,4 +153,8 @@ pub enum ImageProcessorPrecision {
         /// This precedes any configured post-resize rescale/normalization.
         rescale_divisor: Option<f64>,
     },
+    /// Convert bytes to FP32 and apply the configured FP32 rescale multiplier
+    /// before resizing. Normalization remains after resize; no byte quantization
+    /// occurs between those stages.
+    Float32RescaleBeforeResize,
 }
