@@ -84,12 +84,12 @@ pub use masks::{
     CropGenerationOptions, FilteredMask, GeneratedMaskPrediction, ImagePoint, LayeredCropBox,
     MaskFilterOptions,
 };
-pub use patch_grid::aspect_ratio_tile_grid;
 pub use patch_grid::{
     aspect_ratio_tile_frames, flatten_hwc_patches, patch_grid_batch_plan, patch_grid_image_patches,
     patch_grid_image_patches_with_decision, patch_grid_output_size, patch_grid_plan,
     select_patch_grid_resolution, PatchGridBatchPlan, PatchGridFrames, PatchGridPlan,
 };
+pub use patch_grid::{aspect_ratio_tile_grid, covering_area_tile_grid};
 mod tiled_canvas;
 pub use tiled_canvas::{
     supported_tiled_canvas_grids, tiled_canvas_aspect_ratio_id, tiled_canvas_aspect_ratio_mask,
