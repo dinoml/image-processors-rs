@@ -1211,6 +1211,23 @@ impl Tensor {
         Ok(self.with_data(self.data.map_to(|value| value * scale)))
     }
 
+    /// Multiplies logical FP32 values by an FP64 factor and returns `F32` storage.
+    ///
+    /// Each value is promoted before multiplication and rounded to FP32 afterward.
+    /// This retains the intermediate rounding boundary when composing rescaling
+    /// with channel normalization, as in PIL-backed image processors.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `scale` is not finite.
+    pub fn rescale_f64(&self, scale: f64) -> Result<Self, TensorError> {
+        if !scale.is_finite() {
+            return Err(TensorError::NonFiniteScale(scale as f32));
+        }
+
+        Ok(self.with_data(self.data.map_to(|value| (f64::from(value) * scale) as f32)))
+    }
+
     /// Applies per-channel normalization and returns `F32` storage.
     ///
     /// `mean` and `std` may each contain either one scalar value or one value
