@@ -73,19 +73,47 @@ pub fn resize_frame(
 
 #[allow(missing_docs)]
 pub fn halve_frame_box(image: &ImageFrame) -> Result<ImageFrame, TransformError> {
-    let width = image.width() / 2;
-    let height = image.height() / 2;
+    resize_frame_box(
+        image,
+        ImageSize {
+            width: image.width() / 2,
+            height: image.height() / 2,
+        },
+    )
+}
+
+/// Resize a decoded byte frame with Pillow BOX filtering and per-pass rounding.
+/// Pixel format and frame timing are preserved. The existing halving operation
+/// delegates here so arbitrary resize targets share the same implementation.
+///
+/// # Errors
+/// Reports empty target dimensions, invalid pixel storage or size overflow.
+pub fn resize_frame_box(
+    image: &ImageFrame,
+    target: ImageSize,
+) -> Result<ImageFrame, TransformError> {
+    let ImageSize { width, height } = target;
     if width == 0 || height == 0 {
         return Err(TransformError::InvalidSize { width, height });
     }
     let channels = image.channels();
-    let mut horizontal = vec![0_u8; image.height() * width * channels];
-    let mut output = vec![0_u8; height * width * channels];
+    let mut horizontal = vec![
+        0_u8;
+        image_len(
+            ImageSize {
+                width,
+                height: image.height()
+            },
+            channels
+        )?
+    ];
+    let mut output = vec![0_u8; image_len(target, channels)?];
     for x in 0..width {
         let scale = image.width() as f64 / width as f64;
         let center = (x as f64 + 0.5) * scale;
-        let left = ((center - scale * 0.5 + 0.5) as usize).min(image.width() - 1);
-        let right = ((center + scale * 0.5 + 0.5) as usize).min(image.width());
+        let support = scale.max(1.0) * 0.5;
+        let left = ((center - support + 0.5) as usize).min(image.width() - 1);
+        let right = ((center + support + 0.5) as usize).min(image.width());
         let weight = ((1_u64 << 22) as f64 / (right - left) as f64 + 0.5) as u64;
         for row in 0..image.height() {
             for channel in 0..channels {
@@ -103,8 +131,9 @@ pub fn halve_frame_box(image: &ImageFrame) -> Result<ImageFrame, TransformError>
     for y in 0..height {
         let scale = image.height() as f64 / height as f64;
         let center = (y as f64 + 0.5) * scale;
-        let top = ((center - scale * 0.5 + 0.5) as usize).min(image.height() - 1);
-        let bottom = ((center + scale * 0.5 + 0.5) as usize).min(image.height());
+        let support = scale.max(1.0) * 0.5;
+        let top = ((center - support + 0.5) as usize).min(image.height() - 1);
+        let bottom = ((center + support + 0.5) as usize).min(image.height());
         let weight = ((1_u64 << 22) as f64 / (bottom - top) as f64 + 0.5) as u64;
         for x in 0..width * channels {
             let sum = (top..bottom)
