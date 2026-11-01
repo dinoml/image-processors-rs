@@ -2,6 +2,67 @@
 
 use super::*;
 
+pub fn flatten_hwc_patches(
+    values: &[f32],
+    size: ImageSize,
+    channels: usize,
+    patch: usize,
+    source_layout: crate::tensor::Layout,
+) -> Result<Vec<f32>, TransformError> {
+    if patch == 0
+        || size.height == 0
+        || size.width == 0
+        || size.height % patch != 0
+        || size.width % patch != 0
+    {
+        return Err(TransformError::InvalidScaleFactor(patch));
+    }
+    if channels == 0 {
+        return Err(TransformError::UnsupportedChannels(channels));
+    }
+    if !matches!(
+        source_layout,
+        crate::tensor::Layout::HWC | crate::tensor::Layout::CHW
+    ) {
+        return Err(TransformError::ImageFrameInvariant(
+            "patch input must have HWC or CHW layout".into(),
+        ));
+    }
+    let plane = size
+        .height
+        .checked_mul(size.width)
+        .ok_or(TransformError::ImageSizeOverflow)?;
+    let expected = plane
+        .checked_mul(channels)
+        .ok_or(TransformError::ImageSizeOverflow)?;
+    if values.len() != expected {
+        return Err(TransformError::InvalidBufferLength {
+            expected,
+            actual: values.len(),
+        });
+    }
+    let mut patches = Vec::with_capacity(expected);
+    for grid_y in 0..size.height / patch {
+        for grid_x in 0..size.width / patch {
+            for patch_y in 0..patch {
+                for patch_x in 0..patch {
+                    let y = grid_y * patch + patch_y;
+                    let x = grid_x * patch + patch_x;
+                    for channel in 0..channels {
+                        let index = if source_layout == crate::tensor::Layout::CHW {
+                            channel * plane + y * size.width + x
+                        } else {
+                            (y * size.width + x) * channels + channel
+                        };
+                        patches.push(values[index]);
+                    }
+                }
+            }
+        }
+    }
+    Ok(patches)
+}
+
 /// Patch-grid extraction plan for one image.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PatchGridPlan {
