@@ -9,11 +9,13 @@ use rayon::prelude::*;
 use thiserror::Error;
 
 mod opencv;
-pub use opencv::{resize_f32_opencv, resize_f64_opencv};
+mod planar;
 pub use opencv::{
-    resize_u8_opencv, resize_u8_opencv_scale_dependent, resize_u8_opencv_with_crop,
-    OpenCvInterpolation,
+    OpenCvInterpolation, resize_u8_opencv, resize_u8_opencv_scale_dependent,
+    resize_u8_opencv_with_crop,
 };
+pub use opencv::{resize_f32_opencv, resize_f64_opencv};
+pub use planar::{TensorInterpolation, resize_f32_planes};
 
 /// Image dimensions in height-width order.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
