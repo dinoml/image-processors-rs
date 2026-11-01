@@ -23,11 +23,13 @@ pub use detection::{
     pad_normalized_detection_annotation, post_process_instance_segmentation,
     post_process_object_detection, post_process_panoptic_segmentation,
     post_process_semantic_segmentation, post_process_sigmoid_best_object_detection,
-    post_process_sigmoid_top_k_object_detection, prepare_coco_detection_annotation,
-    resize_detection_annotation, scale_detection_box, CocoObjectAnnotation, DetectionAnnotation,
-    DetectionBoundingBox, DetectionCenterBox, NormalizedDetectionAnnotation,
-    ObjectDetectionPrediction, SegmentationPostProcessOptions, SegmentationPostProcessPrediction,
-    SegmentationSegmentInfo, SemanticSegmentationPrediction,
+    post_process_sigmoid_top_k_instance_segmentation, post_process_sigmoid_top_k_object_detection,
+    prepare_coco_detection_annotation, resize_detection_annotation, scale_detection_box,
+    CocoObjectAnnotation, DetectionAnnotation, DetectionBoundingBox, DetectionCenterBox,
+    NormalizedDetectionAnnotation, ObjectDetectionPrediction, SegmentationPostProcessOptions,
+    SegmentationPostProcessPrediction, SegmentationSegmentInfo, SemanticSegmentationPrediction,
+    SigmoidInstanceSegmentationFormat, SigmoidInstanceSegmentationMasks,
+    SigmoidInstanceSegmentationOptions, SigmoidInstanceSegmentationPrediction,
 };
 mod face_geometry;
 mod frame_ops;

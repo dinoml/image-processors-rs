@@ -1,6 +1,7 @@
 //! Detection annotation and segmentation transforms.
 
 use super::*;
+use std::collections::BTreeSet;
 
 /// Absolute bounding box in corner format `(x_min, y_min, x_max, y_max)`.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -337,6 +338,69 @@ pub struct SegmentationPostProcessPrediction {
     pub segments: Vec<SegmentationSegmentInfo>,
 }
 
+/// Output representation for sigmoid-ranked instance masks.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum SigmoidInstanceSegmentationFormat {
+    /// A row-major segment-id map, with -1 for unpainted pixels.
+    #[default]
+    SegmentMap,
+    /// Independent binary masks, retaining overlap between instances.
+    BinaryMaps,
+    /// COCO column-major RLE for each distinct segment-map id in sorted order.
+    CocoRle,
+}
+
+/// Sigmoid query/class selection and mask-logit restoration options.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SigmoidInstanceSegmentationOptions {
+    /// Retain class probabilities strictly above this value.
+    pub score_threshold: f32,
+    /// Retain resized mask logits strictly above this value; no sigmoid is applied.
+    pub mask_threshold: f32,
+    /// Maximum flattened query/class candidates before score filtering.
+    /// None uses the number of queries, matching RF-DETR.
+    pub top_k: Option<usize>,
+    /// Optional output dimensions; None preserves the mask-logit dimensions.
+    pub target_size: Option<ImageSize>,
+    /// Select one mutually exclusive mask representation.
+    pub output_format: SigmoidInstanceSegmentationFormat,
+}
+
+impl Default for SigmoidInstanceSegmentationOptions {
+    fn default() -> Self {
+        Self {
+            score_threshold: 0.5,
+            mask_threshold: 0.0,
+            top_k: None,
+            target_size: None,
+            output_format: SigmoidInstanceSegmentationFormat::SegmentMap,
+        }
+    }
+}
+
+/// Restored instance masks in the selected output representation.
+#[derive(Clone, Debug, PartialEq)]
+pub enum SigmoidInstanceSegmentationMasks {
+    /// Row-major segment ids. Unpainted pixels have id -1.
+    SegmentMap(Vec<i64>),
+    /// One row-major binary plane per retained instance, in score order.
+    BinaryMaps(Vec<Vec<bool>>),
+    /// RLE for each sorted distinct map id, including background when present.
+    CocoRle(Vec<BinaryRleMask>),
+}
+
+/// One image's sigmoid-ranked instance predictions.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SigmoidInstanceSegmentationPrediction {
+    /// Spatial dimensions shared by all masks.
+    pub size: ImageSize,
+    /// Selected mask representation. If score filtering removes every candidate,
+    /// RF-DETR returns an all-minus-one SegmentMap regardless of output_format.
+    pub segmentation: SigmoidInstanceSegmentationMasks,
+    /// Retained ids start at 1; scores are rounded to six decimal places.
+    pub segments: Vec<SegmentationSegmentInfo>,
+}
+
 /// Converts COCO object annotations into a DETR-style detection annotation.
 ///
 /// Crowd annotations are skipped, and boxes that become empty after clipping
@@ -639,19 +703,7 @@ pub fn post_process_sigmoid_top_k_object_detection(
         score_threshold,
     )?;
 
-    let mut ranked = logits
-        .iter()
-        .copied()
-        .enumerate()
-        .map(|(index, logit)| Ok((sigmoid_score(logit)?, index)))
-        .collect::<Result<Vec<_>, TransformError>>()?;
-    ranked.sort_unstable_by(|left, right| {
-        right
-            .0
-            .total_cmp(&left.0)
-            .then_with(|| left.1.cmp(&right.1))
-    });
-    ranked.truncate(top_k.min(ranked.len()));
+    let ranked = rank_sigmoid_query_classes(logits, top_k)?;
 
     let mut predictions = Vec::with_capacity(ranked.len());
     for (score, flat_index) in ranked {
@@ -668,6 +720,149 @@ pub fn post_process_sigmoid_top_k_object_detection(
         });
     }
     Ok(predictions)
+}
+
+/// Restore sigmoid-ranked query masks with RF-DETR's instance composition policy.
+///
+/// Selection is top-k over all query/class pairs followed by strict score filtering.
+/// A query can therefore occur more than once with different classes. Mask logits
+/// are resized with non-antialiased half-pixel bilinear interpolation before strict
+/// thresholding. Segment maps paint only previously unassigned pixels in score
+/// order; binary maps retain the full overlapping masks. Empty masks are skipped.
+/// RLE output encodes the composed map, including its background when present.
+///
+/// # Errors
+/// Returns an error for invalid spatial dimensions, tensor lengths, class counts,
+/// nonfinite class logits or thresholds, or arithmetic/resize failures.
+pub fn post_process_sigmoid_top_k_instance_segmentation(
+    class_logits: &[f32],
+    mask_logits: &[f32],
+    num_queries: usize,
+    num_labels: usize,
+    mask_size: ImageSize,
+    options: SigmoidInstanceSegmentationOptions,
+) -> Result<SigmoidInstanceSegmentationPrediction, TransformError> {
+    if num_labels == 0 {
+        return Err(TransformError::InvalidClassCount(num_labels));
+    }
+    validate_score_value(options.score_threshold)?;
+    validate_score_value(options.mask_threshold)?;
+    validate_size(mask_size)?;
+    let source_pixels = checked_pixels(mask_size)?;
+    validate_len(
+        class_logits.len(),
+        num_queries
+            .checked_mul(num_labels)
+            .ok_or(TransformError::ImageSizeOverflow)?,
+    )?;
+    validate_len(
+        mask_logits.len(),
+        num_queries
+            .checked_mul(source_pixels)
+            .ok_or(TransformError::ImageSizeOverflow)?,
+    )?;
+    let size = options.target_size.unwrap_or(mask_size);
+    validate_size(size)?;
+    let output_pixels = checked_pixels(size)?;
+    let ranked = rank_sigmoid_query_classes(class_logits, options.top_k.unwrap_or(num_queries))?;
+    let candidates = ranked
+        .into_iter()
+        .filter(|(score, _)| *score > options.score_threshold)
+        .collect::<Vec<_>>();
+    let mut segmentation = vec![-1; output_pixels];
+    if candidates.is_empty() {
+        return Ok(SigmoidInstanceSegmentationPrediction {
+            size,
+            segmentation: SigmoidInstanceSegmentationMasks::SegmentMap(segmentation),
+            segments: Vec::new(),
+        });
+    }
+    let mut segments = Vec::new();
+    let mut binary_maps = Vec::new();
+    for (score, flat_index) in candidates {
+        let query = flat_index / num_labels;
+        let plane = &mask_logits[query * source_pixels..(query + 1) * source_pixels];
+        let resized = resize_f32_bilinear_interleaved(plane, mask_size, 1, size, false)?;
+        let binary = resized
+            .into_iter()
+            .map(|logit| logit > options.mask_threshold)
+            .collect::<Vec<_>>();
+        if !binary.iter().any(|value| *value) {
+            continue;
+        }
+        let id = i64::try_from(segments.len())
+            .map_err(|_| TransformError::ImageSizeOverflow)?
+            .checked_add(1)
+            .ok_or(TransformError::ImageSizeOverflow)?;
+        if options.output_format == SigmoidInstanceSegmentationFormat::BinaryMaps {
+            binary_maps.push(binary);
+        } else {
+            let mut painted = false;
+            for (value, included) in segmentation.iter_mut().zip(binary) {
+                if included && *value == -1 {
+                    *value = id;
+                    painted = true;
+                }
+            }
+            if !painted {
+                continue;
+            }
+        }
+        segments.push(SegmentationSegmentInfo {
+            id,
+            label_id: i64::try_from(flat_index % num_labels)
+                .map_err(|_| TransformError::ImageSizeOverflow)?,
+            was_fused: false,
+            score: ((f64::from(score) * 1_000_000.0).round_ties_even() / 1_000_000.0) as f32,
+        });
+    }
+    let segmentation = match options.output_format {
+        SigmoidInstanceSegmentationFormat::SegmentMap => {
+            SigmoidInstanceSegmentationMasks::SegmentMap(segmentation)
+        }
+        SigmoidInstanceSegmentationFormat::BinaryMaps => {
+            SigmoidInstanceSegmentationMasks::BinaryMaps(binary_maps)
+        }
+        SigmoidInstanceSegmentationFormat::CocoRle => {
+            let ids = segmentation.iter().copied().collect::<BTreeSet<_>>();
+            let rle = ids
+                .into_iter()
+                .map(|id| {
+                    let binary = segmentation
+                        .iter()
+                        .map(|value| *value == id)
+                        .collect::<Vec<_>>();
+                    binary_mask_to_rle(&binary, size)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            SigmoidInstanceSegmentationMasks::CocoRle(rle)
+        }
+    };
+    Ok(SigmoidInstanceSegmentationPrediction {
+        size,
+        segmentation,
+        segments,
+    })
+}
+
+fn rank_sigmoid_query_classes(
+    logits: &[f32],
+    top_k: usize,
+) -> Result<Vec<(f32, usize)>, TransformError> {
+    let mut ranked = logits
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(index, logit)| Ok((sigmoid_score(logit)?, index)))
+        .collect::<Result<Vec<_>, TransformError>>()?;
+    ranked.sort_unstable_by(|left, right| {
+        right
+            .0
+            .total_cmp(&left.0)
+            .then_with(|| left.1.cmp(&right.1))
+    });
+    ranked.truncate(top_k.min(ranked.len()));
+    Ok(ranked)
 }
 
 fn validate_detection_postprocess_inputs(
