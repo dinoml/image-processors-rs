@@ -411,6 +411,9 @@ pub fn resize_f32(
         ResizeProfile::Torchvision => resize_f32_torchvision_interleaved_with_alignment(
             values, source, channels, target, filter, false,
         ),
+        ResizeProfile::TorchvisionNoAntialias => {
+            resize_f32_torchvision_no_antialias(values, source, channels, target, filter)
+        }
         ResizeProfile::OpenCvLinear => {
             if filter != ResizeFilter::Bilinear {
                 return Err(ResizeError::UnsupportedOpenCvFilter);
@@ -1086,6 +1089,25 @@ fn resize_u8_torchvision_no_antialias(
     target: ImageSize,
     filter: ResizeFilter,
 ) -> Result<Vec<u8>, ResizeError> {
+    let floating = values
+        .iter()
+        .map(|value| f32::from(*value))
+        .collect::<Vec<_>>();
+    resize_f32_torchvision_no_antialias(&floating, source, channels, target, filter).map(|pixels| {
+        pixels
+            .into_iter()
+            .map(|value| value.clamp(0.0, 255.0).round_ties_even() as u8)
+            .collect()
+    })
+}
+
+fn resize_f32_torchvision_no_antialias(
+    values: &[f32],
+    source: ImageSize,
+    channels: usize,
+    target: ImageSize,
+    filter: ResizeFilter,
+) -> Result<Vec<f32>, ResizeError> {
     if !matches!(
         filter,
         ResizeFilter::Nearest | ResizeFilter::Bilinear | ResizeFilter::Bicubic
@@ -1095,7 +1117,7 @@ fn resize_u8_torchvision_no_antialias(
     if source == target {
         return Ok(values.to_vec());
     }
-    let mut output = vec![0; image_len(target, channels)?];
+    let mut output = vec![0.0_f32; image_len(target, channels)?];
     let scale_x = source.width as f32 / target.width as f32;
     let scale_y = source.height as f32 / target.height as f32;
     let axis = |out: usize, scale: f32, length: usize| {
@@ -1152,13 +1174,12 @@ fn resize_u8_torchvision_no_antialias(
                     for j in 0..taps {
                         let mut horizontal = 0.0_f32;
                         for i in 0..taps {
-                            horizontal += f32::from(
-                                values[(ys[j] * source.width + xs[i]) * channels + channel],
-                            ) * wx[i];
+                            horizontal +=
+                                values[(ys[j] * source.width + xs[i]) * channels + channel] * wx[i];
                         }
                         value += horizontal * wy[j];
                     }
-                    row[x * channels + channel] = value.clamp(0.0, 255.0).round_ties_even() as u8;
+                    row[x * channels + channel] = value;
                 }
             }
         });

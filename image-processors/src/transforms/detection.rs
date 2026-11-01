@@ -346,7 +346,8 @@ pub enum SigmoidInstanceSegmentationFormat {
     SegmentMap,
     /// Independent binary masks, retaining overlap between instances.
     BinaryMaps,
-    /// COCO column-major RLE for each distinct segment-map id in sorted order.
+    /// RF-DETR's `return_coco_annotation`: row-major one-based start/length RLE
+    /// for each distinct segment-map id in sorted order, including background.
     CocoRle,
 }
 
@@ -385,8 +386,8 @@ pub enum SigmoidInstanceSegmentationMasks {
     SegmentMap(Vec<i64>),
     /// One row-major binary plane per retained instance, in score order.
     BinaryMaps(Vec<Vec<bool>>),
-    /// RLE for each sorted distinct map id, including background when present.
-    CocoRle(Vec<BinaryRleMask>),
+    /// Row-major start/length RLE for sorted map ids, including background.
+    CocoRle(Vec<BinaryStartLengthRleMask>),
 }
 
 /// One image's sigmoid-ranked instance predictions.
@@ -832,7 +833,7 @@ pub fn post_process_sigmoid_top_k_instance_segmentation(
                         .iter()
                         .map(|value| *value == id)
                         .collect::<Vec<_>>();
-                    binary_mask_to_rle(&binary, size)
+                    binary_mask_to_start_length_rle(&binary, size)
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             SigmoidInstanceSegmentationMasks::CocoRle(rle)

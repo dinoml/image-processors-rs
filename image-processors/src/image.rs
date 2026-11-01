@@ -326,12 +326,16 @@ impl ImageProcessor {
         options: ImageProcessorOptions,
         precision: ImageProcessorPrecision,
     ) -> Result<Tensor, ImageProcessorError> {
-        let ImageProcessorPrecision::Float32 { rescale_divisor } = precision else {
-            return self.preprocess_image_batch_with_options(
-                std::slice::from_ref(image),
-                options,
-                TensorLeadingAxis::Batch,
-            );
+        let (rescale_divisor, rescale_before_resize) = match precision {
+            ImageProcessorPrecision::Byte => {
+                return self.preprocess_image_batch_with_options(
+                    std::slice::from_ref(image),
+                    options,
+                    TensorLeadingAxis::Batch,
+                )
+            }
+            ImageProcessorPrecision::Float32 { rescale_divisor } => (rescale_divisor, false),
+            ImageProcessorPrecision::Float32RescaleBeforeResize => (None, true),
         };
         if rescale_divisor.is_some_and(|divisor| !divisor.is_finite() || divisor <= 0.0) {
             return Err(ImageProcessorError::InvalidRescaleDivisor);
@@ -353,6 +357,11 @@ impl ImageProcessor {
                 })
             })
             .collect::<Vec<_>>();
+        if rescale_before_resize && self.config.do_rescale {
+            for value in &mut values {
+                *value *= self.config.rescale_factor;
+            }
+        }
         if values.iter().any(|value| !value.is_finite()) {
             return Err(ImageProcessorError::InvalidRescaleDivisor);
         }
@@ -379,7 +388,7 @@ impl ImageProcessor {
             vec![1, target.height, target.width, channels],
             Layout::NHWC,
         )?;
-        if self.config.do_rescale {
+        if self.config.do_rescale && !rescale_before_resize {
             tensor = tensor.rescale(self.config.rescale_factor)?;
         }
         if self.config.do_normalize {
