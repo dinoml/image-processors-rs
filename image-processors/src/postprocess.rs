@@ -37,9 +37,15 @@ pub use crate::transforms::{
     TransformError,
 };
 
+mod multiclass;
 mod query_mask;
 mod types;
 
+#[doc(inline)]
+pub use multiclass::{
+    post_process_multiclass_segmentation, MulticlassSegmentationError,
+    MulticlassSegmentationOptions, MulticlassSegmentationOutput,
+};
 pub use types::*;
 
 /// Restores an image tensor into owned image frames.

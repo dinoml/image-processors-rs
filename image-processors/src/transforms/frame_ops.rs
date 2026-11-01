@@ -2210,3 +2210,30 @@ fn transform_error_from_media(error: MediaError) -> TransformError {
         error => TransformError::ImageFrameInvariant(error.to_string()),
     }
 }
+/// Rotate a decoded byte frame clockwise by exactly ninety degrees.
+///
+/// Pixel values and timing metadata are preserved. This is the common owner of
+/// orientation rotation for existing processor and task-pipeline callers.
+///
+/// # Errors
+/// Propagates invalid output geometry or storage errors from frame construction.
+pub fn rotate_frame_90_clockwise(frame: &ImageFrame) -> Result<ImageFrame, MediaError> {
+    let channels = frame.channels();
+    let source_width = frame.width();
+    let source_height = frame.height();
+    let mut output = vec![0; frame.data().len()];
+
+    for y in 0..source_height {
+        for x in 0..source_width {
+            let source = (y * source_width + x) * channels;
+            let destination = (x * source_height + (source_height - 1 - y)) * channels;
+            output[destination..destination + channels]
+                .copy_from_slice(&frame.data()[source..source + channels]);
+        }
+    }
+
+    Ok(
+        ImageFrame::new(source_height, source_width, frame.pixel_format(), output)?
+            .with_timing(frame.timing()),
+    )
+}
