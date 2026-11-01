@@ -98,9 +98,9 @@ pub use patch_grid::{
 pub use patch_grid::{aspect_ratio_tile_grid, covering_area_tile_grid};
 mod tiled_canvas;
 pub use tiled_canvas::{
-    supported_tiled_canvas_grids, tiled_canvas_aspect_ratio_id, tiled_canvas_aspect_ratio_mask,
-    tiled_canvas_batch_metadata, tiled_canvas_plan, TiledCanvasBatchMetadata, TiledCanvasGrid,
-    TiledCanvasPlan,
+    supported_tiled_canvas_grids, thumbnail_tiled_canvas_grid, tiled_canvas_aspect_ratio_id,
+    tiled_canvas_aspect_ratio_mask, tiled_canvas_batch_metadata, tiled_canvas_plan,
+    TiledCanvasBatchMetadata, TiledCanvasGrid, TiledCanvasPlan,
 };
 
 const IDEFICS3_MAX_IMAGE_EDGE: usize = 4096;
