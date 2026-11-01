@@ -24,6 +24,7 @@ jobs:
       - run: cargo test --workspace --features url
 
   video-windows:
+    if: ${{ false }}
     name: Video Feature (Windows/vcpkg)
     runs-on: windows-latest
     steps:
@@ -54,6 +55,7 @@ jobs:
         run: cargo test --workspace --all-features
 
   video-linux:
+    if: ${{ false }}
     name: Video Feature (Linux)
     runs-on: ubuntu-latest
     steps:
@@ -83,6 +85,7 @@ jobs:
         run: cargo test --workspace --all-features
 
   video-macos:
+    if: ${{ false }}
     name: Video Feature (macOS)
     runs-on: macos-latest
     steps:

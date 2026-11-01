@@ -60,7 +60,7 @@ pub fn preprocess(images: &[ImageFrame], settings: &Value) -> Result<Vec<f32>> {
             && ((width < height && frame.width() > frame.height())
                 || (width > height && frame.width() < frame.height()))
         {
-            frame = super::rotate_frame_90_clockwise(&frame)
+            frame = crate::transforms::rotate_frame_90_clockwise(&frame)
                 .map_err(|error| invalid(error.to_string()))?;
         }
         if enabled("do_resize", true) {

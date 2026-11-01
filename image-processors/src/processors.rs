@@ -1612,7 +1612,9 @@ fn document_ocr_prepare_frame(
             target,
         )?
     {
-        frame = Cow::Owned(rotate_frame_90_clockwise(frame.as_ref())?);
+        frame = Cow::Owned(crate::transforms::rotate_frame_90_clockwise(
+            frame.as_ref(),
+        )?);
     }
 
     if config.do_resize {
@@ -1650,27 +1652,6 @@ fn document_ocr_prepare_frame(
     }
 
     Ok(frame.into_owned())
-}
-
-fn rotate_frame_90_clockwise(frame: &ImageFrame) -> Result<ImageFrame, ImageProcessorError> {
-    let channels = frame.channels();
-    let source_width = frame.width();
-    let source_height = frame.height();
-    let mut output = vec![0; frame.data().len()];
-
-    for y in 0..source_height {
-        for x in 0..source_width {
-            let source = (y * source_width + x) * channels;
-            let destination = (x * source_height + (source_height - 1 - y)) * channels;
-            output[destination..destination + channels]
-                .copy_from_slice(&frame.data()[source..source + channels]);
-        }
-    }
-
-    Ok(
-        ImageFrame::new(source_height, source_width, frame.pixel_format(), output)?
-            .with_timing(frame.timing()),
-    )
 }
 
 fn square_size(size: usize) -> ImageSize {

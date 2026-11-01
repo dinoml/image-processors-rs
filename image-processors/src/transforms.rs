@@ -13,7 +13,9 @@ use image_resize_kernels::{
 };
 
 mod color;
-pub use color::{matlab_rgb_to_ycbcr_f32, matlab_ycbcr_to_rgb_f32};
+pub use color::{grayscale_opencv, matlab_rgb_to_ycbcr_f32, matlab_ycbcr_to_rgb_f32};
+mod optical_flow;
+pub use optical_flow::{DisUltrafast, OpticalFlowError};
 mod detection;
 pub(crate) use detection::post_process_oneformer_panoptic_segmentation;
 pub use detection::{
@@ -34,21 +36,24 @@ pub use face_geometry::{
     estimate_similarity, estimate_similarity_lmeds, warp_affine_rgb, warp_affine_u8,
     FaceGeometryError,
 };
-pub use frame_ops::{resize_f32_opencv, resize_f64_opencv};
+pub use frame_ops::{
+    resize_f32_opencv, resize_f64_opencv, resize_u16_lanczos4, rotate_frame_90_clockwise,
+};
 pub use raster_drawing::{ellipse_polygon, fill_circle_rgb, fill_convex_polygon_rgb};
 mod spatial_filters;
 #[cfg(test)]
 use frame_ops::convert_to_rgb;
 pub use frame_ops::{
     bottom_right_resize_pad_plan, center_crop_box, center_crop_frame, composite_alpha_to_rgb,
-    composite_mask_frame, concatenate_frames_horizontally_rgb, convert_frame_pixel_format,
-    crop_frame, crop_region, halve_frame_box, multiple_of_resize_plan, overlay_frame, pad_frame,
-    pad_frame_symmetric_to_next_multiple, pad_frame_to_multiple_with_canvas_fill,
-    pad_frame_with_canvas_fill, pad_image_sequence_frames_with_canvas_fill, pad_to_multiple_plan,
+    composite_mask_f32_frame, composite_mask_frame, concatenate_frames_horizontally_rgb,
+    convert_frame_pixel_format, crop_frame, crop_region, halve_frame_box, multiple_of_resize_plan,
+    overlay_frame, pad_frame, pad_frame_symmetric_to_next_multiple,
+    pad_frame_to_multiple_with_canvas_fill, pad_frame_with_canvas_fill,
+    pad_image_sequence_frames_with_canvas_fill, pad_to_multiple_plan,
     pad_video_clip_frames_with_canvas_fill, padded_image_size, repeat_last_frame_batch_to_multiple,
     repeat_last_image_sequence_to_multiple, repeat_last_video_clip_to_multiple,
     resize_center_crop_frame, resize_center_crop_frame_with_decision, resize_center_crop_plan,
-    resize_f32, resize_fill_plan, resize_frame, resize_frame_opencv,
+    resize_f32, resize_fill_plan, resize_frame, resize_frame_box, resize_frame_opencv,
     resize_frame_opencv_scale_dependent, resize_frame_to_area_limit,
     resize_frame_to_bottom_right_padded_frame, resize_frame_to_fill_frame,
     resize_frame_with_decision, resize_rgb_to_fill_frame, rgb_planar_f32_to_grayscale,

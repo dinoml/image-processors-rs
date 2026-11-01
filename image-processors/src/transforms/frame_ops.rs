@@ -73,19 +73,47 @@ pub fn resize_frame(
 
 #[allow(missing_docs)]
 pub fn halve_frame_box(image: &ImageFrame) -> Result<ImageFrame, TransformError> {
-    let width = image.width() / 2;
-    let height = image.height() / 2;
+    resize_frame_box(
+        image,
+        ImageSize {
+            width: image.width() / 2,
+            height: image.height() / 2,
+        },
+    )
+}
+
+/// Resize a decoded byte frame with Pillow BOX filtering and per-pass rounding.
+/// Pixel format and frame timing are preserved. The existing halving operation
+/// delegates here so arbitrary resize targets share the same implementation.
+///
+/// # Errors
+/// Reports empty target dimensions, invalid pixel storage or size overflow.
+pub fn resize_frame_box(
+    image: &ImageFrame,
+    target: ImageSize,
+) -> Result<ImageFrame, TransformError> {
+    let ImageSize { width, height } = target;
     if width == 0 || height == 0 {
         return Err(TransformError::InvalidSize { width, height });
     }
     let channels = image.channels();
-    let mut horizontal = vec![0_u8; image.height() * width * channels];
-    let mut output = vec![0_u8; height * width * channels];
+    let mut horizontal = vec![
+        0_u8;
+        image_len(
+            ImageSize {
+                width,
+                height: image.height()
+            },
+            channels
+        )?
+    ];
+    let mut output = vec![0_u8; image_len(target, channels)?];
     for x in 0..width {
         let scale = image.width() as f64 / width as f64;
         let center = (x as f64 + 0.5) * scale;
-        let left = ((center - scale * 0.5 + 0.5) as usize).min(image.width() - 1);
-        let right = ((center + scale * 0.5 + 0.5) as usize).min(image.width());
+        let support = scale.max(1.0) * 0.5;
+        let left = ((center - support + 0.5) as usize).min(image.width() - 1);
+        let right = ((center + support + 0.5) as usize).min(image.width());
         let weight = ((1_u64 << 22) as f64 / (right - left) as f64 + 0.5) as u64;
         for row in 0..image.height() {
             for channel in 0..channels {
@@ -103,8 +131,9 @@ pub fn halve_frame_box(image: &ImageFrame) -> Result<ImageFrame, TransformError>
     for y in 0..height {
         let scale = image.height() as f64 / height as f64;
         let center = (y as f64 + 0.5) * scale;
-        let top = ((center - scale * 0.5 + 0.5) as usize).min(image.height() - 1);
-        let bottom = ((center + scale * 0.5 + 0.5) as usize).min(image.height());
+        let support = scale.max(1.0) * 0.5;
+        let top = ((center - support + 0.5) as usize).min(image.height() - 1);
+        let bottom = ((center + support + 0.5) as usize).min(image.height());
         let weight = ((1_u64 << 22) as f64 / (bottom - top) as f64 + 0.5) as u64;
         for x in 0..width * channels {
             let sum = (top..bottom)
@@ -1310,6 +1339,52 @@ pub fn composite_mask_frame(
     )
 }
 
+/// Composite same-size byte frames using an FP32 opacity plane.
+///
+/// Alpha remains floating through `alpha * foreground + (1 - alpha) * background`.
+/// Conversion to a byte truncates only after that blend, rather than rounding a
+/// byte-quantized opacity first. Foreground timing is retained.
+///
+/// # Errors
+/// Rejects incompatible frames, invalid opacity storage or nonfinite values.
+pub fn composite_mask_f32_frame(
+    background: &ImageFrame,
+    foreground: &ImageFrame,
+    alpha: &[f32],
+) -> Result<ImageFrame, TransformError> {
+    let size = frame_size(foreground);
+    validate_frame_size("background", size, frame_size(background))?;
+    validate_pixel_format(
+        "background",
+        foreground.pixel_format(),
+        background.pixel_format(),
+    )?;
+    validate_len(alpha.len(), checked_pixels(size)?)?;
+    let channels = foreground.channels();
+    let mut output = Vec::with_capacity(foreground.data().len());
+    for ((front, back), &opacity) in foreground
+        .data()
+        .chunks_exact(channels)
+        .zip(background.data().chunks_exact(channels))
+        .zip(alpha)
+    {
+        validate_mask_value(opacity)?;
+        for channel in 0..channels {
+            output.push(
+                (opacity * f32::from(front[channel]) + (1.0 - opacity) * f32::from(back[channel]))
+                    as u8,
+            );
+        }
+    }
+    new_frame(
+        size.width,
+        size.height,
+        foreground.pixel_format(),
+        output,
+        foreground.timing(),
+    )
+}
+
 /// Resize interleaved FP32 values with an existing resize decision.
 ///
 /// Uses the same profile/filter mapping as byte-frame resizing while retaining
@@ -1355,6 +1430,25 @@ pub fn resize_f32_opencv(
     )
     .map_err(transform_error_from_resize)
 }
+/// Resize uint16 pixels with FP32 Lanczos4 accumulation and final saturation.
+///
+/// # Errors
+/// Rejects invalid geometry, storage, channels or overflowing image sizes.
+pub fn resize_u16_lanczos4(
+    values: &[u16],
+    source: ImageSize,
+    channels: usize,
+    target: ImageSize,
+) -> Result<Vec<u16>, TransformError> {
+    image_resize_kernels::resize_u16_lanczos4(
+        values,
+        kernel_size(source),
+        channels,
+        kernel_size(target),
+    )
+    .map_err(transform_error_from_resize)
+}
+
 /// Resize FP64 pixels while retaining their precision.
 /// # Errors
 /// Rejects invalid geometry, storage, channels or nonfinite samples.
@@ -2115,4 +2209,31 @@ fn transform_error_from_media(error: MediaError) -> TransformError {
         MediaError::FrameSizeOverflow => TransformError::ImageSizeOverflow,
         error => TransformError::ImageFrameInvariant(error.to_string()),
     }
+}
+/// Rotate a decoded byte frame clockwise by exactly ninety degrees.
+///
+/// Pixel values and timing metadata are preserved. This is the common owner of
+/// orientation rotation for existing processor and task-pipeline callers.
+///
+/// # Errors
+/// Propagates invalid output geometry or storage errors from frame construction.
+pub fn rotate_frame_90_clockwise(frame: &ImageFrame) -> Result<ImageFrame, MediaError> {
+    let channels = frame.channels();
+    let source_width = frame.width();
+    let source_height = frame.height();
+    let mut output = vec![0; frame.data().len()];
+
+    for y in 0..source_height {
+        for x in 0..source_width {
+            let source = (y * source_width + x) * channels;
+            let destination = (x * source_height + (source_height - 1 - y)) * channels;
+            output[destination..destination + channels]
+                .copy_from_slice(&frame.data()[source..source + channels]);
+        }
+    }
+
+    Ok(
+        ImageFrame::new(source_height, source_width, frame.pixel_format(), output)?
+            .with_timing(frame.timing()),
+    )
 }
