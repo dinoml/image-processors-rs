@@ -54,6 +54,8 @@ pub use task_vision_presets::{
 #[allow(missing_docs)]
 pub mod minicpm;
 mod multimodal_presets;
+#[allow(missing_docs)]
+pub mod phi4;
 pub use multimodal_presets::{
     multimodal_preset, normalize_ocr_word, post_process_document_rectification,
     post_process_table_recognition, post_process_text_recognition, MultimodalArray,
