@@ -46,11 +46,13 @@ pub use encoder_presets::{
 };
 mod task_vision_presets;
 pub use task_vision_presets::{
-    PaddleDetectionLimit, TaskVisionColorMode, TaskVisionImageProcessor,
+    paddle_detection_size, PaddleDetectionLimit, TaskVisionColorMode, TaskVisionImageProcessor,
     TaskVisionImageProcessorConfig, TaskVisionKeypointMatchingOutput, TaskVisionPadding,
     TaskVisionPoseBox, TaskVisionProcessorFamily, TaskVisionProcessorPreset, TaskVisionResize,
     TaskVisionSegmentationRequest,
 };
+#[allow(missing_docs)]
+pub mod db_detection;
 #[allow(missing_docs)]
 pub mod minicpm;
 mod multimodal_presets;
