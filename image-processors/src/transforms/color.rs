@@ -1,4 +1,39 @@
-//! Floating-point MATLAB-style RGB and YCbCr color transforms.
+//! Shared color transforms retaining source-specific precision and rounding.
+
+use super::{new_frame, TransformError};
+use crate::media::{ImageFrame, PixelFormat};
+
+/// Convert decoded RGB/RGBA bytes to grayscale using the OpenCV CPU contract.
+///
+/// Uses the 15-bit BT.601 coefficients from OpenCV's `RGB2Gray<uchar>`;
+/// alpha is ignored. The existing general luminance conversion is unchanged.
+/// Frame timing is preserved. No native image-processing library is called.
+///
+/// # Errors
+/// Returns an error when the output frame cannot be represented.
+pub fn grayscale_opencv(image: &ImageFrame) -> Result<ImageFrame, TransformError> {
+    if image.pixel_format() == PixelFormat::Luma8 {
+        return Ok(image.clone());
+    }
+    let data = image
+        .data()
+        .chunks_exact(image.channels())
+        .map(|pixel| {
+            ((u32::from(pixel[0]) * 9798
+                + u32::from(pixel[1]) * 19235
+                + u32::from(pixel[2]) * 3735
+                + 16384)
+                >> 15) as u8
+        })
+        .collect();
+    new_frame(
+        image.width(),
+        image.height(),
+        PixelFormat::Luma8,
+        data,
+        image.timing(),
+    )
+}
 
 /// Convert one unit-range RGB pixel to MATLAB-style YCbCr in FP32.
 ///

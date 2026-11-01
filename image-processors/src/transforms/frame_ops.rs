@@ -1339,6 +1339,52 @@ pub fn composite_mask_frame(
     )
 }
 
+/// Composite same-size byte frames using an FP32 opacity plane.
+///
+/// Alpha remains floating through `alpha * foreground + (1 - alpha) * background`.
+/// Conversion to a byte truncates only after that blend, rather than rounding a
+/// byte-quantized opacity first. Foreground timing is retained.
+///
+/// # Errors
+/// Rejects incompatible frames, invalid opacity storage or nonfinite values.
+pub fn composite_mask_f32_frame(
+    background: &ImageFrame,
+    foreground: &ImageFrame,
+    alpha: &[f32],
+) -> Result<ImageFrame, TransformError> {
+    let size = frame_size(foreground);
+    validate_frame_size("background", size, frame_size(background))?;
+    validate_pixel_format(
+        "background",
+        foreground.pixel_format(),
+        background.pixel_format(),
+    )?;
+    validate_len(alpha.len(), checked_pixels(size)?)?;
+    let channels = foreground.channels();
+    let mut output = Vec::with_capacity(foreground.data().len());
+    for ((front, back), &opacity) in foreground
+        .data()
+        .chunks_exact(channels)
+        .zip(background.data().chunks_exact(channels))
+        .zip(alpha)
+    {
+        validate_mask_value(opacity)?;
+        for channel in 0..channels {
+            output.push(
+                (opacity * f32::from(front[channel]) + (1.0 - opacity) * f32::from(back[channel]))
+                    as u8,
+            );
+        }
+    }
+    new_frame(
+        size.width,
+        size.height,
+        foreground.pixel_format(),
+        output,
+        foreground.timing(),
+    )
+}
+
 /// Resize interleaved FP32 values with an existing resize decision.
 ///
 /// Uses the same profile/filter mapping as byte-frame resizing while retaining
