@@ -23,7 +23,15 @@ impl std::fmt::Display for FaceGeometryError {
 }
 impl std::error::Error for FaceGeometryError {}
 
-fn similarity(from: &[[f32; 2]], to: &[[f32; 2]]) -> Result<[[f64; 3]; 2], FaceGeometryError> {
+/// Fit a two-dimensional, orientation-preserving similarity transform to all pairs.
+/// The returned matrix maps source pixel coordinates to destination coordinates.
+///
+/// # Errors
+/// Rejects mismatched, nonfinite, insufficient or degenerate landmark pairs.
+pub fn estimate_similarity(
+    from: &[[f32; 2]],
+    to: &[[f32; 2]],
+) -> Result<[[f64; 3]; 2], FaceGeometryError> {
     if from.len() != to.len()
         || from.len() < 2
         || from.iter().chain(to).flatten().any(|x| !x.is_finite())
@@ -74,7 +82,7 @@ pub fn estimate_similarity_lmeds(
     confidence: f64,
     refine_iterations: usize,
 ) -> Result<[[f64; 3]; 2], FaceGeometryError> {
-    let fallback = similarity(from, to)?;
+    let fallback = estimate_similarity(from, to)?;
     if !(0.0..1.0).contains(&confidence) || max_iterations == 0 {
         return Err(FaceGeometryError::Landmarks);
     }
@@ -105,7 +113,8 @@ pub fn estimate_similarity_lmeds(
         if first == second {
             continue;
         }
-        let Ok(candidate) = similarity(&[from[first], from[second]], &[to[first], to[second]])
+        let Ok(candidate) =
+            estimate_similarity(&[from[first], from[second]], &[to[first], to[second]])
         else {
             continue;
         };
@@ -144,7 +153,7 @@ pub fn estimate_similarity_lmeds(
         }
     }
     if source.len() >= 2 {
-        similarity(&source, &target)
+        estimate_similarity(&source, &target)
     } else {
         Ok(matrix)
     }
