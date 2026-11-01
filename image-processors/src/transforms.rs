@@ -17,21 +17,21 @@ pub use color::{matlab_rgb_to_ycbcr_f32, matlab_ycbcr_to_rgb_f32};
 mod detection;
 pub(crate) use detection::post_process_oneformer_panoptic_segmentation;
 pub use detection::{
-    CocoObjectAnnotation, DetectionAnnotation, DetectionBoundingBox, DetectionCenterBox,
-    NormalizedDetectionAnnotation, ObjectDetectionPrediction, SegmentationPostProcessOptions,
-    SegmentationPostProcessPrediction, SegmentationSegmentInfo, SemanticSegmentationPrediction,
     detection_box_iou, non_max_suppression, normalize_detection_annotation,
     pad_normalized_detection_annotation, post_process_instance_segmentation,
     post_process_object_detection, post_process_panoptic_segmentation,
     post_process_semantic_segmentation, post_process_sigmoid_best_object_detection,
     post_process_sigmoid_top_k_object_detection, prepare_coco_detection_annotation,
-    resize_detection_annotation, scale_detection_box,
+    resize_detection_annotation, scale_detection_box, CocoObjectAnnotation, DetectionAnnotation,
+    DetectionBoundingBox, DetectionCenterBox, NormalizedDetectionAnnotation,
+    ObjectDetectionPrediction, SegmentationPostProcessOptions, SegmentationPostProcessPrediction,
+    SegmentationSegmentInfo, SemanticSegmentationPrediction,
 };
 mod face_geometry;
 mod frame_ops;
 mod raster_drawing;
 pub use face_geometry::{
-    FaceGeometryError, estimate_similarity_lmeds, warp_affine_rgb, warp_affine_u8,
+    estimate_similarity_lmeds, warp_affine_rgb, warp_affine_u8, FaceGeometryError,
 };
 pub use frame_ops::{resize_f32_opencv, resize_f64_opencv};
 pub use raster_drawing::{ellipse_polygon, fill_circle_rgb, fill_convex_polygon_rgb};
@@ -59,42 +59,41 @@ pub(crate) use frame_ops::{
     resize_frame_to_f32_torchvision,
 };
 pub use spatial_filters::{
-    SpatialFilterError, dilate_f32, dilate_rect_f64, gaussian_blur_f32, gaussian_blur_u8,
-    sobel_xy_f64,
+    dilate_f32, dilate_rect_f64, gaussian_blur_f32, gaussian_blur_u8, sobel_xy_f64,
+    SpatialFilterError,
 };
 mod layout_plans;
 use layout_plans::compare_ratios_less;
 pub use layout_plans::{
-    AspectRatioCrop, AspectRatioCropBatchMetadata, AspectRatioCropOptions, AspectRatioCropPlan,
-    AttentionMaskDownsample, NestedFrameBatchPaddingPlan, NestedImageGridMetadata,
-    NestedImageGridTarget, OverlayPosition, PatchAlignedResizePlan, ResizeLimits,
-    SpatialBatchPaddingPlan, SplitImageBatchMetadata, SplitImagePlan,
     aspect_ratio_crop_batch_metadata, aspect_ratio_crop_plan, downsample_attention_mask,
     nested_frame_batch_padding_plan, nested_image_grid_metadata, patch_aligned_resize_plan,
     patch_aligned_resize_size, spatial_batch_padding_plan, split_image_batch_metadata,
-    split_image_encoder_size, split_image_plan, split_image_resize_size,
+    split_image_encoder_size, split_image_plan, split_image_resize_size, AspectRatioCrop,
+    AspectRatioCropBatchMetadata, AspectRatioCropOptions, AspectRatioCropPlan,
+    AttentionMaskDownsample, NestedFrameBatchPaddingPlan, NestedImageGridMetadata,
+    NestedImageGridTarget, OverlayPosition, PatchAlignedResizePlan, ResizeLimits,
+    SpatialBatchPaddingPlan, SplitImageBatchMetadata, SplitImagePlan,
 };
 mod masks;
 mod patch_grid;
 pub use masks::{
-    BinaryRleMask, CropGenerationOptions, FilteredMask, GeneratedMaskPrediction, ImagePoint,
-    LayeredCropBox, MaskFilterOptions, binarize_mask, binarize_mask_to_unit_f32,
-    binary_mask_to_box, binary_mask_to_rle, binary_rle_to_mask, box_near_crop_edge,
-    filter_generated_masks, generate_layered_crop_boxes, mask_stability_score,
-    normalized_point_grid, pad_crop_mask, post_process_binary_mask, post_process_generated_masks,
-    resize_padded_mask_logits, scale_image_point,
+    binarize_mask, binarize_mask_to_unit_f32, binary_mask_to_box, binary_mask_to_rle,
+    binary_rle_to_mask, box_near_crop_edge, filter_generated_masks, generate_layered_crop_boxes,
+    mask_stability_score, normalized_point_grid, pad_crop_mask, post_process_binary_mask,
+    post_process_generated_masks, resize_padded_mask_logits, scale_image_point, BinaryRleMask,
+    CropGenerationOptions, FilteredMask, GeneratedMaskPrediction, ImagePoint, LayeredCropBox,
+    MaskFilterOptions,
 };
 pub use patch_grid::{
-    PatchGridBatchPlan, PatchGridFrames, PatchGridPlan, aspect_ratio_tile_frames,
-    aspect_ratio_tile_grid, patch_grid_batch_plan, patch_grid_image_patches,
+    aspect_ratio_tile_frames, aspect_ratio_tile_grid, patch_grid_batch_plan, patch_grid_image_patches,
     patch_grid_image_patches_with_decision, patch_grid_output_size, patch_grid_plan,
-    select_patch_grid_resolution,
+    select_patch_grid_resolution, PatchGridBatchPlan, PatchGridFrames, PatchGridPlan,
 };
 mod tiled_canvas;
 pub use tiled_canvas::{
-    TiledCanvasBatchMetadata, TiledCanvasGrid, TiledCanvasPlan, supported_tiled_canvas_grids,
-    tiled_canvas_aspect_ratio_id, tiled_canvas_aspect_ratio_mask, tiled_canvas_batch_metadata,
-    tiled_canvas_plan,
+    supported_tiled_canvas_grids, tiled_canvas_aspect_ratio_id, tiled_canvas_aspect_ratio_mask,
+    tiled_canvas_batch_metadata, tiled_canvas_plan, TiledCanvasBatchMetadata, TiledCanvasGrid,
+    TiledCanvasPlan,
 };
 
 const IDEFICS3_MAX_IMAGE_EDGE: usize = 4096;
