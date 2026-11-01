@@ -158,6 +158,85 @@ pub fn patch_grid_output_size(
     }
 }
 
+#[allow(missing_docs)]
+pub fn aspect_ratio_tile_frames(
+    image: &ImageFrame,
+    tile_size: ImageSize,
+    minimum: usize,
+    maximum: usize,
+    use_thumbnail: bool,
+    decision: ResizeDecision,
+) -> Result<Vec<ImageFrame>, TransformError> {
+    validate_size(tile_size)?;
+    if minimum == 0 || maximum < minimum {
+        return Err(TransformError::EmptyResolutionCandidates);
+    }
+    let source_area = checked_pixels(frame_size(image))?;
+    let tile_area = checked_pixels(tile_size)?;
+    let mut grids = Vec::new();
+    for columns in 1..=maximum {
+        for rows in 1..=maximum {
+            if columns
+                .checked_mul(rows)
+                .is_some_and(|count| count >= minimum && count <= maximum)
+            {
+                grids.push((columns, rows));
+            }
+        }
+    }
+    grids.sort_by_key(|&(columns, rows)| columns * rows);
+    let ratio = image.width() as f64 / image.height() as f64;
+    let mut best = (1, 1);
+    let mut difference = f64::INFINITY;
+    for (columns, rows) in grids {
+        let candidate = (ratio - columns as f64 / rows as f64).abs();
+        let area = tile_area
+            .checked_mul(columns)
+            .and_then(|area| area.checked_mul(rows))
+            .ok_or(TransformError::ImageSizeOverflow)?;
+        if candidate < difference
+            || (candidate == difference && source_area as f64 > 0.5 * area as f64)
+        {
+            difference = candidate;
+            best = (columns, rows);
+        }
+    }
+    let canvas_size = ImageSize::new(
+        tile_size
+            .height
+            .checked_mul(best.1)
+            .ok_or(TransformError::ImageSizeOverflow)?,
+        tile_size
+            .width
+            .checked_mul(best.0)
+            .ok_or(TransformError::ImageSizeOverflow)?,
+    )?;
+    let canvas = resize_frame_with_decision(image, canvas_size, decision, ResizeMode::Default)?;
+    let mut tiles = Vec::new();
+    for row in 0..best.1 {
+        for column in 0..best.0 {
+            tiles.push(crop_frame(
+                &canvas,
+                ImageCropBox::new(
+                    column * tile_size.width,
+                    row * tile_size.height,
+                    (column + 1) * tile_size.width,
+                    (row + 1) * tile_size.height,
+                ),
+            )?);
+        }
+    }
+    if use_thumbnail && tiles.len() != 1 {
+        tiles.push(resize_frame_with_decision(
+            image,
+            tile_size,
+            decision,
+            ResizeMode::Default,
+        )?);
+    }
+    Ok(tiles)
+}
+
 /// Builds a Patch-grid extraction plan for one image.
 ///
 /// # Errors
