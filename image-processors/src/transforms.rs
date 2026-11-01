@@ -13,7 +13,12 @@ use image_resize_kernels::{
 };
 
 mod color;
-pub use color::{grayscale_opencv, matlab_rgb_to_ycbcr_f32, matlab_ycbcr_to_rgb_f32};
+pub use color::{
+    grayscale_opencv, matlab_rgb_to_ycbcr_f32, matlab_ycbcr_to_rgb_f32,
+    rgb_planar_f32_to_grayscale_opencv,
+};
+mod planar_tiles;
+pub use planar_tiles::{crop_planar_f32, reflect_pad_planar_f32, HaloTile, HaloTilePlan};
 mod optical_flow;
 pub use optical_flow::{DisUltrafast, OpticalFlowError};
 mod detection;
@@ -2124,6 +2129,16 @@ fn validate_len(actual: usize, expected: usize) -> Result<(), TransformError> {
 /// Errors returned by image transform helpers.
 #[derive(Debug, Error, PartialEq)]
 pub enum TransformError {
+    /// Edge-exclusive reflection requires padding smaller than its input axis.
+    #[error("reflection padding right={right}, bottom={bottom} exceeds source {source_size:?}")]
+    InvalidReflectionPadding {
+        /// Unpadded image dimensions.
+        source_size: ImageSize,
+        /// Right padding in pixels.
+        right: usize,
+        /// Bottom padding in pixels.
+        bottom: usize,
+    },
     /// Image dimensions were zero.
     #[error("height and width must be positive, got height={height}, width={width}")]
     InvalidSize {
