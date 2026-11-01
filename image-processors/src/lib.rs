@@ -34,6 +34,9 @@ pub mod tensor;
 /// Resize, crop, fill, pixel-format conversion, and geometry helpers.
 pub mod transforms;
 
+/// Dependency-free TrueType outline text overlays.
+pub mod text;
+
 #[doc(inline)]
 pub use catalog::{
     CatalogEntry, CatalogQuery, CompatibilityStatus, FixtureEvidence, ProcessorCatalog,

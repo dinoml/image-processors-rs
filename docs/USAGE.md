@@ -515,3 +515,11 @@ OpenCV area-coordinate fallback. These APIs follow the scalar CPU algorithms
 in OpenCV 4.10.0 (`71d3237a093b60a27601c20e9ee6c3e52154e8b1`); they do not
 select OpenCL, IPP or architecture-specific OpenCV acceleration. Existing
 resize defaults and the `OpenCvLinear` profile remain unchanged.
+
+### TrueType text overlays
+
+`text::TrueTypeFont::from_bytes` parses Unicode TrueType outlines directly.
+`draw_rgb` draws black text with a rounded white border onto an RGB buffer,
+using font metrics, kerning and antialiased quadratic outlines. It adds no
+font, PNG or compression dependency. The renderer supports sfnt `glyf` fonts;
+it does not execute TrueType hinting bytecode or interpret CFF outlines.
