@@ -34,7 +34,7 @@ pub use face_geometry::{
     estimate_similarity, estimate_similarity_lmeds, warp_affine_rgb, warp_affine_u8,
     FaceGeometryError,
 };
-pub use frame_ops::{resize_f32_opencv, resize_f64_opencv};
+pub use frame_ops::{resize_f32_opencv, resize_f64_opencv, resize_u16_lanczos4};
 pub use raster_drawing::{ellipse_polygon, fill_circle_rgb, fill_convex_polygon_rgb};
 mod spatial_filters;
 #[cfg(test)]

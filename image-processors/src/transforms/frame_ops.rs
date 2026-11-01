@@ -1384,6 +1384,25 @@ pub fn resize_f32_opencv(
     )
     .map_err(transform_error_from_resize)
 }
+/// Resize uint16 pixels with FP32 Lanczos4 accumulation and final saturation.
+///
+/// # Errors
+/// Rejects invalid geometry, storage, channels or overflowing image sizes.
+pub fn resize_u16_lanczos4(
+    values: &[u16],
+    source: ImageSize,
+    channels: usize,
+    target: ImageSize,
+) -> Result<Vec<u16>, TransformError> {
+    image_resize_kernels::resize_u16_lanczos4(
+        values,
+        kernel_size(source),
+        channels,
+        kernel_size(target),
+    )
+    .map_err(transform_error_from_resize)
+}
+
 /// Resize FP64 pixels while retaining their precision.
 /// # Errors
 /// Rejects invalid geometry, storage, channels or nonfinite samples.

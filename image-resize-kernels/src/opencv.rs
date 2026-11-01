@@ -65,6 +65,81 @@ pub fn resize_f64_opencv(
     resize_float(values, source, channels, target, interpolation)
 }
 
+/// Resize interleaved uint16 pixels with scalar INTER_LANCZOS4 semantics.
+///
+/// As in OpenCV's `HResizeLanczos4<ushort, float, float>` and
+/// `VResizeLanczos4<ushort, float, float, Cast<float, ushort>>`, coefficients
+/// and both accumulation stages use FP32. Only the final vertical result is
+/// rounded to the nearest even integer and saturated to the uint16 range.
+/// This implementation does not link or call OpenCV.
+///
+/// # Errors
+/// Reports invalid dimensions, storage, channels or overflowing image sizes.
+pub fn resize_u16_lanczos4(
+    values: &[u16],
+    source: ImageSize,
+    channels: usize,
+    target: ImageSize,
+) -> Result<Vec<u16>, ResizeError> {
+    ImageSize::new(source.height, source.width)?;
+    ImageSize::new(target.height, target.width)?;
+    super::validate_opencv_dimensions(source, target)?;
+    super::validate_image_data(values.len(), source, channels)?;
+    let count = super::image_len(target, channels)?;
+    if source == target {
+        return Ok(values.to_vec());
+    }
+    let xs = float_axis(
+        source.width,
+        target.width,
+        OpenCvInterpolation::Lanczos4,
+        true,
+        false,
+    );
+    let ys = float_axis(
+        source.height,
+        target.height,
+        OpenCvInterpolation::Lanczos4,
+        false,
+        false,
+    );
+    let intermediate_len = source
+        .height
+        .checked_mul(target.width)
+        .and_then(|length| length.checked_mul(channels))
+        .ok_or(ResizeError::ImageSizeOverflow)?;
+    let mut intermediate = vec![0.0_f32; intermediate_len];
+    for y in 0..source.height {
+        for (x, weights) in xs.iter().enumerate() {
+            for channel in 0..channels {
+                let mut sum = 0.0_f32;
+                for &(source_x, weight) in weights {
+                    sum += f32::from(values[(y * source.width + source_x) * channels + channel])
+                        * weight;
+                }
+                intermediate[(y * target.width + x) * channels + channel] = sum;
+            }
+        }
+    }
+    let mut result = vec![0_u16; count];
+    for (y, weights) in ys.iter().enumerate() {
+        for x in 0..target.width {
+            for channel in 0..channels {
+                let (source_y, weight) = weights[0];
+                let mut sum =
+                    intermediate[(source_y * target.width + x) * channels + channel] * weight;
+                for &(source_y, weight) in &weights[1..] {
+                    sum +=
+                        intermediate[(source_y * target.width + x) * channels + channel] * weight;
+                }
+                result[(y * target.width + x) * channels + channel] =
+                    sum.round_ties_even().clamp(0.0, f32::from(u16::MAX)) as u16;
+            }
+        }
+    }
+    Ok(result)
+}
+
 fn float_axis(
     input: usize,
     output: usize,

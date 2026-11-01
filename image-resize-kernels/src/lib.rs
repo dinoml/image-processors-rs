@@ -10,7 +10,7 @@ use thiserror::Error;
 
 mod opencv;
 mod planar;
-pub use opencv::{resize_f32_opencv, resize_f64_opencv};
+pub use opencv::{resize_f32_opencv, resize_f64_opencv, resize_u16_lanczos4};
 pub use opencv::{
     resize_u8_opencv, resize_u8_opencv_scale_dependent, resize_u8_opencv_with_crop,
     OpenCvInterpolation,
