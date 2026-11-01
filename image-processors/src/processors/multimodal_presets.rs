@@ -1821,26 +1821,6 @@ fn patchify_chw(values: &[f32], height: usize, width: usize, patch: usize) -> Ve
     patches
 }
 
-fn patchify_hwc(values: &[f32], height: usize, width: usize, patch: usize) -> Vec<f32> {
-    let grid_h = height / patch;
-    let grid_w = width / patch;
-    let mut patches = Vec::with_capacity(values.len());
-    for grid_y in 0..grid_h {
-        for grid_x in 0..grid_w {
-            for patch_y in 0..patch {
-                for patch_x in 0..patch {
-                    let y = grid_y * patch + patch_y;
-                    let x = grid_x * patch + patch_x;
-                    for channel in 0..3 {
-                        patches.push(values[channel * height * width + y * width + x]);
-                    }
-                }
-            }
-        }
-    }
-    patches
-}
-
 fn preprocess_patch_grid(
     processor: MultimodalProcessor,
     frames: &[ImageFrame],
@@ -1935,7 +1915,17 @@ fn preprocess_gemma4(
 ) -> Result<MultimodalOutput, MultimodalProcessorError> {
     let preset = processor.preset;
     let (values, edge) = f32_pixels(preset.class_name, frame, processor.resize_backend)?;
-    let real_patches = patchify_hwc(&values, edge, edge, PATCH_SIZE);
+    let real_patches = crate::transforms::flatten_hwc_patches(
+        &values,
+        ImageSize {
+            height: edge,
+            width: edge,
+        },
+        3,
+        PATCH_SIZE,
+        Layout::CHW,
+    )
+    .map_err(ImageProcessorError::Transform)?;
     let patch_depth = 3 * PATCH_SIZE * PATCH_SIZE;
     let real_count = (edge / PATCH_SIZE) * (edge / PATCH_SIZE);
     let max_patches = 70;
@@ -2029,7 +2019,17 @@ fn preprocess_adaptive(
     match preset.class_name {
         "Pix2StructImageProcessor" | "Kosmos2_5ImageProcessor" => {
             let normalized = standardized_pixels(frame, processor.resize_backend)?;
-            let patches = patchify_hwc(&normalized, COMPACT_EDGE, COMPACT_EDGE, PATCH_SIZE);
+            let patches = crate::transforms::flatten_hwc_patches(
+                &normalized,
+                ImageSize {
+                    height: COMPACT_EDGE,
+                    width: COMPACT_EDGE,
+                },
+                3,
+                PATCH_SIZE,
+                Layout::CHW,
+            )
+            .map_err(ImageProcessorError::Transform)?;
             let mut positioned = Vec::with_capacity(patch_count * (patch_depth + 2));
             for patch_index in 0..patch_count {
                 positioned.push((patch_index / grid + 1) as f32);
@@ -2054,7 +2054,17 @@ fn preprocess_adaptive(
         }
         "Siglip2ImageProcessor" | "Lfm2VlImageProcessor" => {
             let (values, edge) = f32_pixels(preset.class_name, frame, processor.resize_backend)?;
-            let patches = patchify_hwc(&values, edge, edge, PATCH_SIZE);
+            let patches = crate::transforms::flatten_hwc_patches(
+                &values,
+                ImageSize {
+                    height: edge,
+                    width: edge,
+                },
+                3,
+                PATCH_SIZE,
+                Layout::CHW,
+            )
+            .map_err(ImageProcessorError::Transform)?;
             output.insert_array(
                 "pixel_values",
                 array_f32([1, patch_count, patch_depth], patches)?,
