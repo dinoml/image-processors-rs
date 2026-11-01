@@ -266,6 +266,75 @@ pub fn aspect_ratio_tile_grid(
 }
 
 #[allow(missing_docs)]
+pub fn covering_area_tile_grid(
+    original_size: ImageSize,
+    tile_side: usize,
+    maximum: usize,
+    threshold: f64,
+) -> Result<(usize, usize), TransformError> {
+    validate_size(original_size)?;
+    if tile_side == 0 || maximum == 0 || !threshold.is_finite() || !(0.0..=1.0).contains(&threshold)
+    {
+        return Err(TransformError::EmptyResolutionCandidates);
+    }
+    let area = checked_pixels(original_size)? as f64;
+    let mut candidates = Vec::new();
+    for first in 1..=maximum {
+        for second in 1..=maximum / first {
+            candidates.push((first, second));
+        }
+    }
+    candidates.sort_by_key(|&(first, second)| first * second);
+    let mut evaluated = Vec::with_capacity(candidates.len());
+    for (first, second) in candidates {
+        let row_height = original_size.height / first;
+        let column_width = original_size.width / second;
+        let mut covered = 0.0;
+        for row in 0..first {
+            for column in 0..second {
+                let height = if row + 1 == first {
+                    original_size.height - row * row_height
+                } else {
+                    row_height
+                };
+                let width = if column + 1 == second {
+                    original_size.width - column * column_width
+                } else {
+                    column_width
+                };
+                let longest = width.max(height) as f64;
+                let shortest = width.min(height) as f64;
+                covered += if longest > tile_side as f64 {
+                    shortest / longest * (tile_side as f64).powi(2)
+                } else {
+                    longest * shortest
+                };
+            }
+        }
+        evaluated.push(((first, second), covered / area));
+    }
+    let sufficient = evaluated.iter().any(|(_, ratio)| *ratio > threshold);
+    if sufficient {
+        evaluated.retain(|(_, ratio)| *ratio > threshold);
+    }
+    evaluated.sort_by(|(left, left_ratio), (right, right_ratio)| {
+        if sufficient {
+            (left.0 * left.1)
+                .cmp(&(right.0 * right.1))
+                .then_with(|| right_ratio.total_cmp(left_ratio))
+        } else {
+            right_ratio
+                .total_cmp(left_ratio)
+                .then_with(|| (left.0 * left.1).cmp(&(right.0 * right.1)))
+        }
+    });
+    evaluated
+        .first()
+        .map(|&(grid, _)| grid)
+        .ok_or(TransformError::EmptyResolutionCandidates)
+}
+
+#[allow(missing_docs)]
 pub fn aspect_ratio_tile_frames(
     image: &ImageFrame,
     tile_size: ImageSize,

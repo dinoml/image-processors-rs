@@ -133,8 +133,6 @@ pub use tensor::{
     DType, ImageLayout, Layout, QuantizationParams, Tensor, TensorData, TensorDataView,
     TensorError, TensorLeadingAxis, TensorView, VideoLayout,
 };
-#[doc(inline)]
-pub use transforms::aspect_ratio_tile_grid;
 pub use transforms::{
     area_resize_plan, aspect_ratio_crop_batch_metadata, aspect_ratio_crop_plan,
     aspect_ratio_tile_frames, binarize_mask_to_unit_f32, bottom_right_resize_pad_plan,
@@ -176,3 +174,5 @@ pub use transforms::{
     SplitImageBatchMetadata, SplitImagePlan, TemporalRepeatLastPlan, TiledCanvasBatchMetadata,
     TiledCanvasGrid, TiledCanvasPlan, TransformError, VideoSizeBucket, VideoSizeBucketPlan,
 };
+#[doc(inline)]
+pub use transforms::{aspect_ratio_tile_grid, covering_area_tile_grid};
