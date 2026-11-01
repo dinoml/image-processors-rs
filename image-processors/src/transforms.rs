@@ -13,6 +13,14 @@ use image_resize_kernels::{
 };
 
 mod color;
+mod restoration_pixels;
+pub use restoration_pixels::{
+    finish_restoration_pixels, finish_signed_restoration_rgb, normalize_rgb_f64,
+    prepare_restoration_pixels, restoration_grayscale, restoration_image_len,
+    restoration_rgb_byte_values, restoration_source_range, restoration_to_rgb,
+    PreparedRestorationPixels, RestorationComposite, RestorationImage, RestorationImageView,
+    RestorationPixelFormat, RestorationPixels,
+};
 pub use color::{
     grayscale_opencv, matlab_rgb_to_ycbcr_f32, matlab_ycbcr_to_rgb_f32,
     rgb_planar_f32_to_grayscale_opencv,
@@ -40,8 +48,8 @@ mod face_geometry;
 mod frame_ops;
 mod raster_drawing;
 pub use face_geometry::{
-    estimate_similarity, estimate_similarity_lmeds, warp_affine_rgb, warp_affine_u8,
-    FaceGeometryError,
+    estimate_similarity, estimate_similarity_lmeds, invert_affine, warp_affine_f64,
+    warp_affine_rgb, warp_affine_u16, warp_affine_u8, FaceGeometryError,
 };
 pub use frame_ops::{
     resize_f32_opencv, resize_f64_opencv, resize_u16_lanczos4, rotate_frame_90_clockwise,
@@ -72,7 +80,7 @@ pub(crate) use frame_ops::{
     resize_frame_to_f32_torchvision,
 };
 pub use spatial_filters::{
-    dilate_f32, dilate_rect_f64, gaussian_blur_f32, gaussian_blur_u8, sobel_xy_f64,
+    dilate_f32, dilate_rect_f64, gaussian_blur_f32, gaussian_blur_f64, gaussian_blur_u8, sobel_xy_f64,
     SpatialFilterError,
 };
 mod layout_plans;
@@ -2130,6 +2138,12 @@ fn validate_len(actual: usize, expected: usize) -> Result<(), TransformError> {
 /// Errors returned by image transform helpers.
 #[derive(Debug, Error, PartialEq)]
 pub enum TransformError {
+    /// A restored floating pixel was not finite.
+    #[error("nonfinite restored pixel at component {index}")]
+    NonFiniteRestorationPixel {
+        /// Flattened component offset.
+        index: usize,
+    },
     /// Edge-exclusive reflection requires padding smaller than its input axis.
     #[error("reflection padding right={right}, bottom={bottom} exceeds source {source_size:?}")]
     InvalidReflectionPadding {
