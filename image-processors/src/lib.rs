@@ -87,6 +87,7 @@ pub use postprocess::{
     TensorPostprocessError, TokenSequencePostprocessOutput,
 };
 #[doc(inline)]
+pub use processors::pad_spatial_tensors;
 pub use processors::{
     paddle_detection_size, BlipImageProcessor, BlipImageProcessorConfig, ClipImageProcessor,
     ClipImageProcessorConfig, DepthMapU16, DetrImageProcessor, DetrImageProcessorConfig,
