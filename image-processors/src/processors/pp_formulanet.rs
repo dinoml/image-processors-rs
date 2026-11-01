@@ -135,7 +135,9 @@ fn crop_margin(frame: &ImageFrame) -> Result<ImageFrame> {
     // source min/max normalization and its strict threshold comparison.
     let gray = frame
         .data()
-        .chunks_exact(3)
+        .as_chunks::<3>()
+        .0
+        .iter()
         .map(|pixel| {
             (0.2989 * f32::from(pixel[0])
                 + 0.587 * f32::from(pixel[1])
