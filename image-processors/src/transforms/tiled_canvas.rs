@@ -100,6 +100,94 @@ pub fn supported_tiled_canvas_grids(
     Ok(grids)
 }
 
+/// Selects a thumbnail-plus-tiles grid using the PerceptionLM canvas policy.
+///
+/// Aspect groups retain descending tile-count and ascending column-factor
+/// insertion order. Among canvases containing the original image, maximize its
+/// aspect-preserving shorter edge, with later candidates winning ties. When
+/// all canvases downsample, choose the directional nearest aspect ratio and
+/// its largest width (landscape) or height (portrait). This does not change the
+/// padding-oriented policy of [`tiled_canvas_plan`].
+///
+/// # Errors
+///
+/// Rejects zero dimensions/limits and overflowing canvas arithmetic.
+pub fn thumbnail_tiled_canvas_grid(
+    original_size: ImageSize,
+    tile_size: usize,
+    max_image_tiles: usize,
+) -> Result<TiledCanvasGrid, TransformError> {
+    validate_size(original_size)?;
+    validate_max_image_tiles(max_image_tiles)?;
+    if tile_size == 0 {
+        return Err(TransformError::InvalidScaleFactor(tile_size));
+    }
+    let mut groups: Vec<Vec<TiledCanvasGrid>> = Vec::new();
+    for count in (1..=max_image_tiles).rev() {
+        for columns in 1..=count {
+            if !count.is_multiple_of(columns) {
+                continue;
+            }
+            let rows = count / columns;
+            let grid = TiledCanvasGrid { rows, columns };
+            if let Some(group) = groups.iter_mut().find(|group| {
+                group[0].columns as u128 * rows as u128 == columns as u128 * group[0].rows as u128
+            }) {
+                group.push(grid);
+            } else {
+                groups.push(vec![grid]);
+            }
+        }
+    }
+    let aspect = original_size.width as f64 / original_size.height as f64;
+    let mut best = None;
+    let mut best_short = 0.0;
+    for &grid in groups.iter().flatten() {
+        let canvas = tiled_canvas_size(grid, tile_size)?;
+        if canvas.width < original_size.width || canvas.height < original_size.height {
+            continue;
+        }
+        let scale = (canvas.width as f64 / original_size.width as f64)
+            .min(canvas.height as f64 / original_size.height as f64);
+        let short = if aspect <= 1.0 {
+            (scale * original_size.height as f64 * aspect).floor()
+        } else {
+            (scale * original_size.width as f64 / aspect).floor()
+        };
+        if best.is_none() || short >= best_short {
+            best = Some(grid);
+            best_short = short;
+        }
+    }
+    if let Some(grid) = best {
+        return Ok(grid);
+    }
+    let mut closest = None;
+    let mut closest_distance = f64::INFINITY;
+    for group in &groups {
+        let ratio = group[0].columns as f64 / group[0].rows as f64;
+        if (aspect >= 1.0 && ratio > aspect) || (aspect < 1.0 && ratio <= aspect) {
+            continue;
+        }
+        let distance = if aspect >= 1.0 {
+            (ratio - aspect).abs()
+        } else {
+            (1.0 / ratio - 1.0 / aspect).abs()
+        };
+        if distance < closest_distance {
+            closest = group.iter().copied().max_by_key(|grid| {
+                if aspect >= 1.0 {
+                    grid.columns
+                } else {
+                    grid.rows
+                }
+            });
+            closest_distance = distance;
+        }
+    }
+    closest.ok_or(TransformError::InvalidSmartResizeParams)
+}
+
 /// Returns the one-based aspect-ratio id for a tile grid.
 ///
 /// # Errors

@@ -23,11 +23,13 @@ pub use detection::{
     pad_normalized_detection_annotation, post_process_instance_segmentation,
     post_process_object_detection, post_process_panoptic_segmentation,
     post_process_semantic_segmentation, post_process_sigmoid_best_object_detection,
-    post_process_sigmoid_top_k_object_detection, prepare_coco_detection_annotation,
-    resize_detection_annotation, scale_detection_box, CocoObjectAnnotation, DetectionAnnotation,
-    DetectionBoundingBox, DetectionCenterBox, NormalizedDetectionAnnotation,
-    ObjectDetectionPrediction, SegmentationPostProcessOptions, SegmentationPostProcessPrediction,
-    SegmentationSegmentInfo, SemanticSegmentationPrediction,
+    post_process_sigmoid_top_k_instance_segmentation, post_process_sigmoid_top_k_object_detection,
+    prepare_coco_detection_annotation, resize_detection_annotation, scale_detection_box,
+    CocoObjectAnnotation, DetectionAnnotation, DetectionBoundingBox, DetectionCenterBox,
+    NormalizedDetectionAnnotation, ObjectDetectionPrediction, SegmentationPostProcessOptions,
+    SegmentationPostProcessPrediction, SegmentationSegmentInfo, SemanticSegmentationPrediction,
+    SigmoidInstanceSegmentationFormat, SigmoidInstanceSegmentationMasks,
+    SigmoidInstanceSegmentationOptions, SigmoidInstanceSegmentationPrediction,
 };
 mod face_geometry;
 mod frame_ops;
@@ -98,9 +100,9 @@ pub use patch_grid::{
 pub use patch_grid::{aspect_ratio_tile_grid, covering_area_tile_grid};
 mod tiled_canvas;
 pub use tiled_canvas::{
-    supported_tiled_canvas_grids, tiled_canvas_aspect_ratio_id, tiled_canvas_aspect_ratio_mask,
-    tiled_canvas_batch_metadata, tiled_canvas_plan, TiledCanvasBatchMetadata, TiledCanvasGrid,
-    TiledCanvasPlan,
+    supported_tiled_canvas_grids, thumbnail_tiled_canvas_grid, tiled_canvas_aspect_ratio_id,
+    tiled_canvas_aspect_ratio_mask, tiled_canvas_batch_metadata, tiled_canvas_plan,
+    TiledCanvasBatchMetadata, TiledCanvasGrid, TiledCanvasPlan,
 };
 
 const IDEFICS3_MAX_IMAGE_EDGE: usize = 4096;

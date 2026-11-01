@@ -32,6 +32,7 @@ use image_resize_kernels::{
 
 mod config;
 mod error;
+mod multimodal;
 mod resize_kernel;
 mod stack;
 mod validation;

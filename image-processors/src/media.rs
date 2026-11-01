@@ -663,6 +663,54 @@ impl Default for FrameSampling {
 }
 
 impl FrameSampling {
+    /// Selects uniformly spaced frame indices with floor rounding.
+    ///
+    /// A target rate first computes `floor(len / source_fps * target_fps)`.
+    /// Index `i` is then `floor(i * len / count)`, without endpoint inclusion
+    /// or stride rounding. Omitted controls retain all frames. Existing stride
+    /// sampling methods remain unchanged.
+    ///
+    /// # Errors
+    ///
+    /// Rejects empty clips, simultaneous count/rate controls, invalid rates,
+    /// missing source FPS and sample counts outside `1..=len`.
+    pub fn uniform_indices(
+        len: usize,
+        num_frames: Option<usize>,
+        target_fps: Option<f64>,
+        source_fps: Option<f64>,
+    ) -> Result<Vec<usize>, MediaError> {
+        if len == 0 {
+            return Err(MediaError::EmptyFrameSequence);
+        }
+        if num_frames.is_some() && target_fps.is_some() {
+            return Err(MediaError::ConflictingUniformFrameControls);
+        }
+        let count = if let Some(fps) = target_fps {
+            let source = source_fps.ok_or(MediaError::InvalidUniformFrameRate)?;
+            if !fps.is_finite() || fps <= 0.0 || !source.is_finite() || source <= 0.0 {
+                return Err(MediaError::InvalidUniformFrameRate);
+            }
+            let count = len as f64 / source * fps;
+            if !count.is_finite() || count < 1.0 || count.floor() > len as f64 {
+                return Err(MediaError::InvalidFrameLimit);
+            }
+            count as usize
+        } else {
+            num_frames.unwrap_or(len)
+        };
+        if count == 0 || count > len {
+            return Err(MediaError::InvalidFrameLimit);
+        }
+        Ok((0..count)
+            .map(|index| {
+                // Widen before multiplying so floor division preserves the exact
+                // source index even when the product does not fit usize.
+                ((index as u128 * len as u128) / count as u128) as usize
+            })
+            .collect())
+    }
+
     /// Selects every frame.
     pub fn all() -> Self {
         Self::default()
@@ -1048,6 +1096,12 @@ pub enum MediaError {
     /// Frame sampling limit was zero.
     #[error("frame sampling max_frames must be positive when configured")]
     InvalidFrameLimit,
+    /// Uniform sampling specified both a count and a target frame rate.
+    #[error("uniform frame count and target FPS are mutually exclusive")]
+    ConflictingUniformFrameControls,
+    /// Uniform FPS sampling lacked a finite positive source/target rate.
+    #[error("uniform FPS sampling requires finite positive source and target rates")]
+    InvalidUniformFrameRate,
     /// Frame sampling started past the available frames.
     #[error("frame sampling start index {start} is out of range for {len} frames")]
     FrameStartOutOfRange {
