@@ -209,17 +209,7 @@ pub fn warp_affine_u8(
     {
         return Err(FaceGeometryError::Geometry);
     }
-    let determinant = forward[0][0] * forward[1][1] - forward[0][1] * forward[1][0];
-    if determinant == 0.0 || !determinant.is_finite() {
-        return Err(FaceGeometryError::Singular);
-    }
-    let inverse = 1.0 / determinant;
-    let a = forward[1][1] * inverse;
-    let b = -forward[0][1] * inverse;
-    let d = -forward[1][0] * inverse;
-    let e = forward[0][0] * inverse;
-    let c = -a * forward[0][2] - b * forward[1][2];
-    let f = -d * forward[0][2] - e * forward[1][2];
+    let [[a, b, c], [d, e, f]] = invert_affine(forward)?;
     if [a, b, c, d, e, f].iter().any(|v| !v.is_finite())
         || [source.width, source.height, target.width, target.height]
             .iter()
@@ -265,6 +255,168 @@ pub fn warp_affine_u8(
                     sum += u32::from(sample) * weights[tap];
                 }
                 output[(y * target.width + x) * channels + channel] = ((sum + 512) >> 10) as u8;
+            }
+        }
+    }
+    Ok(output)
+}
+
+trait AffineFloat: Copy {
+    fn finite(self) -> bool;
+    fn zero() -> Self;
+    fn add_product(self, other: Self, weight: f64) -> Self;
+}
+
+/// Invert a finite two-dimensional affine transform in source scalar order.
+/// # Errors
+/// Rejects nonfinite or singular transforms.
+pub fn invert_affine(forward: [[f64; 3]; 2]) -> Result<[[f64; 3]; 2], FaceGeometryError> {
+    if forward.iter().flatten().any(|value| !value.is_finite()) {
+        return Err(FaceGeometryError::Geometry);
+    }
+    let determinant = forward[0][0] * forward[1][1] - forward[0][1] * forward[1][0];
+    if determinant == 0.0 || !determinant.is_finite() {
+        return Err(FaceGeometryError::Singular);
+    }
+    let inverse = 1.0 / determinant;
+    let a = forward[1][1] * inverse;
+    let b = -forward[0][1] * inverse;
+    let d = -forward[1][0] * inverse;
+    let e = forward[0][0] * inverse;
+    let result = [
+        [a, b, -a * forward[0][2] - b * forward[1][2]],
+        [d, e, -d * forward[0][2] - e * forward[1][2]],
+    ];
+    if result.iter().flatten().any(|value| !value.is_finite()) {
+        return Err(FaceGeometryError::Geometry);
+    }
+    Ok(result)
+}
+impl AffineFloat for f64 {
+    fn finite(self) -> bool {
+        self.is_finite()
+    }
+    fn zero() -> Self {
+        0.0
+    }
+    fn add_product(self, other: Self, weight: f64) -> Self {
+        self + other * weight
+    }
+}
+impl AffineFloat for f32 {
+    fn finite(self) -> bool {
+        self.is_finite()
+    }
+    fn zero() -> Self {
+        0.0
+    }
+    fn add_product(self, other: Self, weight: f64) -> Self {
+        self + other * weight as f32
+    }
+}
+
+/// Affine FP64 image/mask resampling on the source INTER_LINEAR coordinate lattice.
+/// INTER_AREA in warpAffine selects this same bilinear interpolation path.
+/// # Errors
+/// Rejects invalid geometry, transforms or nonfinite values.
+pub fn warp_affine_f64(
+    values: &[f64],
+    source: ImageSize,
+    target: ImageSize,
+    forward: [[f64; 3]; 2],
+    border: &[f64],
+) -> Result<Vec<f64>, FaceGeometryError> {
+    warp_affine_float(values, source, target, forward, border)
+}
+
+/// Affine uint16 resampling with FP32 interpolation and final tie-even saturation.
+/// # Errors
+/// Rejects invalid geometry or affine transforms.
+pub fn warp_affine_u16(
+    values: &[u16],
+    source: ImageSize,
+    target: ImageSize,
+    forward: [[f64; 3]; 2],
+    border: &[u16],
+) -> Result<Vec<u16>, FaceGeometryError> {
+    let values: Vec<f32> = values.iter().map(|value| f32::from(*value)).collect();
+    let border: Vec<f32> = border.iter().map(|value| f32::from(*value)).collect();
+    Ok(
+        warp_affine_float(&values, source, target, forward, &border)?
+            .into_iter()
+            .map(|value| value.round_ties_even().clamp(0.0, f32::from(u16::MAX)) as u16)
+            .collect(),
+    )
+}
+
+fn warp_affine_float<T: AffineFloat>(
+    values: &[T],
+    source: ImageSize,
+    target: ImageSize,
+    forward: [[f64; 3]; 2],
+    border: &[T],
+) -> Result<Vec<T>, FaceGeometryError> {
+    let channels = border.len();
+    let input_len = source
+        .height
+        .checked_mul(source.width)
+        .and_then(|n| n.checked_mul(channels));
+    let output_len = target
+        .height
+        .checked_mul(target.width)
+        .and_then(|n| n.checked_mul(channels));
+    if !(1..=4).contains(&channels)
+        || input_len != Some(values.len())
+        || output_len.is_none()
+        || [source.width, source.height, target.width, target.height]
+            .iter()
+            .any(|value| *value == 0 || *value > i32::MAX as usize)
+        || values.iter().chain(border).any(|value| !value.finite())
+        || forward.iter().flatten().any(|value| !value.is_finite())
+    {
+        return Err(FaceGeometryError::Geometry);
+    }
+    let [[a, b, c], [d, e, f]] = invert_affine(forward)?;
+    if [a, b, c, d, e, f].iter().any(|value| !value.is_finite())
+        || (a.abs() + d.abs()) * target.width as f64 * 1024.0
+            + (b.abs() + e.abs()) * target.height as f64 * 1024.0
+            + (c.abs() + f.abs()) * 1024.0
+            > (i64::MAX / 4) as f64
+    {
+        return Err(FaceGeometryError::Geometry);
+    }
+    let mut output = vec![T::zero(); output_len.ok_or(FaceGeometryError::Geometry)?];
+    for y in 0..target.height {
+        let x0 = ((b * y as f64 + c) * 1024.0).round_ties_even() as i64 + 16;
+        let y0 = ((e * y as f64 + f) * 1024.0).round_ties_even() as i64 + 16;
+        for x in 0..target.width {
+            let xx = (x0 + (a * x as f64 * 1024.0).round_ties_even() as i64) >> 5;
+            let yy = (y0 + (d * x as f64 * 1024.0).round_ties_even() as i64) >> 5;
+            let fx = (xx & 31) as f64 / 32.0;
+            let fy = (yy & 31) as f64 / 32.0;
+            let weights = [
+                (1.0 - fx) * (1.0 - fy),
+                fx * (1.0 - fy),
+                (1.0 - fx) * fy,
+                fx * fy,
+            ];
+            for channel in 0..channels {
+                let mut value = T::zero();
+                for (tap, (dx, dy)) in [(0, 0), (1, 0), (0, 1), (1, 1)].into_iter().enumerate() {
+                    let sx = (xx >> 5) + dx;
+                    let sy = (yy >> 5) + dy;
+                    let sample = if sx >= 0
+                        && sy >= 0
+                        && sx < source.width as i64
+                        && sy < source.height as i64
+                    {
+                        values[(sy as usize * source.width + sx as usize) * channels + channel]
+                    } else {
+                        border[channel]
+                    };
+                    value = value.add_product(sample, weights[tap]);
+                }
+                output[(y * target.width + x) * channels + channel] = value;
             }
         }
     }

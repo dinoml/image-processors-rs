@@ -159,6 +159,60 @@ pub fn gaussian_blur_f32(
     Ok(output)
 }
 
+/// Gaussian filtering with FP64 coefficients, intermediates and reflect-101 borders.
+/// # Errors
+/// Rejects invalid geometry, nonfinite samples or invalid support/sigma.
+pub fn gaussian_blur_f64(
+    values: &[f64],
+    size: ImageSize,
+    channels: usize,
+    sigma: f64,
+    requested: Option<ImageSize>,
+) -> Result<Vec<f64>, SpatialFilterError> {
+    geometry(values.len(), size, channels)?;
+    if values.iter().any(|value| !value.is_finite()) {
+        return Err(SpatialFilterError::NonFinite);
+    }
+    let support = kernel(sigma, requested, false)?;
+    let horizontal = coefficients(sigma, support.width)?;
+    let vertical = coefficients(sigma, support.height)?;
+    let mut intermediate = vec![0.0; values.len()];
+    let mut output = vec![0.0; values.len()];
+    for y in 0..size.height {
+        for x in 0..size.width {
+            for channel in 0..channels {
+                let mut value = values[(y * size.width + x) * channels + channel]
+                    * horizontal[support.width / 2];
+                for tap in 1..=support.width / 2 {
+                    let left = reflect101(x as isize - tap as isize, size.width);
+                    let right = reflect101(x as isize + tap as isize, size.width);
+                    value += (values[(y * size.width + left) * channels + channel]
+                        + values[(y * size.width + right) * channels + channel])
+                        * horizontal[support.width / 2 + tap];
+                }
+                intermediate[(y * size.width + x) * channels + channel] = value;
+            }
+        }
+    }
+    for y in 0..size.height {
+        for x in 0..size.width {
+            for channel in 0..channels {
+                let mut value = intermediate[(y * size.width + x) * channels + channel]
+                    * vertical[support.height / 2];
+                for tap in 1..=support.height / 2 {
+                    let above = reflect101(y as isize - tap as isize, size.height);
+                    let below = reflect101(y as isize + tap as isize, size.height);
+                    value += (intermediate[(above * size.width + x) * channels + channel]
+                        + intermediate[(below * size.width + x) * channels + channel])
+                        * vertical[support.height / 2 + tap];
+                }
+                output[(y * size.width + x) * channels + channel] = value;
+            }
+        }
+    }
+    Ok(output)
+}
+
 fn fixed_coefficients(sigma: f64, side: usize) -> Result<Vec<u16>, SpatialFilterError> {
     let weights = coefficients(sigma, side)?;
     let mut output = vec![0_u16; side];
