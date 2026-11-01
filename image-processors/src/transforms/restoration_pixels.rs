@@ -318,7 +318,11 @@ pub fn restoration_rgb_byte_values(
     Ok((0..image.data.len())
         .map(|index| {
             let value = f64::from(image.data.value(index));
-            if high { value / 65535.0 * 255.0 } else { value }
+            if high {
+                value / 65535.0 * 255.0
+            } else {
+                value
+            }
         })
         .collect())
 }
