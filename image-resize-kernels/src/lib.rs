@@ -13,6 +13,7 @@ mod opencv;
 mod pillow_reduce;
 mod planar;
 mod sampling;
+mod torch_area;
 pub use gaussian::gaussian_blur_zero_f32_planes;
 pub use opencv::{resize_f32_opencv, resize_f64_opencv, resize_u16_lanczos4};
 pub use opencv::{
@@ -22,6 +23,7 @@ pub use opencv::{
 pub use pillow_reduce::resize_u8_pillow_reducing_gap;
 pub use planar::{resize_f32_planes, TensorInterpolation};
 pub use sampling::{grid_sample_f32_planes, GridInterpolation};
+pub use torch_area::resize_f32_area_torch;
 
 /// Image dimensions in height-width order.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

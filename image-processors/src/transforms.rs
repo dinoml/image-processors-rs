@@ -61,8 +61,9 @@ pub use face_geometry::{
     warp_affine_rgb, warp_affine_u16, warp_affine_u8, FaceGeometryError,
 };
 pub use frame_ops::{
-    convert_frame_to_pillow_luma, resize_f32_opencv, resize_f64_opencv,
-    resize_frame_pillow_reducing_gap, resize_u16_lanczos4, rotate_frame_90_clockwise,
+    convert_frame_to_pillow_luma, flip_frame_horizontal, resize_f32_area_torch, resize_f32_opencv,
+    resize_f64_opencv, resize_frame_pillow_reducing_gap, resize_u16_lanczos4,
+    rotate_frame_90_clockwise,
 };
 pub use raster_drawing::{ellipse_polygon, fill_circle_rgb, fill_convex_polygon_rgb};
 mod spatial_filters;
@@ -71,8 +72,9 @@ use frame_ops::convert_to_rgb;
 pub use frame_ops::{
     bottom_right_resize_pad_plan, center_crop_box, center_crop_frame,
     center_crop_frame_with_padding, composite_alpha_to_rgb, composite_mask_f32_frame,
-    composite_mask_frame, concatenate_frames_horizontally_rgb, convert_frame_pixel_format,
-    crop_frame, crop_region, halve_frame_box, multiple_of_resize_plan, overlay_frame, pad_frame,
+    composite_mask_f32_frame_with_precision, composite_mask_frame,
+    concatenate_frames_horizontally_rgb, convert_frame_pixel_format, crop_frame, crop_region,
+    halve_frame_box, multiple_of_resize_plan, overlay_frame, pad_frame,
     pad_frame_symmetric_to_next_multiple, pad_frame_to_multiple_with_canvas_fill,
     pad_frame_with_canvas_fill, pad_image_sequence_frames_with_canvas_fill, pad_to_multiple_plan,
     pad_video_clip_frames_with_canvas_fill, padded_image_size, repeat_last_frame_batch_to_multiple,
@@ -82,7 +84,7 @@ pub use frame_ops::{
     resize_frame_opencv_scale_dependent, resize_frame_to_area_limit,
     resize_frame_to_bottom_right_padded_frame, resize_frame_to_fill_frame,
     resize_frame_with_decision, resize_rgb_to_fill_frame, rgb_planar_f32_to_grayscale,
-    temporal_repeat_last_plan, unpad_frame_to_size, validate_padding_fill,
+    temporal_repeat_last_plan, unpad_frame_to_size, validate_padding_fill, MaskCompositePrecision,
 };
 use frame_ops::{crop_image_data, frame_size, new_frame};
 pub(crate) use frame_ops::{
