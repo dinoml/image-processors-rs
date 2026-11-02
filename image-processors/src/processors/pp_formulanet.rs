@@ -1,6 +1,7 @@
 use crate::transforms::{
-    convert_frame_pixel_format, crop_frame, pad_frame, resize_frame_with_decision, ImageCropBox,
-    ImageSize, Padding, ResizeDecision, ResizeFilter, ResizeMode,
+    convert_frame_pixel_format, crop_document_margin, document_thumbnail, pad_frame,
+    resize_frame_with_decision, DocumentThumbnailMode, ImageSize, MarginCropMode, Padding,
+    ResizeDecision, ResizeFilter, ResizeMode,
 };
 use crate::{ImageFrame, ImageProcessor, ImageProcessorConfig, PixelFormat};
 use serde_json::Value;
@@ -54,7 +55,8 @@ pub fn preprocess(images: &[ImageFrame], settings: &Value) -> Result<Vec<f32>> {
         let mut frame = convert_frame_pixel_format(image, PixelFormat::Rgb8)
             .map_err(|error| invalid(error.to_string()))?;
         if enabled("do_crop_margin", true) {
-            frame = crop_margin(&frame)?;
+            frame = crop_document_margin(&frame, MarginCropMode::Torchvision)
+                .map_err(|error| invalid(error.to_string()))?;
         }
         if enabled("do_align_long_axis", false)
             && ((width < height && frame.width() > frame.height())
@@ -79,24 +81,9 @@ pub fn preprocess(images: &[ImageFrame], settings: &Value) -> Result<Vec<f32>> {
             )
             .map_err(|error| invalid(error.to_string()))?;
         }
-        if enabled("do_thumbnail", true) {
-            let mut new_height = height.min(frame.height());
-            let mut new_width = width.min(frame.width());
-            if new_height != frame.height() || new_width != frame.width() {
-                if frame.height() > frame.width() {
-                    new_width = frame.width() * new_height / frame.height();
-                } else if frame.width() > frame.height() {
-                    new_height = frame.height() * new_width / frame.width();
-                }
-                frame = resize_frame_with_decision(
-                    &frame,
-                    ImageSize::new(new_height, new_width)
-                        .map_err(|error| invalid(error.to_string()))?,
-                    ResizeDecision::torchvision(ResizeFilter::Bicubic),
-                    ResizeMode::Default,
-                )
+        if enabled("do_thumbnail", true) && (frame.height() > height || frame.width() > width) {
+            frame = document_thumbnail(&frame, target, DocumentThumbnailMode::Torchvision)
                 .map_err(|error| invalid(error.to_string()))?;
-            }
         }
         if enabled("do_pad", true) {
             let vertical = height
@@ -128,49 +115,4 @@ pub fn preprocess(images: &[ImageFrame], settings: &Value) -> Result<Vec<f32>> {
         .preprocess_images(&prepared)
         .map_err(|error| invalid(error.to_string()))?;
     Ok(tensor.data().to_vec::<f32>())
-}
-
-fn crop_margin(frame: &ImageFrame) -> Result<ImageFrame> {
-    // torchvision's RGB-to-gray on byte tensors truncates back to uint8 before
-    // source min/max normalization and its strict threshold comparison.
-    let gray = frame
-        .data()
-        .as_chunks::<3>()
-        .0
-        .iter()
-        .map(|pixel| {
-            (0.2989 * f32::from(pixel[0])
-                + 0.587 * f32::from(pixel[1])
-                + 0.114 * f32::from(pixel[2])) as u8
-        })
-        .collect::<Vec<_>>();
-    let minimum = gray
-        .iter()
-        .copied()
-        .min()
-        .ok_or_else(|| invalid("empty image"))?;
-    let maximum = gray
-        .iter()
-        .copied()
-        .max()
-        .ok_or_else(|| invalid("empty image"))?;
-    if minimum == maximum {
-        return Ok(frame.clone());
-    }
-    let mut left = frame.width();
-    let mut top = frame.height();
-    let mut right = 0;
-    let mut bottom = 0;
-    for (index, value) in gray.into_iter().enumerate() {
-        if f32::from(value - minimum) / f32::from(maximum - minimum) * 255.0 < 200.0 {
-            let column = index % frame.width();
-            let row = index / frame.width();
-            left = left.min(column);
-            right = right.max(column + 1);
-            top = top.min(row);
-            bottom = bottom.max(row + 1);
-        }
-    }
-    let bounds = ImageCropBox::new(left, top, right, bottom);
-    crop_frame(frame, bounds).map_err(|error| invalid(error.to_string()))
 }

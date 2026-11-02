@@ -720,6 +720,15 @@ impl VitImageProcessorConfig {
 /// Configuration for document/OCR image preprocessing.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct DocumentOcrImageProcessorConfig {
+    /// Crop normalized grayscale margins before rotation and resizing.
+    #[serde(default)]
+    pub do_crop_margin: bool,
+    /// Grayscale precision and rounding used by margin cropping.
+    #[serde(default)]
+    pub margin_crop_mode: crate::transforms::MarginCropMode,
+    /// Optional source-specific thumbnail policy; None preserves Donut's configured filter.
+    #[serde(default)]
+    pub thumbnail_mode: Option<crate::transforms::DocumentThumbnailMode>,
     /// Target image size.
     pub image_size: ImageSize,
     /// Whether images should be resized before thumbnailing and padding.
@@ -760,6 +769,9 @@ pub struct DocumentOcrImageProcessorConfig {
 impl Default for DocumentOcrImageProcessorConfig {
     fn default() -> Self {
         Self {
+            do_crop_margin: false,
+            margin_crop_mode: crate::transforms::MarginCropMode::Pillow,
+            thumbnail_mode: None,
             image_size: ImageSize {
                 height: 2560,
                 width: 1920,
@@ -829,15 +841,25 @@ impl DocumentOcrImageProcessorConfig {
     /// output layout.
     pub fn processor_recipe(&self) -> Result<ProcessorRecipe, RecipeError> {
         let mut stages = Vec::with_capacity(4);
-        if self.do_resize || self.do_thumbnail || self.do_align_long_axis || self.do_pad {
+        if self.do_crop_margin
+            || self.do_resize
+            || self.do_thumbnail
+            || self.do_align_long_axis
+            || self.do_pad
+        {
             stages.push(ProcessorRecipeStage::DocumentGeometry {
-                document: RecipeDocumentGeometryStage::new(
-                    self.image_size,
-                    self.do_resize,
-                    self.do_thumbnail,
-                    self.do_align_long_axis,
-                    self.do_pad,
-                ),
+                document: RecipeDocumentGeometryStage {
+                    do_crop_margin: self.do_crop_margin,
+                    margin_crop_mode: self.margin_crop_mode,
+                    thumbnail_mode: self.thumbnail_mode,
+                    ..RecipeDocumentGeometryStage::new(
+                        self.image_size,
+                        self.do_resize,
+                        self.do_thumbnail,
+                        self.do_align_long_axis,
+                        self.do_pad,
+                    )
+                },
             });
         }
         stages.push(ProcessorRecipeStage::ConvertPixelFormat {
@@ -1645,6 +1667,13 @@ fn document_ocr_prepare_frame(
         )?);
     }
 
+    if config.do_crop_margin {
+        frame = Cow::Owned(crate::transforms::crop_document_margin(
+            frame.as_ref(),
+            config.margin_crop_mode,
+        )?);
+    }
+
     if config.do_align_long_axis
         && should_rotate_to_match_orientation(
             ImageSize::new(frame.height(), frame.width())?,
@@ -1672,7 +1701,13 @@ fn document_ocr_prepare_frame(
         }
     }
 
-    if config.do_thumbnail {
+    if let (true, Some(mode)) = (config.do_thumbnail, config.thumbnail_mode) {
+        frame = Cow::Owned(crate::transforms::document_thumbnail(
+            frame.as_ref(),
+            target,
+            mode,
+        )?);
+    } else if config.do_thumbnail {
         let thumbnail_size =
             fit_inside_size(ImageSize::new(frame.height(), frame.width())?, target)?;
         if thumbnail_size.height != frame.height() || thumbnail_size.width != frame.width() {

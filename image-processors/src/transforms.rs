@@ -13,6 +13,9 @@ use image_resize_kernels::{
 };
 
 mod color;
+mod document;
+pub(crate) use document::document_thumbnail;
+pub use document::{crop_document_margin, DocumentThumbnailMode, MarginCropMode};
 mod restoration_pixels;
 pub use color::{
     grayscale_opencv, matlab_rgb_to_ycbcr_f32, matlab_ycbcr_to_rgb_f32,
