@@ -22,14 +22,16 @@ pub use color::{
     rgb_planar_f32_to_grayscale_opencv,
 };
 pub use restoration_pixels::{
-    finish_restoration_pixels, finish_signed_restoration_rgb, normalize_rgb_f64,
-    prepare_restoration_pixels, restoration_grayscale, restoration_image_len,
-    restoration_rgb_byte_values, restoration_source_range, restoration_to_rgb,
-    PreparedRestorationPixels, RestorationComposite, RestorationImage, RestorationImageView,
-    RestorationPixelFormat, RestorationPixels,
+    finish_grayscale_u8, finish_restoration_pixels, finish_signed_restoration_rgb,
+    normalize_rgb_f64, prepare_grayscale_u8, prepare_restoration_pixels, restoration_grayscale,
+    restoration_image_len, restoration_rgb_byte_values, restoration_source_range,
+    restoration_to_rgb, PreparedRestorationPixels, RestorationComposite, RestorationImage,
+    RestorationImageView, RestorationPixelFormat, RestorationPixels,
 };
 mod planar_tiles;
-pub use planar_tiles::{crop_planar_f32, reflect_pad_planar_f32, HaloTile, HaloTilePlan};
+pub use planar_tiles::{
+    crop_planar_f32, reflect_pad_planar_f32, DihedralTransform, HaloTile, HaloTilePlan, PlanarMean,
+};
 mod optical_flow;
 pub use optical_flow::{DisUltrafast, OpticalFlowError};
 mod detection;

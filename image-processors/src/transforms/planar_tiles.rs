@@ -121,6 +121,99 @@ pub struct HaloTilePlan {
 }
 
 impl HaloTilePlan {
+    /// Split once into overlapping quadrants with cores meeting at the image midpoint.
+    ///
+    /// Context extends to the next receptive-field multiple after each midpoint,
+    /// as in cszn/SCUNet's `test_onesplit`. Short axes retain Python's negative
+    /// suffix-slice offsets when their output core fits. Otherwise the whole
+    /// axis is retained. Empty cores on one-pixel axes are skipped.
+    ///
+    /// # Errors
+    /// Rejects invalid dimensions, zero receptive field/scale or arithmetic overflow.
+    pub fn split_once(
+        source: ImageSize,
+        receptive_field: usize,
+        scale: usize,
+    ) -> Result<Self, TransformError> {
+        ImageSize::new(source.height, source.width)?;
+        if receptive_field == 0 || scale == 0 {
+            return Err(TransformError::InvalidScaleFactor(0));
+        }
+        let scaled = |value: usize| {
+            value
+                .checked_mul(scale)
+                .ok_or(TransformError::ImageSizeOverflow)
+        };
+        let context = |extent: usize| {
+            (extent / 2 / receptive_field + 1)
+                .checked_mul(receptive_field)
+                .ok_or(TransformError::ImageSizeOverflow)
+        };
+        let height = context(source.height)?;
+        let width = context(source.width)?;
+        let middle_y = source.height / 2;
+        let middle_x = source.width / 2;
+        // Python translates a negative suffix start relative to the source end.
+        // Retain a full short axis when that suffix would truncate its valid core.
+        let bottom_start = if height <= source.height {
+            source.height - height
+        } else {
+            source.height.saturating_sub(height - source.height)
+        };
+        let bottom_start = if bottom_start <= middle_y {
+            bottom_start
+        } else {
+            0
+        };
+        let right_start = if width <= source.width {
+            source.width - width
+        } else {
+            source.width.saturating_sub(width - source.width)
+        };
+        let right_start = if right_start <= middle_x {
+            right_start
+        } else {
+            0
+        };
+        let mut tiles = Vec::with_capacity(4);
+        for (top, bottom, input_top, input_bottom) in [
+            (0, middle_y, 0, height.min(source.height)),
+            (middle_y, source.height, bottom_start, source.height),
+        ] {
+            for (left, right, input_left, input_right) in [
+                (0, middle_x, 0, width.min(source.width)),
+                (middle_x, source.width, right_start, source.width),
+            ] {
+                if top == bottom || left == right {
+                    continue;
+                }
+                tiles.push(HaloTile {
+                    input: ImageCropBox::new(input_left, input_top, input_right, input_bottom),
+                    result_size: ImageSize::new(
+                        scaled(input_bottom - input_top)?,
+                        scaled(input_right - input_left)?,
+                    )?,
+                    valid: ImageCropBox::new(
+                        scaled(left - input_left)?,
+                        scaled(top - input_top)?,
+                        scaled(right - input_left)?,
+                        scaled(bottom - input_top)?,
+                    ),
+                    destination: ImageCropBox::new(
+                        scaled(left)?,
+                        scaled(top)?,
+                        scaled(right)?,
+                        scaled(bottom)?,
+                    ),
+                });
+            }
+        }
+        Ok(Self {
+            output_size: ImageSize::new(scaled(source.height)?, scaled(source.width)?)?,
+            tiles,
+        })
+    }
+
     /// Plan halo inference without overlap blending or edge extension.
     /// A zero tile size selects a single complete source image.
     ///
@@ -243,5 +336,155 @@ impl HaloTilePlan {
             }
         }
         Ok(())
+    }
+}
+
+/// The eight image symmetries in cszn image-restoration augmentation order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DihedralTransform {
+    /// Preserve the image.
+    Identity,
+    /// Exchange rows and columns.
+    Transpose,
+    /// Reverse row order.
+    FlipVertical,
+    /// Rotate clockwise by a quarter turn.
+    RotateClockwise,
+    /// Reverse column order.
+    FlipHorizontal,
+    /// Rotate counterclockwise by a quarter turn.
+    RotateCounterClockwise,
+    /// Rotate by half a turn.
+    RotateHalfTurn,
+    /// Reflect across the opposite diagonal.
+    Transverse,
+}
+
+impl DihedralTransform {
+    /// All transformations in upstream `augment_img` mode order, zero through seven.
+    pub const ALL: [Self; 8] = [
+        Self::Identity,
+        Self::Transpose,
+        Self::FlipVertical,
+        Self::RotateClockwise,
+        Self::FlipHorizontal,
+        Self::RotateCounterClockwise,
+        Self::RotateHalfTurn,
+        Self::Transverse,
+    ];
+
+    /// Transformation that restores the original orientation.
+    #[must_use]
+    pub const fn inverse(self) -> Self {
+        match self {
+            Self::RotateClockwise => Self::RotateCounterClockwise,
+            Self::RotateCounterClockwise => Self::RotateClockwise,
+            other => other,
+        }
+    }
+
+    /// Resulting spatial dimensions, including the rectangular-image cases.
+    #[must_use]
+    pub const fn output_size(self, source: ImageSize) -> ImageSize {
+        match self {
+            Self::Transpose
+            | Self::RotateClockwise
+            | Self::RotateCounterClockwise
+            | Self::Transverse => ImageSize {
+                height: source.width,
+                width: source.height,
+            },
+            _ => source,
+        }
+    }
+
+    /// Transform channel-first image planes without changing their floating values.
+    ///
+    /// # Errors
+    /// Rejects invalid dimensions, tensor storage or arithmetic overflow.
+    pub fn apply_planar_f32(
+        self,
+        values: &[f32],
+        source: ImageSize,
+        channels: usize,
+    ) -> Result<Vec<f32>, TransformError> {
+        validate_data(values, source, channels)?;
+        let target = self.output_size(source);
+        let mut result = vec![0.0; values.len()];
+        for channel in 0..channels {
+            for row in 0..target.height {
+                for column in 0..target.width {
+                    let (source_row, source_column) = match self {
+                        Self::Identity => (row, column),
+                        Self::Transpose => (column, row),
+                        Self::FlipVertical => (source.height - 1 - row, column),
+                        Self::RotateClockwise => (source.height - 1 - column, row),
+                        Self::FlipHorizontal => (row, source.width - 1 - column),
+                        Self::RotateCounterClockwise => (column, source.width - 1 - row),
+                        Self::RotateHalfTurn => {
+                            (source.height - 1 - row, source.width - 1 - column)
+                        }
+                        Self::Transverse => (source.height - 1 - column, source.width - 1 - row),
+                    };
+                    result[(channel * target.height + row) * target.width + column] = values
+                        [(channel * source.height + source_row) * source.width + source_column];
+                }
+            }
+        }
+        Ok(result)
+    }
+}
+
+/// Streaming FP32 mean of identically shaped planar inference results.
+pub struct PlanarMean {
+    size: ImageSize,
+    channels: usize,
+    sum: Vec<f32>,
+    count: u16,
+}
+
+impl PlanarMean {
+    /// Allocate one accumulator without retaining individual ensemble results.
+    ///
+    /// # Errors
+    /// Rejects invalid dimensions, zero channels or arithmetic overflow.
+    pub fn new(size: ImageSize, channels: usize) -> Result<Self, TransformError> {
+        Ok(Self {
+            size,
+            channels,
+            sum: vec![0.0; planar_len(size, channels)?],
+            count: 0,
+        })
+    }
+
+    /// Add one result after restoring its orientation.
+    ///
+    /// # Errors
+    /// Rejects incompatible storage or more than 65535 samples.
+    pub fn add(&mut self, values: &[f32]) -> Result<(), TransformError> {
+        validate_data(values, self.size, self.channels)?;
+        let count = self
+            .count
+            .checked_add(1)
+            .ok_or(TransformError::ImageSizeOverflow)?;
+        for (sum, value) in self.sum.iter_mut().zip(values) {
+            *sum += value;
+        }
+        self.count = count;
+        Ok(())
+    }
+
+    /// Finish the mean in FP32; callers retain their network output dtype boundary.
+    ///
+    /// # Errors
+    /// Rejects an empty ensemble.
+    pub fn finish(mut self) -> Result<Vec<f32>, TransformError> {
+        if self.count == 0 {
+            return Err(TransformError::InvalidFrameCount(0));
+        }
+        for value in &mut self.sum {
+            *value /= f32::from(self.count);
+        }
+        Ok(self.sum)
     }
 }
