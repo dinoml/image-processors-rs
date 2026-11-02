@@ -1,5 +1,8 @@
 use std::collections::HashMap;
 
+use half::{bf16, f16};
+
+use crate::tensor::DType;
 use crate::transforms::{
     post_process_semantic_segmentation, resize_f32_image_bilinear,
     resize_f32_image_torchvision_bilinear, ImageSize, SegmentationPostProcessOptions,
@@ -25,6 +28,25 @@ pub(super) fn resize_mask_planes_bilinear(
     let mut resized = Vec::with_capacity(checked_mul(plane_count, pixels(target_size)?)?);
     for plane in values.chunks_exact(source_pixels) {
         resized.extend(resize_f32_image_bilinear(plane, source_size, target_size)?);
+    }
+    Ok(resized)
+}
+
+/// Match interpolation in the source tensor dtype, then promote for scoring.
+pub(super) fn resize_mask_planes_bilinear_preserving_dtype(
+    values: &[f32],
+    plane_count: usize,
+    source_size: ImageSize,
+    target_size: ImageSize,
+    dtype: DType,
+) -> Result<Vec<f32>, TransformError> {
+    let mut resized = resize_mask_planes_bilinear(values, plane_count, source_size, target_size)?;
+    for value in &mut resized {
+        *value = match dtype {
+            DType::F16 => f32::from(f16::from_f32(*value)),
+            DType::BF16 => f32::from(bf16::from_f32(*value)),
+            _ => *value,
+        };
     }
     Ok(resized)
 }
@@ -656,7 +678,9 @@ fn sigmoid(value: f32) -> Result<f32, TransformError> {
 
 fn round_six(value: f32) -> Result<f32, TransformError> {
     validate_score(value)?;
-    Ok((value * 1_000_000.0).round() / 1_000_000.0)
+    // Python rounds score.item() as a double with decimal ties to even. Scaling
+    // an FP32 value by this integer is exact in FP64, avoiding artificial ties.
+    Ok(((f64::from(value) * 1_000_000.0).round_ties_even() / 1_000_000.0) as f32)
 }
 
 fn validate_score(value: f32) -> Result<(), TransformError> {

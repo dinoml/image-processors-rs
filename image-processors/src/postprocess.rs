@@ -586,12 +586,14 @@ fn execute_segmentation_descriptor(
                                 task: "videomt_instance_requires_target_sizes",
                             },
                         )?;
-                        let restored_masks = query_mask::resize_mask_planes_bilinear(
-                            sample_masks,
-                            num_queries,
-                            mask_size,
-                            target_size,
-                        )?;
+                        let restored_masks =
+                            query_mask::resize_mask_planes_bilinear_preserving_dtype(
+                                sample_masks,
+                                num_queries,
+                                mask_size,
+                                target_size,
+                                mask_tensor.dtype(),
+                            )?;
                         query_mask::post_process_eomt_instance(
                             sample_classes,
                             &restored_masks,
@@ -707,12 +709,14 @@ fn execute_segmentation_descriptor(
                                 task: "videomt_panoptic_requires_target_sizes",
                             },
                         )?;
-                        let restored_masks = query_mask::resize_mask_planes_bilinear(
-                            sample_masks,
-                            num_queries,
-                            mask_size,
-                            target_size,
-                        )?;
+                        let restored_masks =
+                            query_mask::resize_mask_planes_bilinear_preserving_dtype(
+                                sample_masks,
+                                num_queries,
+                                mask_size,
+                                target_size,
+                                mask_tensor.dtype(),
+                            )?;
                         query_mask::post_process_eomt_panoptic(
                             sample_classes,
                             &restored_masks,
