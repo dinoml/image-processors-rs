@@ -153,6 +153,11 @@ pub enum RecipeSegmentationStrategy {
         /// Intermediate `(shortest_edge, longest_edge)` mask canvas.
         size: ImageSize,
     },
+    /// VidEoMT video segmentation without an intermediate image canvas.
+    ///
+    /// Semantic scores are composed before resizing. Instance and panoptic
+    /// mask logits are resized directly to each target before query selection.
+    Videomt,
 }
 
 /// Threshold and target-size options for segmentation postprocessing.
