@@ -514,7 +514,8 @@ fn execute_segmentation_descriptor(
                         )?
                     }
                     RecipeSegmentationStrategy::Standard
-                    | RecipeSegmentationStrategy::MaskFormer => {
+                    | RecipeSegmentationStrategy::MaskFormer
+                    | RecipeSegmentationStrategy::Videomt => {
                         crate::transforms::post_process_semantic_segmentation(
                             sample_classes,
                             sample_masks,
@@ -577,6 +578,27 @@ fn execute_segmentation_descriptor(
                             num_labels_with_background,
                             intermediate_size,
                             options,
+                        )?
+                    }
+                    RecipeSegmentationStrategy::Videomt => {
+                        let target_size = options.target_size.ok_or(
+                            RecipePostprocessError::UnsupportedDescriptor {
+                                task: "videomt_instance_requires_target_sizes",
+                            },
+                        )?;
+                        let restored_masks = query_mask::resize_mask_planes_bilinear(
+                            sample_masks,
+                            num_queries,
+                            mask_size,
+                            target_size,
+                        )?;
+                        query_mask::post_process_eomt_instance(
+                            sample_classes,
+                            &restored_masks,
+                            num_queries,
+                            num_labels_with_background,
+                            target_size,
+                            options.score_threshold,
                         )?
                     }
                     RecipeSegmentationStrategy::Eomt { size } => {
@@ -675,6 +697,28 @@ fn execute_segmentation_descriptor(
                             num_queries,
                             num_labels_with_background,
                             intermediate_size,
+                            &descriptor.label_ids_to_fuse,
+                            options,
+                        )?
+                    }
+                    RecipeSegmentationStrategy::Videomt => {
+                        let target_size = options.target_size.ok_or(
+                            RecipePostprocessError::UnsupportedDescriptor {
+                                task: "videomt_panoptic_requires_target_sizes",
+                            },
+                        )?;
+                        let restored_masks = query_mask::resize_mask_planes_bilinear(
+                            sample_masks,
+                            num_queries,
+                            mask_size,
+                            target_size,
+                        )?;
+                        query_mask::post_process_eomt_panoptic(
+                            sample_classes,
+                            &restored_masks,
+                            num_queries,
+                            num_labels_with_background,
+                            target_size,
                             &descriptor.label_ids_to_fuse,
                             options,
                         )?
