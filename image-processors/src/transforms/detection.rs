@@ -1372,10 +1372,45 @@ pub fn non_max_suppression(
     scores: &[f32],
     iou_threshold: f32,
 ) -> Result<Vec<usize>, TransformError> {
+    non_max_suppression_impl(boxes, scores, iou_threshold, false)
+}
+
+/// Applies class-agnostic NMS with inclusive-pixel FP32 box arithmetic.
+///
+/// Areas use `(right - left + 1) * (bottom - top + 1)`, including signed
+/// extents from unconstrained regressors. Intersection extents alone are clamped
+/// to zero. No corner translation, area clamping or zero-union substitution is
+/// performed. An undefined overlap removes the candidate, matching array-based
+/// NMS that retains remaining candidates only when `overlap <= iou_threshold`.
+/// Equal scores, including signed zeros, retain their input order.
+/// Returned indices refer to the original boxes; coordinates are never changed.
+///
+/// # Errors
+///
+/// Returns an error when lengths differ, coordinates or scores are non-finite,
+/// or `iou_threshold` is outside `[0, 1]`. Negative box extents are accepted.
+pub fn non_max_suppression_inclusive(
+    boxes: &[DetectionBoundingBox],
+    scores: &[f32],
+    iou_threshold: f32,
+) -> Result<Vec<usize>, TransformError> {
+    non_max_suppression_impl(boxes, scores, iou_threshold, true)
+}
+
+fn non_max_suppression_impl(
+    boxes: &[DetectionBoundingBox],
+    scores: &[f32],
+    iou_threshold: f32,
+    inclusive_pixels: bool,
+) -> Result<Vec<usize>, TransformError> {
     validate_len(scores.len(), boxes.len())?;
     validate_iou_threshold(iou_threshold)?;
     for bbox in boxes.iter().copied() {
-        validate_detection_box_extents(bbox)?;
+        if inclusive_pixels {
+            validate_bbox_values([bbox.x_min, bbox.y_min, bbox.x_max, bbox.y_max])?;
+        } else {
+            validate_detection_box_extents(bbox)?;
+        }
     }
     for score in scores.iter().copied() {
         validate_score_value(score)?;
@@ -1383,15 +1418,38 @@ pub fn non_max_suppression(
 
     let mut order: Vec<usize> = (0..boxes.len()).collect();
     order.sort_by(|&left, &right| {
+        if inclusive_pixels && scores[left] == scores[right] {
+            return left.cmp(&right);
+        }
         scores[right]
             .total_cmp(&scores[left])
             .then_with(|| left.cmp(&right))
     });
 
-    let mut keep = Vec::new();
+    let areas = if inclusive_pixels {
+        boxes
+            .iter()
+            .map(|bbox| (bbox.x_max - bbox.x_min + 1.0) * (bbox.y_max - bbox.y_min + 1.0))
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    let mut keep: Vec<usize> = Vec::new();
     'candidate: for candidate in order {
         for kept in keep.iter().copied() {
-            if detection_box_iou(boxes[candidate], boxes[kept])? > iou_threshold {
+            let overlap = if inclusive_pixels {
+                let first = boxes[kept];
+                let second = boxes[candidate];
+                let width =
+                    (first.x_max.min(second.x_max) - first.x_min.max(second.x_min) + 1.0).max(0.0);
+                let height =
+                    (first.y_max.min(second.y_max) - first.y_min.max(second.y_min) + 1.0).max(0.0);
+                let intersection = width * height;
+                intersection / (areas[kept] + areas[candidate] - intersection)
+            } else {
+                detection_box_iou(boxes[candidate], boxes[kept])?
+            };
+            if overlap > iou_threshold || (inclusive_pixels && overlap.is_nan()) {
                 continue 'candidate;
             }
         }

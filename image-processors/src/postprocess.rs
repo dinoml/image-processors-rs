@@ -25,17 +25,17 @@ use crate::tensor::{Layout, Tensor, TensorData, TensorError, TensorLeadingAxis};
 pub use crate::transforms::{
     binarize_mask, binary_mask_to_box, binary_mask_to_rle, binary_rle_to_mask, box_near_crop_edge,
     detection_box_iou, filter_generated_masks, generate_layered_crop_boxes, logc3_to_linear,
-    mask_stability_score, non_max_suppression, normalized_point_grid, pad_crop_mask,
-    post_process_binary_mask, post_process_generated_masks, post_process_instance_segmentation,
-    post_process_object_detection, post_process_oneformer_instance_segmentation,
-    post_process_panoptic_segmentation, post_process_semantic_segmentation,
-    post_process_sigmoid_best_object_detection, post_process_sigmoid_top_k_object_detection,
-    resize_padded_mask_logits, scale_detection_box, scale_image_point, BinaryRleMask,
-    CropGenerationOptions, DetectionBoundingBox, DetectionCenterBox, FilteredMask,
-    GeneratedMaskPrediction, ImagePoint, ImageSize, LayeredCropBox, MaskFilterOptions,
-    ObjectDetectionPrediction, OneFormerInstanceOptions, OneFormerTask,
-    SegmentationPostProcessOptions, SegmentationPostProcessPrediction, SegmentationSegmentInfo,
-    SemanticSegmentationPrediction, TransformError,
+    mask_stability_score, non_max_suppression, non_max_suppression_inclusive,
+    normalized_point_grid, pad_crop_mask, post_process_binary_mask, post_process_generated_masks,
+    post_process_instance_segmentation, post_process_object_detection,
+    post_process_oneformer_instance_segmentation, post_process_panoptic_segmentation,
+    post_process_semantic_segmentation, post_process_sigmoid_best_object_detection,
+    post_process_sigmoid_top_k_object_detection, resize_padded_mask_logits, scale_detection_box,
+    scale_image_point, BinaryRleMask, CropGenerationOptions, DetectionBoundingBox,
+    DetectionCenterBox, FilteredMask, GeneratedMaskPrediction, ImagePoint, ImageSize,
+    LayeredCropBox, MaskFilterOptions, ObjectDetectionPrediction, OneFormerInstanceOptions,
+    OneFormerTask, SegmentationPostProcessOptions, SegmentationPostProcessPrediction,
+    SegmentationSegmentInfo, SemanticSegmentationPrediction, TransformError,
 };
 
 mod multiclass;
