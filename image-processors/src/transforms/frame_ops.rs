@@ -2,6 +2,121 @@
 
 use super::*;
 
+/// Convert decoded byte pixels to Pillow's L mode using its fixed-point weights.
+/// RGB is retained independently of alpha, matching Image.convert("L").
+/// Existing general pixel conversions keep their established rounding policy.
+///
+/// # Errors
+/// Reports inconsistent frame storage or output geometry.
+pub fn convert_frame_to_pillow_luma(frame: &ImageFrame) -> Result<ImageFrame, TransformError> {
+    if frame.pixel_format() == PixelFormat::Luma8 {
+        return Ok(frame.clone());
+    }
+    let values = frame
+        .data()
+        .chunks_exact(frame.channels())
+        .map(|pixel| {
+            ((u32::from(pixel[0]) * 19595
+                + u32::from(pixel[1]) * 38470
+                + u32::from(pixel[2]) * 7471
+                + 32768)
+                >> 16) as u8
+        })
+        .collect();
+    new_frame(
+        frame.width(),
+        frame.height(),
+        PixelFormat::Luma8,
+        values,
+        frame.timing(),
+    )
+}
+
+/// Resize a full frame with Pillow's integer reduction prepass.
+/// Byte rounding and the fractional reduced-image box remain in the kernel owner.
+/// RGBA follows Pillow's premultiplied-alpha branch, which omits the prepass.
+///
+/// # Errors
+/// Reports invalid frames, dimensions or reduction gaps.
+pub fn resize_frame_pillow_reducing_gap(
+    frame: &ImageFrame,
+    target: ImageSize,
+    filter: ResizeFilter,
+    reducing_gap: f64,
+) -> Result<ImageFrame, TransformError> {
+    if !reducing_gap.is_finite() || reducing_gap < 1.0 {
+        return Err(TransformError::ResizeKernel {
+            message: "Pillow reducing gap must be finite and at least one".into(),
+        });
+    }
+    if target.width == frame.width() && target.height == frame.height() {
+        return Ok(frame.clone());
+    }
+    let source = KernelImageSize {
+        width: frame.width(),
+        height: frame.height(),
+    };
+    let destination = KernelImageSize {
+        width: target.width,
+        height: target.height,
+    };
+    let filter = match filter {
+        ResizeFilter::Nearest => KernelResizeFilter::Nearest,
+        ResizeFilter::Bilinear => KernelResizeFilter::Bilinear,
+        ResizeFilter::Bicubic => KernelResizeFilter::Bicubic,
+        ResizeFilter::Lanczos => KernelResizeFilter::Lanczos,
+    };
+    let data =
+        if frame.pixel_format() == PixelFormat::Rgba8 && filter != KernelResizeFilter::Nearest {
+            let mut premultiplied = frame.data().to_vec();
+            for pixel in premultiplied.as_chunks_mut::<4>().0 {
+                for channel in 0..3 {
+                    let product = u16::from(pixel[channel]) * u16::from(pixel[3]) + 128;
+                    pixel[channel] = (((product >> 8) + product) >> 8) as u8;
+                }
+            }
+            let mut resized = image_resize_kernels::resize_u8_pillow_reducing_gap(
+                &premultiplied,
+                source,
+                4,
+                destination,
+                filter,
+                f64::MAX,
+            )
+            .map_err(|error| TransformError::ResizeKernel {
+                message: error.to_string(),
+            })?;
+            for pixel in resized.as_chunks_mut::<4>().0 {
+                if pixel[3] != 0 && pixel[3] != 255 {
+                    for channel in 0..3 {
+                        pixel[channel] =
+                            (u16::from(pixel[channel]) * 255 / u16::from(pixel[3])).min(255) as u8;
+                    }
+                }
+            }
+            resized
+        } else {
+            image_resize_kernels::resize_u8_pillow_reducing_gap(
+                frame.data(),
+                source,
+                frame.channels(),
+                destination,
+                filter,
+                reducing_gap,
+            )
+            .map_err(|error| TransformError::ResizeKernel {
+                message: error.to_string(),
+            })?
+        };
+    new_frame(
+        target.width,
+        target.height,
+        frame.pixel_format(),
+        data,
+        frame.timing(),
+    )
+}
+
 /// Resize a decoded byte frame with an explicit OpenCV interpolation mode.
 /// Pixel format and frame timing are preserved.
 ///
