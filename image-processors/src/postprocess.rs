@@ -43,8 +43,8 @@ mod types;
 
 #[doc(inline)]
 pub use multiclass::{
-    post_process_multiclass_segmentation, MulticlassSegmentationError,
-    MulticlassSegmentationOptions, MulticlassSegmentationOutput,
+    post_process_dense_semantic_segmentation, post_process_multiclass_segmentation,
+    MulticlassSegmentationError, MulticlassSegmentationOptions, MulticlassSegmentationOutput,
 };
 pub use types::*;
 

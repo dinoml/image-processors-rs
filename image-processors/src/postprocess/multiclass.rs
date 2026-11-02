@@ -6,7 +6,8 @@ use image_resize_kernels::{
 };
 use thiserror::Error;
 
-use crate::transforms::ImageSize;
+use crate::tensor::DType;
+use crate::transforms::{ImageSize, SemanticSegmentationPrediction};
 
 /// Independently requested category and per-class confidence masks.
 #[derive(Clone, Copy, Debug)]
@@ -46,6 +47,84 @@ pub enum MulticlassSegmentationError {
     /// Failure in the existing Rust resize owner.
     #[error(transparent)]
     Resize(#[from] ResizeError),
+}
+
+/// Restore dense CHW semantic logits using half-pixel bilinear interpolation.
+///
+/// Inputs are decoded values of a tensor stored in `precision`. Resizing uses
+/// the existing FP32-accumulating tensor resize kernel with `align_corners=false`.
+/// Each interpolated value is rounded to the source tensor precision before
+/// argmax, matching tensor interpolation followed by class selection. Ties keep
+/// the first class. Returned scores are these raw rounded logits, without softmax.
+/// Unlike category-byte outputs, class indices are not limited to 256 labels.
+///
+/// # Errors
+/// Rejects empty dimensions, unsupported precision, nonfinite input logits,
+/// inconsistent storage, or size overflow. Propagates shared resize failures.
+pub fn post_process_dense_semantic_segmentation(
+    logits: &[f32],
+    channels: usize,
+    source: ImageSize,
+    target: ImageSize,
+    precision: DType,
+) -> Result<SemanticSegmentationPrediction, MulticlassSegmentationError> {
+    use MulticlassSegmentationError::Invalid;
+    if channels == 0 || i64::try_from(channels - 1).is_err() {
+        return Err(Invalid(
+            "semantic class count must fit positive i64 indices",
+        ));
+    }
+    if !matches!(precision, DType::F32 | DType::F16 | DType::BF16) {
+        return Err(Invalid(
+            "semantic logits require F32, F16 or BF16 precision",
+        ));
+    }
+    let source_size = KernelImageSize::new(source.height, source.width)?;
+    let target_size = KernelImageSize::new(target.height, target.width)?;
+    let source_pixels = source
+        .height
+        .checked_mul(source.width)
+        .ok_or(Invalid("source dimensions overflow"))?;
+    let target_pixels = target
+        .height
+        .checked_mul(target.width)
+        .ok_or(Invalid("target dimensions overflow"))?;
+    let input_len = channels
+        .checked_mul(source_pixels)
+        .ok_or(Invalid("source logit dimensions overflow"))?;
+    let output_len = channels
+        .checked_mul(target_pixels)
+        .ok_or(Invalid("target logit dimensions overflow"))?;
+    if logits.len() != input_len || logits.iter().any(|value| !value.is_finite()) {
+        return Err(Invalid(
+            "expected finite CHW semantic logits matching source dimensions",
+        ));
+    }
+    let mut scores = Vec::with_capacity(output_len);
+    let mut class_ids = vec![0; target_pixels];
+    let mut best_scores = vec![f32::NEG_INFINITY; target_pixels];
+    for (class, plane) in logits.chunks_exact(source_pixels).enumerate() {
+        let resized = resize_f32_bilinear_interleaved(plane, source_size, 1, target_size, false)?;
+        let class = i64::try_from(class).map_err(|_| Invalid("semantic class index overflow"))?;
+        for (pixel, value) in resized.into_iter().enumerate() {
+            let value = match precision {
+                DType::F16 => half::f16::from_f32(value).to_f32(),
+                DType::BF16 => half::bf16::from_f32(value).to_f32(),
+                _ => value,
+            };
+            if value > best_scores[pixel] {
+                best_scores[pixel] = value;
+                class_ids[pixel] = class;
+            }
+            scores.push(value);
+        }
+    }
+    Ok(SemanticSegmentationPrediction {
+        size: target,
+        num_labels: channels,
+        class_ids,
+        scores,
+    })
 }
 
 /// Restore dense CHW logits to category and confidence masks.
