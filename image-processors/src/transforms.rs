@@ -342,6 +342,48 @@ impl VideoSizeBucket {
     }
 }
 
+/// Resolve a requested size using the scale closest to one, then nearest-even multiples.
+///
+/// When preserving aspect ratio, the requested height and width define two
+/// candidate scales. The candidate requiring the smaller change from the source
+/// wins; equal distances select the height scale. Each axis is then rounded once.
+///
+/// # Errors
+/// Rejects zero dimensions or multiples, overflow, or a rounded zero dimension.
+pub fn closest_scale_resize_size(
+    source: ImageSize,
+    requested: ImageSize,
+    keep_aspect_ratio: bool,
+    multiple: usize,
+) -> Result<ImageSize, TransformError> {
+    ImageSize::new(source.height, source.width)?;
+    ImageSize::new(requested.height, requested.width)?;
+    if multiple == 0 {
+        return Err(TransformError::InvalidScaleFactor(multiple));
+    }
+    let mut scale_height = requested.height as f64 / source.height as f64;
+    let mut scale_width = requested.width as f64 / source.width as f64;
+    if keep_aspect_ratio {
+        if (1.0 - scale_width).abs() < (1.0 - scale_height).abs() {
+            scale_height = scale_width;
+        } else {
+            scale_width = scale_height;
+        }
+    }
+    let height =
+        (scale_height * source.height as f64 / multiple as f64).round_ties_even() * multiple as f64;
+    let width =
+        (scale_width * source.width as f64 / multiple as f64).round_ties_even() * multiple as f64;
+    if !height.is_finite()
+        || !width.is_finite()
+        || height >= usize::MAX as f64
+        || width >= usize::MAX as f64
+    {
+        return Err(TransformError::ImageSizeOverflow);
+    }
+    ImageSize::new(height as usize, width as usize)
+}
+
 /// Pixel padding in top-right-bottom-left order.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Padding {
