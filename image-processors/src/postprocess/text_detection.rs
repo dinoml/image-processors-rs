@@ -604,7 +604,7 @@ fn box_score(values: &[f32], size: ImageSize, points: &[[f32; 2]; 4]) -> f64 {
             }
         }
         intersections.sort_unstable();
-        for pair in intersections.chunks_exact(2) {
+        for pair in intersections.as_chunks::<2>().0 {
             let left = ((pair[0] + 65535) >> 16).max(0);
             let right = (pair[1] >> 16).min(width as i64 - 1);
             for x in left..=right {
