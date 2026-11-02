@@ -161,7 +161,7 @@ pub(super) fn post_process_eomt_semantic_windows(
         )?;
         let mut crops = Vec::new();
         let mut predictions = Vec::new();
-        for (window, offset) in offsets.chunks_exact(3).enumerate() {
+        for (window, offset) in offsets.as_chunks::<3>().0.iter().enumerate() {
             if offset[0] >= target_sizes.len() {
                 return Err(TransformError::ImageSizeOverflow);
             }
