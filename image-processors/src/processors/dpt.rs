@@ -239,19 +239,44 @@ impl DptImageProcessor {
         for value in &mut values {
             *value = round(*value);
         }
-        let min = values.iter().copied().fold(f32::INFINITY, f32::min);
-        let max = values.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-        // NumPy retains the depth array's dtype after each arithmetic operation.
-        let span = round(max - min);
-        let depth = values
+        let depth = Self::normalize_depth(&values, precision)?
             .iter()
-            .map(|value| round(round(round(value - min) / span) * 255.0) as u8)
+            .map(|value| round(value * 255.0) as u8)
             .collect();
         Ok(DptDepthPrediction {
             size,
             predicted_depth: values,
             depth,
         })
+    }
+
+    /// Normalize depth to its min/max range, retaining arithmetic precision.
+    ///
+    /// The unquantized result is also used for MiDaS background masking before
+    /// normal-map construction. Constant maps retain upstream NaNs, which cast
+    /// to black when producing a byte visualization.
+    ///
+    /// # Errors
+    /// Rejects nonfloating precision.
+    pub fn normalize_depth(
+        values: &[f32],
+        precision: DType,
+    ) -> Result<Vec<f32>, ImageProcessorError> {
+        if !matches!(precision, DType::F32 | DType::F16 | DType::BF16) {
+            return Err(ImageProcessorError::ExpectedDataType("floating depth"));
+        }
+        let round = |value: f32| match precision {
+            DType::F16 => half::f16::from_f32(value).to_f32(),
+            DType::BF16 => half::bf16::from_f32(value).to_f32(),
+            _ => value,
+        };
+        let min = values.iter().copied().fold(f32::INFINITY, f32::min);
+        let max = values.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        let span = round(max - min);
+        Ok(values
+            .iter()
+            .map(|value| round(round(value - min) / span))
+            .collect())
     }
 
     /// Restore raw semantic logits before selecting class indices.

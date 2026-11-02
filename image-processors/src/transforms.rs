@@ -88,7 +88,7 @@ pub(crate) use frame_ops::{
 };
 pub use spatial_filters::{
     dilate_f32, dilate_rect_f64, gaussian_blur_f32, gaussian_blur_f64, gaussian_blur_u8,
-    sobel_xy_f64, SpatialFilterError,
+    sobel_xy_f32, sobel_xy_f64, SpatialFilterError,
 };
 mod layout_plans;
 use layout_plans::compare_ratios_less;
@@ -374,6 +374,36 @@ pub fn closest_scale_resize_size(
         (scale_height * source.height as f64 / multiple as f64).round_ties_even() * multiple as f64;
     let width =
         (scale_width * source.width as f64 / multiple as f64).round_ties_even() * multiple as f64;
+    if !height.is_finite()
+        || !width.is_finite()
+        || height >= usize::MAX as f64
+        || width >= usize::MAX as f64
+    {
+        return Err(TransformError::ImageSizeOverflow);
+    }
+    ImageSize::new(height as usize, width as usize)
+}
+
+/// Scale the shortest edge, then round both axes to nearest-even multiples.
+///
+/// Scaling remains FP64 until the single rounding step. This preserves the
+/// geometry of annotator pipelines without first rounding to whole pixels.
+///
+/// # Errors
+/// Rejects zero dimensions, resolution or multiple, overflow or rounded-zero axes.
+pub fn shortest_edge_multiple_resize_size(
+    source: ImageSize,
+    resolution: usize,
+    multiple: usize,
+) -> Result<ImageSize, TransformError> {
+    ImageSize::new(source.height, source.width)?;
+    if resolution == 0 || multiple == 0 {
+        return Err(TransformError::InvalidScaleFactor(0));
+    }
+    let scale = resolution as f64 / source.height.min(source.width) as f64;
+    let height =
+        (source.height as f64 * scale / multiple as f64).round_ties_even() * multiple as f64;
+    let width = (source.width as f64 * scale / multiple as f64).round_ties_even() * multiple as f64;
     if !height.is_finite()
         || !width.is_finite()
         || height >= usize::MAX as f64
