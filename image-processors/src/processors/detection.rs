@@ -696,7 +696,7 @@ impl ImageProcessor {
                     _ => {
                         return Err(ImageProcessorError::UnsupportedProcessorOption {
                             field: "detection resize recipe target",
-                        })
+                        });
                     }
                 }
             } else {
@@ -973,6 +973,25 @@ pub enum SpatialPaddingAlignment {
     Center,
 }
 
+/// Tensor-space bottom/right padding, applied after any rescaling or normalization.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum SpatialTensorPadding {
+    /// Constant spatial-edge fills. Right padding takes precedence in the corner,
+    /// matching NumPy's height-then-width padding order.
+    Constant {
+        /// Fill for rows below the source image.
+        bottom: f32,
+        /// Fill for columns to the right of the source image.
+        right: f32,
+    },
+    /// Mirror around the final pixel, excluding that pixel from the reflection.
+    Reflect,
+    /// Repeat the final row or column.
+    Replicate,
+    /// Mirror at the outside edge, including the final pixel in the reflection.
+    Symmetric,
+}
+
 /// Batch image tensors on a zero-filled canvas with top-left alignment.
 ///
 /// # Errors
@@ -1005,6 +1024,47 @@ pub fn pad_spatial_tensors_with_alignment(
     target: ImageSize,
     output_layout: ImageLayout,
     alignment: SpatialPaddingAlignment,
+) -> Result<Tensor, ImageProcessorError> {
+    pad_spatial_tensors_impl(
+        tensors,
+        target,
+        output_layout,
+        alignment,
+        SpatialTensorPadding::Constant {
+            bottom: 0.0,
+            right: 0.0,
+        },
+    )
+}
+
+/// Batch image tensors with configurable bottom/right padding in tensor value space.
+///
+/// Reflection repeats for wide padding and singleton axes. Constant fills are
+/// already normalized. Inputs retain their top-left spatial origin.
+///
+/// # Errors
+/// Rejects empty batches, incompatible shapes/layouts, undersized targets and overflow.
+pub fn pad_spatial_tensors_with_padding(
+    tensors: Vec<Tensor>,
+    target: ImageSize,
+    output_layout: ImageLayout,
+    padding: SpatialTensorPadding,
+) -> Result<Tensor, ImageProcessorError> {
+    pad_spatial_tensors_impl(
+        tensors,
+        target,
+        output_layout,
+        SpatialPaddingAlignment::TopLeft,
+        padding,
+    )
+}
+
+fn pad_spatial_tensors_impl(
+    tensors: Vec<Tensor>,
+    target: ImageSize,
+    output_layout: ImageLayout,
+    alignment: SpatialPaddingAlignment,
+    padding: SpatialTensorPadding,
 ) -> Result<Tensor, ImageProcessorError> {
     ImageSize::new(target.height, target.width)?;
     let first = tensors.first().ok_or(ImageProcessorError::EmptyBatch)?;
@@ -1042,25 +1102,66 @@ pub fn pad_spatial_tensors_with_alignment(
             other => other.to_vec::<f32>(),
         };
 
-        match output_layout {
-            ImageLayout::ChannelsHeightWidth => copy_spatial_nchw_tensor(
-                &source,
-                &mut values,
-                batch,
-                channels,
-                source_size,
-                target,
-                origin,
-            ),
-            ImageLayout::HeightWidthChannels => copy_spatial_nhwc_tensor(
-                &source,
-                &mut values,
-                batch,
-                channels,
-                source_size,
-                target,
-                origin,
-            ),
+        if matches!(padding, SpatialTensorPadding::Constant { bottom, right } if bottom.to_bits() == 0 && right.to_bits() == 0)
+        {
+            match output_layout {
+                ImageLayout::ChannelsHeightWidth => copy_spatial_nchw_tensor(
+                    &source,
+                    &mut values,
+                    batch,
+                    channels,
+                    source_size,
+                    target,
+                    origin,
+                ),
+                ImageLayout::HeightWidthChannels => copy_spatial_nhwc_tensor(
+                    &source,
+                    &mut values,
+                    batch,
+                    channels,
+                    source_size,
+                    target,
+                    origin,
+                ),
+            }
+        } else {
+            for row in 0..target.height {
+                for column in 0..target.width {
+                    let fill = match padding {
+                        SpatialTensorPadding::Constant { right, .. }
+                            if column >= source_size.width =>
+                        {
+                            Some(right)
+                        }
+                        SpatialTensorPadding::Constant { bottom, .. }
+                            if row >= source_size.height =>
+                        {
+                            Some(bottom)
+                        }
+                        _ => None,
+                    };
+                    let source_row = padded_spatial_coordinate(row, source_size.height, padding)?;
+                    let source_column =
+                        padded_spatial_coordinate(column, source_size.width, padding)?;
+                    for channel in 0..channels {
+                        let (source_index, target_index) = match output_layout {
+                            ImageLayout::ChannelsHeightWidth => (
+                                (channel * source_size.height + source_row) * source_size.width
+                                    + source_column,
+                                ((batch * channels + channel) * target.height + row) * target.width
+                                    + column,
+                            ),
+                            ImageLayout::HeightWidthChannels => (
+                                (source_row * source_size.width + source_column) * channels
+                                    + channel,
+                                ((batch * target.height + row) * target.width + column) * channels
+                                    + channel,
+                            ),
+                        };
+                        values[target_index] = fill.unwrap_or(source[source_index]);
+                    }
+                }
+            }
         }
     }
 
@@ -1072,6 +1173,40 @@ pub fn pad_spatial_tensors_with_alignment(
     Tensor::new(TensorData::F32(values), shape, layout)
         .and_then(|tensor| tensor.with_leading_axis(TensorLeadingAxis::Batch))
         .map_err(ImageProcessorError::Tensor)
+}
+
+fn padded_spatial_coordinate(
+    coordinate: usize,
+    length: usize,
+    padding: SpatialTensorPadding,
+) -> Result<usize, ImageProcessorError> {
+    if coordinate < length {
+        return Ok(coordinate);
+    }
+    if length == 1 {
+        return Ok(0);
+    }
+    match padding {
+        SpatialTensorPadding::Constant { .. } | SpatialTensorPadding::Replicate => Ok(length - 1),
+        SpatialTensorPadding::Reflect => {
+            let period = checked_spatial_pad_mul(length - 1, 2)?;
+            let offset = coordinate % period;
+            Ok(if offset < length {
+                offset
+            } else {
+                period - offset
+            })
+        }
+        SpatialTensorPadding::Symmetric => {
+            let period = checked_spatial_pad_mul(length, 2)?;
+            let offset = coordinate % period;
+            Ok(if offset < length {
+                offset
+            } else {
+                period - offset - 1
+            })
+        }
+    }
 }
 
 fn copy_spatial_nchw_tensor(
