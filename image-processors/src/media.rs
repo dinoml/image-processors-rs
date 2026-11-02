@@ -16,7 +16,7 @@ use ::image::codecs::gif::GifDecoder;
 use ::image::codecs::png::PngDecoder;
 use ::image::codecs::webp::WebPDecoder;
 use ::image::metadata::LoopCount;
-use ::image::{AnimationDecoder, DynamicImage, ImageFormat};
+use ::image::{AnimationDecoder, DynamicImage, ImageDecoder, ImageFormat};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -1209,6 +1209,23 @@ pub fn load_image_from_path(path: impl AsRef<Path>) -> Result<ImageFrame, MediaE
     load_image_sequence_from_path(path).map(ImageSequence::into_first_frame)
 }
 
+/// Loads one image with the image-crate backend and applies its EXIF orientation.
+///
+/// Rotation and reflection happen before pixel-format conversion. Dimensions
+/// describe the oriented image. Existing non-oriented and sequence loaders keep
+/// their decoding behavior; this entrypoint explicitly opts into orientation.
+///
+/// # Errors
+///
+/// Returns an error when file I/O, format detection, decoding, orientation
+/// metadata extraction, or decoded frame construction fails.
+pub fn load_image_from_path_oriented(path: impl AsRef<Path>) -> Result<ImageFrame, MediaError> {
+    let decoder = image::ImageReader::open(path)?
+        .with_guessed_format()?
+        .into_decoder()?;
+    decode_oriented_image(decoder)
+}
+
 /// Loads the first image frame from a filesystem path with an explicit image decode backend.
 ///
 /// # Errors
@@ -1265,6 +1282,30 @@ pub fn load_image_sequence_from_path_with_backend(
 /// Returns an error when format detection or image decoding fails.
 pub fn decode_image_bytes(bytes: &[u8]) -> Result<ImageFrame, MediaError> {
     decode_image_sequence_bytes(bytes).map(ImageSequence::into_first_frame)
+}
+
+/// Decodes one image with the image-crate backend and applies its EXIF orientation.
+///
+/// Rotation and reflection happen before pixel-format conversion. Dimensions
+/// describe the oriented image. Bytes are borrowed for decoding, and the returned
+/// frame owns its pixels independently of the encoded input.
+///
+/// # Errors
+///
+/// Returns an error when format detection, decoding, orientation metadata
+/// extraction, or decoded frame construction fails.
+pub fn decode_image_bytes_oriented(bytes: &[u8]) -> Result<ImageFrame, MediaError> {
+    let decoder = image::ImageReader::new(Cursor::new(bytes))
+        .with_guessed_format()?
+        .into_decoder()?;
+    decode_oriented_image(decoder)
+}
+
+fn decode_oriented_image(mut decoder: impl ImageDecoder) -> Result<ImageFrame, MediaError> {
+    let orientation = decoder.orientation()?;
+    let mut image = DynamicImage::from_decoder(decoder)?;
+    image.apply_orientation(orientation);
+    ImageFrame::from_dynamic_image(image)
 }
 
 /// Decodes the first image frame from encoded bytes with an explicit image decode backend.
