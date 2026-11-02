@@ -658,14 +658,19 @@ pub fn post_process_sigmoid_best_object_detection(
         .zip(pred_boxes.iter().copied())
     {
         let mut best_label = 0usize;
-        let mut best_score = f32::NEG_INFINITY;
+        let mut best_logit = f32::NEG_INFINITY;
         for (label, logit) in query_logits.iter().copied().enumerate() {
-            let score = sigmoid_score(logit)?;
-            if score > best_score {
-                best_score = score;
+            if logit.is_nan() {
+                return Err(TransformError::InvalidScoreValue(logit));
+            }
+            if logit > best_logit {
+                best_logit = logit;
                 best_label = label;
             }
         }
+        // Distinct logits can saturate to the same sigmoid probability. Select
+        // the maximum logit first, retaining the first label for exact ties.
+        let best_score = sigmoid_score(best_logit)?;
         if best_score > score_threshold {
             predictions.push(ObjectDetectionPrediction {
                 score: best_score,
@@ -1508,7 +1513,11 @@ fn foreground_softmax(
 }
 
 fn sigmoid_score(value: f32) -> Result<f32, TransformError> {
-    validate_score_value(value)?;
+    // Infinite logits represent valid exclusions or certainties. General score,
+    // threshold and geometry validation remains finite-only.
+    if value.is_nan() {
+        return Err(TransformError::InvalidScoreValue(value));
+    }
     let score = if value >= 0.0 {
         1.0 / (1.0 + (-value).exp())
     } else {
