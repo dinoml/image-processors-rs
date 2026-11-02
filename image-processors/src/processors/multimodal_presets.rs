@@ -1449,7 +1449,21 @@ fn process_ppocr_pixels(
 
 fn process_slanext_pixels(frame: &ImageFrame) -> Result<MultimodalArray, MultimodalProcessorError> {
     let spec = pixel_spec("SLANeXtImageProcessor");
-    let resized = resize_slanext_u8(frame, spec.edge);
+    let resized = image_resize_kernels::resize_u8(
+        frame.data(),
+        image_resize_kernels::ImageSize {
+            height: frame.height(),
+            width: frame.width(),
+        },
+        frame.channels(),
+        image_resize_kernels::ImageSize {
+            height: spec.edge,
+            width: spec.edge,
+        },
+        image_resize_kernels::ResizeFilter::Bilinear,
+        image_resize_kernels::ResizeProfile::FixedPointBilinear,
+    )
+    .map_err(ImageProcessorError::ResizeKernel)?;
     let mut chw = vec![0.0; resized.len()];
     for y in 0..spec.edge {
         for x in 0..spec.edge {
@@ -1462,57 +1476,6 @@ fn process_slanext_pixels(frame: &ImageFrame) -> Result<MultimodalArray, Multimo
         }
     }
     MultimodalArray::new([1, 3, spec.edge, spec.edge], MultimodalArrayData::F32(chw))
-}
-
-fn resize_slanext_u8(frame: &ImageFrame, target_edge: usize) -> Vec<u8> {
-    const WEIGHT_SCALE: i64 = 2048;
-    let source_height = frame.height();
-    let source_width = frame.width();
-    let row_coordinates = fixed_bilinear_coordinates(source_height, target_edge);
-    let column_coordinates = fixed_bilinear_coordinates(source_width, target_edge);
-    let mut output = vec![0; target_edge * target_edge * 3];
-    for (target_y, &(source_y, bottom_weight)) in row_coordinates.iter().enumerate() {
-        let top_weight = WEIGHT_SCALE - bottom_weight;
-        for (target_x, &(source_x, right_weight)) in column_coordinates.iter().enumerate() {
-            let left_weight = WEIGHT_SCALE - right_weight;
-            for channel in 0..3 {
-                let top_left =
-                    i64::from(frame.data()[(source_y * source_width + source_x) * 3 + channel]);
-                let top_right =
-                    i64::from(frame.data()[(source_y * source_width + source_x + 1) * 3 + channel]);
-                let bottom_left = i64::from(
-                    frame.data()[((source_y + 1) * source_width + source_x) * 3 + channel],
-                );
-                let bottom_right = i64::from(
-                    frame.data()[((source_y + 1) * source_width + source_x + 1) * 3 + channel],
-                );
-                let interpolated = top_weight * (left_weight * top_left + right_weight * top_right)
-                    + bottom_weight * (left_weight * bottom_left + right_weight * bottom_right);
-                output[(target_y * target_edge + target_x) * 3 + channel] =
-                    ((interpolated + (1 << 21)) >> 22).clamp(0, 255) as u8;
-            }
-        }
-    }
-    output
-}
-
-fn fixed_bilinear_coordinates(source: usize, target: usize) -> Vec<(usize, i64)> {
-    let mut coordinates = Vec::with_capacity(target);
-    for target_index in 0..target {
-        let source_coordinate = (target_index as f32 + 0.5) * (source as f32 / target as f32) - 0.5;
-        let mut source_floor = source_coordinate.floor() as isize;
-        let mut fraction = source_coordinate - source_floor as f32;
-        if source_floor < 0 {
-            source_floor = 0;
-            fraction = 0.0;
-        } else if source_floor >= (source - 1) as isize {
-            source_floor = (source - 2) as isize;
-            fraction = 1.0;
-        }
-        let weight = (fraction * 2048.0 + 0.5).floor() as i64;
-        coordinates.push((source_floor as usize, weight));
-    }
-    coordinates
 }
 
 fn resize_f32_bilinear_no_antialias(

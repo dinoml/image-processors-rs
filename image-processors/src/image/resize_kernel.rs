@@ -71,6 +71,7 @@ pub(super) fn kernel_filter(filter: ResizeFilter) -> KernelResizeFilter {
 
 pub(super) fn kernel_profile(parity: ResizeParity) -> KernelResizeProfile {
     match parity {
+        ResizeParity::FixedPointBilinear => KernelResizeProfile::FixedPointBilinear,
         ResizeParity::Compatibility => KernelResizeProfile::Pillow,
         ResizeParity::Torchvision => KernelResizeProfile::Torchvision,
         ResizeParity::TorchvisionNoAntialias => KernelResizeProfile::TorchvisionNoAntialias,

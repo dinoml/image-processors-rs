@@ -110,6 +110,9 @@ pub enum ResizeFilter {
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ResizeProfile {
+    /// FP32 half-pixel coordinates, 11-bit half-up weights and one 22-bit rounding.
+    /// Matches the tensor interpolation used by SLANeXt without native libraries.
+    FixedPointBilinear,
     /// Fast SIMD-capable resize profile.
     Fast,
     /// Pillow-compatible resize profile used by Transformers image processors.
@@ -259,6 +262,9 @@ pub fn resize_u8(
         ),
         ResizeProfile::OpenCvLinear => {
             resize_u8_opencv_linear(values, source, channels, target, filter)
+        }
+        ResizeProfile::FixedPointBilinear => {
+            resize_u8_fixed_bilinear(values, source, channels, target, filter)
         }
         ResizeProfile::Fast => resize_u8_fast(values, source, channels, target, filter),
         ResizeProfile::Pillow => resize_u8_pillow(values, source, channels, target, filter),
@@ -552,6 +558,9 @@ pub fn resize_u8_owned(
         ResizeProfile::OpenCvLinear => {
             resize_u8_opencv_linear(&values, source, channels, target, filter)
         }
+        ResizeProfile::FixedPointBilinear => {
+            resize_u8_fixed_bilinear(&values, source, channels, target, filter)
+        }
         ResizeProfile::Fast => resize_u8_fast_owned(values, source, channels, target, filter),
         ResizeProfile::Pillow => resize_u8_pillow(&values, source, channels, target, filter),
         ResizeProfile::Torchvision | ResizeProfile::TorchvisionNoAntialias => {
@@ -593,6 +602,9 @@ pub fn resize_u8_crop(
         ResizeProfile::OpenCvLinear => {
             resize_u8_opencv_crop(values, source, channels, crop, filter)
         }
+        ResizeProfile::FixedPointBilinear => {
+            resize_u8_fixed_bilinear_crop(values, source, channels, crop, filter)
+        }
         ResizeProfile::Fast => resize_u8_full_then_crop(values, source, channels, crop, filter),
         ResizeProfile::Pillow => resize_u8_pillow_crop(values, source, channels, crop, filter),
         ResizeProfile::Torchvision | ResizeProfile::TorchvisionNoAntialias => {
@@ -630,6 +642,9 @@ pub fn resize_u8_crop_owned(
         }
         ResizeProfile::OpenCvLinear => {
             resize_u8_opencv_crop(&values, source, channels, crop, filter)
+        }
+        ResizeProfile::FixedPointBilinear => {
+            resize_u8_fixed_bilinear_crop(&values, source, channels, crop, filter)
         }
         ResizeProfile::Fast => {
             let resized_values =
@@ -680,6 +695,9 @@ pub fn resize_u8_crop_with_workspace(
         }
         ResizeProfile::OpenCvLinear => {
             resize_u8_opencv_crop(values, source, channels, crop, filter)
+        }
+        ResizeProfile::FixedPointBilinear => {
+            resize_u8_fixed_bilinear_crop(values, source, channels, crop, filter)
         }
         ResizeProfile::Fast => resize_u8_full_then_crop(values, source, channels, crop, filter),
         ResizeProfile::Pillow => {
@@ -818,6 +836,18 @@ fn resize_u8_crop_into_transformed_with_workspace<T: TransformedOutput>(
         }
         ResizeProfile::OpenCvLinear => {
             let resized = resize_u8_opencv_crop(values, source, channels, crop, filter)?;
+            write_interleaved_u8_to_output(
+                &resized,
+                crop.target,
+                channels,
+                output,
+                layout,
+                multiplier,
+                offset,
+            )
+        }
+        ResizeProfile::FixedPointBilinear => {
+            let resized = resize_u8_fixed_bilinear_crop(values, source, channels, crop, filter)?;
             write_interleaved_u8_to_output(
                 &resized,
                 crop.target,
@@ -1029,6 +1059,76 @@ fn opencv_linear_axis_with_scale(
             (first, second, 1.0 - fraction, fraction)
         })
         .collect()
+}
+
+fn resize_u8_fixed_bilinear_crop(
+    values: &[u8],
+    source: ImageSize,
+    channels: usize,
+    crop: ResizeCrop,
+    filter: ResizeFilter,
+) -> Result<Vec<u8>, ResizeError> {
+    let resized = resize_u8_fixed_bilinear(values, source, channels, crop.resized, filter)?;
+    crop_image_data(
+        &resized,
+        crop.resized,
+        channels,
+        crop.origin_x,
+        crop.origin_y,
+        crop.target,
+    )
+}
+
+fn resize_u8_fixed_bilinear(
+    values: &[u8],
+    source: ImageSize,
+    channels: usize,
+    target: ImageSize,
+    filter: ResizeFilter,
+) -> Result<Vec<u8>, ResizeError> {
+    if filter != ResizeFilter::Bilinear {
+        return Err(ResizeError::UnsupportedFixedPointFilter);
+    }
+    ImageSize::new(source.height, source.width)?;
+    ImageSize::new(target.height, target.width)?;
+    let output_len = image_len(target, channels)?;
+    let axis = |input: usize, output: usize| {
+        (0..output)
+            .map(|index| {
+                // Keep every coordinate operation in FP32, as in upstream Torch.
+                let coordinate = (index as f32 + 0.5) * (input as f32 / output as f32) - 0.5;
+                let floor = coordinate.floor();
+                let (first, second, fraction) = if coordinate < 0.0 || input == 1 {
+                    (0, 0, 0.0)
+                } else if floor >= (input - 1) as f32 {
+                    (input - 1, input - 1, 1.0)
+                } else {
+                    (floor as usize, floor as usize + 1, coordinate - floor)
+                };
+                (first, second, (fraction * 2048.0 + 0.5).floor() as i64)
+            })
+            .collect::<Vec<_>>()
+    };
+    let rows = axis(source.height, target.height);
+    let columns = axis(source.width, target.width);
+    let mut output = vec![0; output_len];
+    for (y, &(top, bottom, lower)) in rows.iter().enumerate() {
+        for (x, &(left, right, right_weight)) in columns.iter().enumerate() {
+            for channel in 0..channels {
+                let sample = |row: usize, column: usize| {
+                    i64::from(values[(row * source.width + column) * channels + channel])
+                };
+                let upper_value =
+                    (2048 - right_weight) * sample(top, left) + right_weight * sample(top, right);
+                let lower_value = (2048 - right_weight) * sample(bottom, left)
+                    + right_weight * sample(bottom, right);
+                let interpolated = (2048 - lower) * upper_value + lower * lower_value;
+                output[(y * target.width + x) * channels + channel] =
+                    ((interpolated + (1 << 21)) >> 22).clamp(0, 255) as u8;
+            }
+        }
+    }
+    Ok(output)
 }
 
 fn resize_u8_opencv_linear(
@@ -2731,6 +2831,9 @@ pub enum ResizeError {
     /// Torchvision non-antialiased tensors support nearest, bilinear and bicubic only.
     #[error("non-antialiased tensor resize supports nearest, bilinear and bicubic only")]
     UnsupportedNonAntialiasedFilter,
+    /// Fixed-point bilinear parity requires the bilinear filter.
+    #[error("fixed-point bilinear parity requires bilinear filtering")]
+    UnsupportedFixedPointFilter,
     /// OpenCV byte linear parity requires the bilinear filter.
     #[error("OpenCV byte linear parity requires bilinear filtering")]
     UnsupportedOpenCvFilter,

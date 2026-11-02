@@ -720,6 +720,8 @@ pub enum ResizeKernel {
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub enum ResizeParity {
+    /// FP32 half-pixel coordinates with 11-bit half-up weights and one final rounding.
+    FixedPointBilinear,
     /// Use the configured resampling filter.
     #[default]
     Resampling,
@@ -802,6 +804,15 @@ impl ResizeDecision {
         }
     }
 
+    /// Creates the fixed-point bilinear policy used by SLANeXt tensor resizing.
+    pub fn fixed_point_bilinear() -> Self {
+        Self {
+            filter: ResizeFilter::Bilinear,
+            kernel: ResizeKernel::Triangle,
+            parity: ResizeParity::FixedPointBilinear,
+        }
+    }
+
     /// Creates a scale-dependent OpenCV byte-image resize decision. The filter
     /// selects enlargement behavior; reduction uses INTER_AREA.
     pub fn opencv_scale_dependent(filter: ResizeFilter) -> Self {
@@ -817,9 +828,16 @@ impl ResizeDecision {
     /// # Errors
     ///
     /// Returns an error when `PixelExact` is requested with a blending filter, or
-    /// `OpenCvLinear` is requested with a filter other than `Bilinear`.
+    /// `OpenCvLinear` or `FixedPointBilinear` is requested with a filter other
+    /// than `Bilinear`.
     pub fn new(filter: ResizeFilter, parity: ResizeParity) -> Result<Self, TransformError> {
         match parity {
+            ResizeParity::FixedPointBilinear if filter == ResizeFilter::Bilinear => {
+                Ok(Self::fixed_point_bilinear())
+            }
+            ResizeParity::FixedPointBilinear => {
+                Err(TransformError::InvalidResizeParity { filter, parity })
+            }
             ResizeParity::OpenCvScaleDependent => Ok(Self::opencv_scale_dependent(filter)),
             ResizeParity::OpenCvLinear if filter == ResizeFilter::Bilinear => {
                 Ok(Self::opencv_linear())
@@ -898,6 +916,30 @@ pub fn longest_edge_resize_size(
     ImageSize::new(
         round_ratio_dimension(original_size.height, longest_edge, max_edge)?,
         round_ratio_dimension(original_size.width, longest_edge, max_edge)?,
+    )
+}
+
+/// Computes longest-edge geometry using Python's FP64 scale and ties-to-even rounding.
+///
+/// Unlike [`longest_edge_resize_size`], exact half dimensions round to even.
+/// The scale is formed before multiplication, matching tensor image processors
+/// such as SLANeXt. The existing half-up geometry API remains unchanged.
+///
+/// # Errors
+/// Returns an error for invalid source dimensions, a zero longest edge, or
+/// dimensions that round to zero.
+pub fn longest_edge_resize_size_ties_even(
+    original_size: ImageSize,
+    longest_edge: usize,
+) -> Result<ImageSize, TransformError> {
+    validate_size(original_size)?;
+    if longest_edge == 0 {
+        return Err(TransformError::InvalidScaleFactor(longest_edge));
+    }
+    let scale = longest_edge as f64 / original_size.height.max(original_size.width) as f64;
+    ImageSize::new(
+        (original_size.height as f64 * scale).round_ties_even() as usize,
+        (original_size.width as f64 * scale).round_ties_even() as usize,
     )
 }
 
