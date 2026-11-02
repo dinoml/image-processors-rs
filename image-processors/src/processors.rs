@@ -44,6 +44,8 @@ pub use dpt::{
 };
 /// Aspect-preserving SigLIP2 NaFlex patch preparation.
 pub mod siglip2;
+/// Floating-point text detector image preparation.
+pub mod text_detection;
 pub use encoder_presets::{
     EncoderGeometry, EncoderImageProcessor, EncoderImageProcessorConfig,
     EncoderImageProcessorPreset, ImageGptPreprocessingPolicy, PresetProcessorError,
