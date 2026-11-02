@@ -19,6 +19,7 @@ pub(super) struct HfPreprocessorConfig {
     backend: Option<String>,
     do_align_long_axis: Option<bool>,
     do_image_splitting: Option<bool>,
+    do_split_image: Option<bool>,
     do_pan_and_scan: Option<bool>,
     do_pad: Option<bool>,
     pad_size: Option<HfSize>,
@@ -50,6 +51,7 @@ pub(super) struct HfPreprocessorConfig {
     image_mean: Option<Vec<f32>>,
     #[serde(default, deserialize_with = "scalar_or_vector")]
     image_std: Option<Vec<f32>>,
+    data_format: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -95,7 +97,9 @@ impl HfPreprocessorConfig {
             .or(self.processor_class.as_deref())
             .ok_or(ProcessorConfigError::MissingProcessorType)?;
 
-        if processor_type.contains("BlipImageProcessor") {
+        if processor_type.starts_with("EomtImageProcessor") {
+            self.eomt_config().map(ProcessorFamilyConfig::Eomt)
+        } else if processor_type.contains("BlipImageProcessor") {
             self.blip_config().map(ProcessorFamilyConfig::Blip)
         } else if processor_type.contains("Flux2ImageProcessor") {
             self.flux2_config().map(ProcessorFamilyConfig::Flux2)
@@ -159,6 +163,77 @@ impl HfPreprocessorConfig {
                 processor_type.to_owned(),
             ))
         }
+    }
+
+    fn eomt_config(&self) -> Result<EomtImageProcessorConfig, ProcessorConfigError> {
+        let mut image = TaskVisionImageProcessorConfig::for_preset(TaskVisionProcessorPreset::Eomt);
+        let TaskVisionResize::ShortestEdge {
+            shortest_edge,
+            longest_edge,
+            ..
+        } = image.resize
+        else {
+            return Err(ProcessorConfigError::InvalidSize { field: "size" });
+        };
+        let resize = self
+            .size
+            .as_ref()
+            .map(|size| size.shortest_edge_resize_config("size"))
+            .transpose()?
+            .flatten()
+            .unwrap_or(ShortestEdgeResizeConfig {
+                shortest_edge,
+                longest_edge,
+            });
+        image.resize = if self.do_resize.unwrap_or(true) {
+            TaskVisionResize::ShortestEdge {
+                shortest_edge: resize.shortest_edge,
+                longest_edge: resize.longest_edge,
+                multiple: None,
+            }
+        } else {
+            TaskVisionResize::None
+        };
+        if let Some(value) = self.resample.as_ref() {
+            image.resample = parse_hf_resample(value, image.resample);
+        }
+        if let Some(value) = self.do_rescale {
+            image.do_rescale = value;
+        }
+        if let Some(value) = self.rescale_factor {
+            image.rescale_factor = value;
+        }
+        if let Some(value) = self.do_normalize {
+            image.do_normalize = value;
+        }
+        if let Some(value) = self.image_mean.as_ref() {
+            image.image_mean.clone_from(value);
+        }
+        if let Some(value) = self.image_std.as_ref() {
+            image.image_std.clone_from(value);
+        }
+        if self.data_format.as_deref() == Some("channels_last") {
+            image.output_layout = ImageLayout::HeightWidthChannels;
+        }
+        image.resize_parity = match self.backend.as_deref() {
+            Some("pil") => ResizeParity::Compatibility,
+            Some("torchvision") => ResizeParity::Torchvision,
+            _ if self
+                .image_processor_type
+                .as_deref()
+                .or(self.processor_class.as_deref())
+                == Some("EomtImageProcessorPil") =>
+            {
+                ResizeParity::Compatibility
+            }
+            _ => image.resize_parity,
+        };
+        Ok(EomtImageProcessorConfig {
+            image,
+            size: resize,
+            do_split_image: self.do_split_image.unwrap_or(false),
+            do_pad: self.do_pad.unwrap_or(false),
+        })
     }
 
     fn vae_config(&self) -> Result<VaeImageProcessorConfig, ProcessorConfigError> {

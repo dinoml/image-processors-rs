@@ -44,7 +44,11 @@ pub use encoder_presets::{
     EncoderImageProcessorPreset, ImageGptPreprocessingPolicy, PresetProcessorError,
     Swin2SrImageProcessor, Swin2SrImageProcessorConfig,
 };
+mod eomt;
+mod overlapping;
 mod task_vision_presets;
+pub use eomt::{EomtImageProcessor, EomtImageProcessorConfig};
+pub use overlapping::OverlappingImagePlan;
 pub use task_vision_presets::{
     paddle_detection_size, PaddleDetectionLimit, TaskVisionColorMode, TaskVisionImageProcessor,
     TaskVisionImageProcessorConfig, TaskVisionKeypointMatchingOutput, TaskVisionPadding,
@@ -397,6 +401,8 @@ const JOY_IMAGE_BUCKETS_1024: [ImageSize; 49] = [
 /// Strong Rust configuration parsed from an HF `preprocessor_config.json`.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ProcessorFamilyConfig {
+    /// EoMT resize, overlapping windows and padding before normalization.
+    Eomt(EomtImageProcessorConfig),
     /// Diffusers BLIP image processor configuration.
     Blip(BlipImageProcessorConfig),
     /// Diffusers VAE image processor configuration.

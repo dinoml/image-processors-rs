@@ -408,6 +408,52 @@ fn execute_segmentation_descriptor(
         });
     }
 
+    let eomt_longest_edge = match preprocessing_output.metadata_value(
+        &crate::output::ProcessorMetadataName::Other("eomt_resize".into()),
+    ) {
+        Some(crate::output::ProcessorMetadataValue::Shape(size)) if size.len() == 2 => {
+            Some((size[1] != 0).then_some(size[1]))
+        }
+        _ => None,
+    };
+    let eomt_offsets = match preprocessing_output.metadata_value(
+        &crate::output::ProcessorMetadataName::Other("patch_offsets".into()),
+    ) {
+        Some(crate::output::ProcessorMetadataValue::Shape(offsets)) if !offsets.is_empty() => {
+            Some(offsets.as_slice())
+        }
+        _ => None,
+    };
+    if let (
+        RecipeSegmentationStrategy::Eomt { size },
+        RecipeSegmentationTask::Semantic,
+        Some(offsets),
+    ) = (descriptor.strategy, descriptor.task, eomt_offsets)
+    {
+        let target_source = descriptor
+            .options
+            .target_size_source
+            .as_ref()
+            .ok_or_else(|| RecipePostprocessError::MissingImageSizeMetadata {
+                name: "target_sizes".into(),
+            })?;
+        let targets = resolve_image_sizes(target_source, preprocessing_output, context)?;
+        let predictions = query_mask::post_process_eomt_semantic_windows(
+            &class_tensor.data().to_vec::<f32>(),
+            &mask_tensor.data().to_vec::<f32>(),
+            num_queries,
+            num_labels_with_background,
+            mask_size,
+            size,
+            targets,
+            offsets,
+            eomt_longest_edge.unwrap_or(Some(size.width)),
+        )?;
+        return Ok(RecipePostprocessOutput::SemanticSegmentation {
+            descriptor_index,
+            predictions,
+        });
+    }
     let target_sizes = descriptor
         .options
         .target_size_source
@@ -545,6 +591,7 @@ fn execute_segmentation_descriptor(
                             mask_size,
                             size,
                             target_size,
+                            eomt_longest_edge.unwrap_or(Some(size.width)),
                         )?;
                         query_mask::post_process_eomt_instance(
                             sample_classes,
@@ -644,6 +691,7 @@ fn execute_segmentation_descriptor(
                             mask_size,
                             size,
                             target_size,
+                            eomt_longest_edge.unwrap_or(Some(size.width)),
                         )?;
                         query_mask::post_process_eomt_panoptic(
                             sample_classes,
