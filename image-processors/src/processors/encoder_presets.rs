@@ -1448,7 +1448,7 @@ fn center_crop_with_padding(
     center_crop_with_padding_rounding(image, crop_size, false, pil_padding)
 }
 
-fn center_crop_with_padding_rounding(
+pub(super) fn center_crop_with_padding_rounding(
     image: &ImageFrame,
     crop_size: ImageSize,
     ties_even: bool,
