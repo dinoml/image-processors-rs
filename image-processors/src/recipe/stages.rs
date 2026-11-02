@@ -383,6 +383,15 @@ impl RecipeTiledCanvasStage {
 /// Donut/document OCR geometry parameters for a processor recipe.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RecipeDocumentGeometryStage {
+    /// Crop normalized grayscale margins before the remaining geometry stages.
+    #[serde(default)]
+    pub do_crop_margin: bool,
+    /// Byte-grayscale and normalization policy for margin cropping.
+    #[serde(default)]
+    pub margin_crop_mode: crate::transforms::MarginCropMode,
+    /// Optional source-specific thumbnail policy; None retains the configured filter.
+    #[serde(default)]
+    pub thumbnail_mode: Option<crate::transforms::DocumentThumbnailMode>,
     /// Target document canvas size.
     pub target_size: ImageSize,
     /// Whether to apply the initial shortest-edge resize.
@@ -405,6 +414,9 @@ impl RecipeDocumentGeometryStage {
         do_pad: bool,
     ) -> Self {
         Self {
+            do_crop_margin: false,
+            margin_crop_mode: crate::transforms::MarginCropMode::Pillow,
+            thumbnail_mode: None,
             target_size,
             do_resize,
             do_thumbnail,

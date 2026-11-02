@@ -13,6 +13,10 @@ pub(super) struct HfPreprocessorConfig {
     do_center_crop: Option<bool>,
     do_resize: Option<bool>,
     do_thumbnail: Option<bool>,
+    do_crop_margin: Option<bool>,
+    margin_crop_mode: Option<crate::transforms::MarginCropMode>,
+    thumbnail_mode: Option<crate::transforms::DocumentThumbnailMode>,
+    backend: Option<String>,
     do_align_long_axis: Option<bool>,
     do_image_splitting: Option<bool>,
     do_pan_and_scan: Option<bool>,
@@ -42,7 +46,9 @@ pub(super) struct HfPreprocessorConfig {
     resolution: Option<usize>,
     basesize: Option<usize>,
     hdr_transform: Option<String>,
+    #[serde(default, deserialize_with = "scalar_or_vector")]
     image_mean: Option<Vec<f32>>,
+    #[serde(default, deserialize_with = "scalar_or_vector")]
     image_std: Option<Vec<f32>>,
 }
 
@@ -62,6 +68,23 @@ enum HfSize {
 
 pub(super) fn default_true() -> bool {
     true
+}
+
+fn scalar_or_vector<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Vec<f32>>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Values {
+        Scalar(f32),
+        Vector(Vec<f32>),
+    }
+    Ok(
+        Option::<Values>::deserialize(deserializer)?.map(|value| match value {
+            Values::Scalar(value) => vec![value],
+            Values::Vector(values) => values,
+        }),
+    )
 }
 
 impl HfPreprocessorConfig {
@@ -127,6 +150,7 @@ impl HfPreprocessorConfig {
         } else if processor_type.contains("Document")
             || processor_type.contains("OCR")
             || processor_type.contains("Donut")
+            || processor_type.contains("Nougat")
         {
             self.document_ocr_config()
                 .map(ProcessorFamilyConfig::DocumentOcr)
@@ -820,6 +844,36 @@ impl HfPreprocessorConfig {
 
     fn document_ocr_config(&self) -> Result<DocumentOcrImageProcessorConfig, ProcessorConfigError> {
         let mut config = DocumentOcrImageProcessorConfig::default();
+        let nougat = self
+            .image_processor_type
+            .as_deref()
+            .or(self.processor_class.as_deref())
+            .is_some_and(|name| name.contains("Nougat"));
+        config.do_crop_margin = self.do_crop_margin.unwrap_or(nougat);
+        let torchvision = self.backend.as_deref() == Some("torchvision");
+        if torchvision {
+            config.resize_parity = ResizeParity::Torchvision;
+        }
+        if nougat {
+            config.image_size = ImageSize {
+                height: 896,
+                width: 672,
+            };
+            config.image_mean = IMAGENET_MEAN.to_vec();
+            config.image_std = IMAGENET_STD.to_vec();
+        }
+        config.margin_crop_mode = self.margin_crop_mode.unwrap_or(if torchvision {
+            crate::transforms::MarginCropMode::Torchvision
+        } else {
+            crate::transforms::MarginCropMode::Pillow
+        });
+        config.thumbnail_mode = self.thumbnail_mode.or_else(|| {
+            nougat.then_some(if torchvision {
+                crate::transforms::DocumentThumbnailMode::Torchvision
+            } else {
+                crate::transforms::DocumentThumbnailMode::Pillow
+            })
+        });
         if let Some(size) = &self.size {
             config.image_size = size.image_size_or_edge("size", config.image_size)?;
         }

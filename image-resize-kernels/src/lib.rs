@@ -9,12 +9,14 @@ use rayon::prelude::*;
 use thiserror::Error;
 
 mod opencv;
+mod pillow_reduce;
 mod planar;
 pub use opencv::{resize_f32_opencv, resize_f64_opencv, resize_u16_lanczos4};
 pub use opencv::{
     resize_u8_opencv, resize_u8_opencv_scale_dependent, resize_u8_opencv_with_crop,
     OpenCvInterpolation,
 };
+pub use pillow_reduce::resize_u8_pillow_reducing_gap;
 pub use planar::{resize_f32_planes, TensorInterpolation};
 
 /// Image dimensions in height-width order.
@@ -1861,7 +1863,7 @@ fn pillow_fixed_passes(
     output: &mut [u8],
 ) {
     let row_len = target.width * channels;
-    if source.width == target.width {
+    if source.width == target.width && horizontal.full_extent {
         intermediate.copy_from_slice(values);
     } else {
         pillow_rows(intermediate, row_len, |y, row| {
@@ -1880,7 +1882,7 @@ fn pillow_fixed_passes(
             }
         });
     }
-    if source.height == target.height {
+    if source.height == target.height && vertical.full_extent {
         output.copy_from_slice(intermediate);
     } else {
         pillow_rows(output, row_len, |y, row| {
@@ -1979,6 +1981,7 @@ struct PillowFixedCoefficients {
     lengths: Vec<usize>,
     weights: Vec<i32>,
     window: usize,
+    full_extent: bool,
 }
 
 impl PillowFixedCoefficients {
@@ -1992,6 +1995,24 @@ impl PillowFixedCoefficients {
         output_start: usize,
         output_len: usize,
         filter: ResizeFilter,
+    ) -> Result<Self, ResizeError> {
+        Self::new_window_extent(
+            input,
+            output,
+            output_start,
+            output_len,
+            filter,
+            input as f64,
+        )
+    }
+
+    fn new_window_extent(
+        input: usize,
+        output: usize,
+        output_start: usize,
+        output_len: usize,
+        filter: ResizeFilter,
+        extent: f64,
     ) -> Result<Self, ResizeError> {
         if input == 0 || output == 0 {
             return Err(ResizeError::InvalidSize {
@@ -2013,7 +2034,7 @@ impl PillowFixedCoefficients {
             });
         }
 
-        let scale = input as f64 / output as f64;
+        let scale = extent / output as f64;
         let filter_scale = scale.max(1.0);
         let support = filter_support(filter) * filter_scale;
         let window = (support.ceil() as usize)
@@ -2066,6 +2087,7 @@ impl PillowFixedCoefficients {
             lengths,
             weights,
             window,
+            full_extent: extent == input as f64,
         })
     }
 
