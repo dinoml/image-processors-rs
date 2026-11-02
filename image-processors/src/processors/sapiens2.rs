@@ -152,6 +152,7 @@ pub struct Sapiens2PoseProcessor {
     rescale_factor: f64,
     source_processor: ImageProcessor,
     size: ImageSize,
+    center_crop: Option<ImageSize>,
 }
 
 impl Sapiens2PoseProcessor {
@@ -192,6 +193,7 @@ impl Sapiens2PoseProcessor {
             rescale_factor,
             source_processor: ImageProcessor::new(source)?,
             size,
+            center_crop: None,
         })
     }
 
@@ -200,6 +202,21 @@ impl Sapiens2PoseProcessor {
     pub fn with_rescale_factor(mut self, factor: f64) -> Self {
         self.rescale_factor = factor;
         self
+    }
+
+    /// Select the optional center crop applied to FP32 person crops before normalization.
+    ///
+    /// # Errors
+    /// Reports invalid crop dimensions.
+    pub fn with_center_crop(
+        mut self,
+        center_crop: Option<ImageSize>,
+    ) -> Result<Self, Sapiens2ProcessorError> {
+        if let Some(size) = center_crop {
+            ImageSize::new(size.height, size.width)?;
+        }
+        self.center_crop = center_crop;
+        Ok(self)
     }
 
     /// Crop persons from one decoded image into normalized NCHW FP32 pixels.
@@ -262,17 +279,26 @@ impl Sapiens2PoseProcessor {
                 image_resize_kernels::ImageSize::new(self.size.height, self.size.width)?,
                 interpolation,
             )?;
-            output.extend(crop);
+            if let Some(size) = self.center_crop {
+                for plane in crop.chunks_exact(target_pixels) {
+                    output.extend(super::encoder_presets::center_crop_interleaved_f32(
+                        plane, self.size, 1, size, false, false,
+                    )?);
+                }
+            } else {
+                output.extend(crop);
+            }
         }
+        let output_size = self.center_crop.unwrap_or(self.size);
         if flip {
-            for row in output.chunks_exact_mut(self.size.width) {
+            for row in output.chunks_exact_mut(output_size.width) {
                 row.reverse();
             }
         }
         Ok(ImageGptPreprocessingPolicy::Torchvision.finish_tensor(
             Tensor::new(
                 TensorData::F32(output),
-                vec![boxes.len(), 3, self.size.height, self.size.width],
+                vec![boxes.len(), 3, output_size.height, output_size.width],
                 Layout::NCHW,
             )?,
             self.config.do_rescale.then_some(self.rescale_factor),
@@ -515,7 +541,29 @@ pub fn sapiens2_resize_size(
     )
 }
 
-/// Composite a premultiplied FP32 RGB foreground and alpha over a decoded background.
+/// A decoded byte image or a CHW/HWC image tensor used for matting compositing.
+#[derive(Debug, Clone)]
+pub enum Sapiens2MattingBackground {
+    /// Decoded byte pixels, converted to unit-range RGB.
+    Image(ImageFrame),
+    /// Floating pixels retain their range; integer pixels scale by their dtype maximum.
+    /// One-channel tensors broadcast over RGB; RGB tensors retain their channels.
+    Tensor(Tensor),
+}
+
+impl From<ImageFrame> for Sapiens2MattingBackground {
+    fn from(image: ImageFrame) -> Self {
+        Self::Image(image)
+    }
+}
+
+impl From<Tensor> for Sapiens2MattingBackground {
+    fn from(tensor: Tensor) -> Self {
+        Self::Tensor(tensor)
+    }
+}
+
+/// Composite a premultiplied FP32 RGB foreground and alpha over an image background.
 /// Backgrounds are converted to unit floating pixels before non-antialiased
 /// bilinear resize. Output quantization follows Torchvision's scale=true uint8 conversion.
 ///
@@ -524,7 +572,7 @@ pub fn sapiens2_resize_size(
 pub fn composite_sapiens2_matting(
     foreground: &Tensor,
     alpha: &Tensor,
-    background: &ImageFrame,
+    background: &Sapiens2MattingBackground,
 ) -> Result<Tensor, Sapiens2ProcessorError> {
     if foreground.layout() != Layout::CHW
         || alpha.layout() != Layout::CHW
@@ -543,8 +591,37 @@ pub fn composite_sapiens2_matting(
     else {
         return Err(Sapiens2ProcessorError::Invalid("matting maps must be FP32"));
     };
-    let background =
-        ImageProcessor::new(ImageProcessorConfig::default())?.preprocess_image(background)?;
+    let background = match background {
+        Sapiens2MattingBackground::Image(image) => {
+            ImageProcessor::new(ImageProcessorConfig::default())?.preprocess_image(image)?
+        }
+        Sapiens2MattingBackground::Tensor(tensor) => {
+            if tensor.shape().len() != 3
+                || !matches!(tensor.layout(), Layout::CHW | Layout::HWC)
+                || ![1, 3].contains(&tensor.channels())
+            {
+                return Err(Sapiens2ProcessorError::Invalid(
+                    "background tensor must be a one-channel or RGB CHW/HWC image",
+                ));
+            }
+            let scale = match tensor.data() {
+                TensorData::F32(_)
+                | TensorData::F16(_)
+                | TensorData::BF16(_)
+                | TensorData::Bool(_) => 1.0,
+                TensorData::U8(_) => 1.0 / f32::from(u8::MAX),
+                TensorData::I8(_) => 1.0 / f32::from(i8::MAX),
+                TensorData::I32(_) => 1.0 / i32::MAX as f32,
+                TensorData::I64(_) => 1.0 / i64::MAX as f32,
+                _ => {
+                    return Err(Sapiens2ProcessorError::Invalid(
+                        "quantized backgrounds are unsupported",
+                    ));
+                }
+            };
+            tensor.to_layout(Layout::CHW)?.rescale(scale)?
+        }
+    };
     let TensorData::F32(background_values) = background.data() else {
         return Err(Sapiens2ProcessorError::Invalid(
             "background must convert to FP32",
@@ -553,7 +630,10 @@ pub fn composite_sapiens2_matting(
     let source = ImageSize::new(background.height(), background.width())?;
     let target = ImageSize::new(foreground.height(), foreground.width())?;
     let mut resized = Vec::new();
-    for plane in background_values.chunks_exact(source.height * source.width) {
+    let source_pixels = source.height * source.width;
+    for channel in 0..3 {
+        let offset = (channel % background.channels()) * source_pixels;
+        let plane = &background_values[offset..offset + source_pixels];
         resized.extend(resize_f32_bilinear_interleaved(
             plane, source, 1, target, false,
         )?);
