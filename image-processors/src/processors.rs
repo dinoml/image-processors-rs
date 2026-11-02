@@ -36,7 +36,12 @@ use crate::tensor::{
     DType, ImageLayout, Layout, Tensor, TensorData, TensorError, TensorLeadingAxis, TensorView,
     VideoLayout,
 };
+mod dpt;
 mod encoder_presets;
+pub use dpt::{
+    DptDepthPrediction, DptImageProcessor, DptImageProcessorConfig, DptResizeBackend,
+    DptSemanticPrediction,
+};
 /// Aspect-preserving SigLIP2 NaFlex patch preparation.
 pub mod siglip2;
 pub use encoder_presets::{
@@ -403,6 +408,8 @@ const JOY_IMAGE_BUCKETS_1024: [ImageSize; 49] = [
 pub enum ProcessorFamilyConfig {
     /// EoMT resize, overlapping windows and padding before normalization.
     Eomt(EomtImageProcessorConfig),
+    /// DPT image geometry and shared pixel processing configuration.
+    Dpt(DptImageProcessorConfig),
     /// Diffusers BLIP image processor configuration.
     Blip(BlipImageProcessorConfig),
     /// Diffusers VAE image processor configuration.

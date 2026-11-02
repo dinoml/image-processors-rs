@@ -5,6 +5,7 @@ use super::*;
 #[derive(Debug, Deserialize)]
 pub(super) struct HfPreprocessorConfig {
     image_processor_type: Option<String>,
+    feature_extractor_type: Option<String>,
     processor_class: Option<String>,
     size: Option<HfSize>,
     crop_size: Option<HfSize>,
@@ -35,7 +36,10 @@ pub(super) struct HfPreprocessorConfig {
     temporal_patch_size: Option<usize>,
     merge_size: Option<usize>,
     do_rescale: Option<bool>,
-    rescale_factor: Option<f32>,
+    rescale_factor: Option<f64>,
+    keep_aspect_ratio: Option<bool>,
+    ensure_multiple_of: Option<usize>,
+    size_divisor: Option<usize>,
     offset: Option<bool>,
     do_normalize: Option<bool>,
     do_range_check: Option<bool>,
@@ -95,10 +99,16 @@ impl HfPreprocessorConfig {
             .image_processor_type
             .as_deref()
             .or(self.processor_class.as_deref())
+            .or(self.feature_extractor_type.as_deref())
             .ok_or(ProcessorConfigError::MissingProcessorType)?;
 
         if processor_type.starts_with("EomtImageProcessor") {
             self.eomt_config().map(ProcessorFamilyConfig::Eomt)
+        } else if matches!(
+            processor_type,
+            "DPTImageProcessor" | "DPTImageProcessorPil" | "DPTFeatureExtractor"
+        ) {
+            self.dpt_config().map(ProcessorFamilyConfig::Dpt)
         } else if processor_type.contains("BlipImageProcessor") {
             self.blip_config().map(ProcessorFamilyConfig::Blip)
         } else if processor_type.contains("Flux2ImageProcessor") {
@@ -201,7 +211,7 @@ impl HfPreprocessorConfig {
             image.do_rescale = value;
         }
         if let Some(value) = self.rescale_factor {
-            image.rescale_factor = value;
+            image.rescale_factor = value as f32;
         }
         if let Some(value) = self.do_normalize {
             image.do_normalize = value;
@@ -234,6 +244,59 @@ impl HfPreprocessorConfig {
             do_split_image: self.do_split_image.unwrap_or(false),
             do_pad: self.do_pad.unwrap_or(false),
         })
+    }
+
+    fn dpt_config(&self) -> Result<DptImageProcessorConfig, ProcessorConfigError> {
+        let mut config = DptImageProcessorConfig::default();
+        if let Some(size) = &self.size {
+            config.size = size.image_size_or_edge("size", config.size)?;
+        }
+        if let Some(value) = self.do_resize {
+            config.do_resize = value;
+        }
+        if let Some(value) = &self.resample {
+            config.resample = parse_hf_resample(value, config.resample);
+        }
+        if let Some(value) = self.do_rescale {
+            config.do_rescale = value;
+        }
+        if let Some(value) = self.rescale_factor {
+            config.rescale_factor = value;
+        }
+        if let Some(value) = self.do_normalize {
+            config.do_normalize = value;
+        }
+        if let Some(value) = &self.image_mean {
+            config.image_mean = value.clone();
+        }
+        if let Some(value) = &self.image_std {
+            config.image_std = value.clone();
+        }
+        if let Some(value) = self.keep_aspect_ratio {
+            config.keep_aspect_ratio = value;
+        }
+        if let Some(value) = self.ensure_multiple_of {
+            config.ensure_multiple_of = value;
+        }
+        if self.do_pad.unwrap_or(false) {
+            config.size_divisor = Some(self.size_divisor.unwrap_or(1));
+        }
+        config.backend = match self.backend.as_deref() {
+            Some("pil") => DptResizeBackend::Pil,
+            Some("torchvision") => DptResizeBackend::Torchvision,
+            _ if matches!(
+                self.image_processor_type
+                    .as_deref()
+                    .or(self.processor_class.as_deref())
+                    .or(self.feature_extractor_type.as_deref()),
+                Some("DPTImageProcessorPil" | "DPTFeatureExtractor")
+            ) =>
+            {
+                DptResizeBackend::Pil
+            }
+            _ => DptResizeBackend::Torchvision,
+        };
+        Ok(config)
     }
 
     fn vae_config(&self) -> Result<VaeImageProcessorConfig, ProcessorConfigError> {
@@ -288,7 +351,7 @@ impl HfPreprocessorConfig {
             config.do_rescale = do_rescale;
         }
         if let Some(rescale_factor) = self.rescale_factor {
-            config.rescale_factor = rescale_factor;
+            config.rescale_factor = rescale_factor as f32;
         }
         if let Some(do_normalize) = self.do_normalize {
             config.do_normalize = do_normalize;
@@ -597,7 +660,7 @@ impl HfPreprocessorConfig {
             config.do_rescale = do_rescale;
         }
         if let Some(rescale_factor) = self.rescale_factor {
-            config.rescale_factor = rescale_factor;
+            config.rescale_factor = rescale_factor as f32;
         }
         if let Some(do_normalize) = self.do_normalize {
             config.do_normalize = do_normalize;
@@ -632,7 +695,7 @@ impl HfPreprocessorConfig {
             config.do_rescale = do_rescale;
         }
         if let Some(rescale_factor) = self.rescale_factor {
-            config.rescale_factor = rescale_factor;
+            config.rescale_factor = rescale_factor as f32;
         }
         if let Some(offset) = self.offset {
             config.offset = offset;
@@ -677,7 +740,7 @@ impl HfPreprocessorConfig {
             config.do_rescale = do_rescale;
         }
         if let Some(rescale_factor) = self.rescale_factor {
-            config.rescale_factor = rescale_factor;
+            config.rescale_factor = rescale_factor as f32;
         }
         if let Some(do_normalize) = self.do_normalize {
             config.do_normalize = do_normalize;
@@ -722,7 +785,7 @@ impl HfPreprocessorConfig {
             config.do_rescale = do_rescale;
         }
         if let Some(rescale_factor) = self.rescale_factor {
-            config.rescale_factor = rescale_factor;
+            config.rescale_factor = rescale_factor as f32;
         }
         if let Some(do_normalize) = self.do_normalize {
             config.do_normalize = do_normalize;
@@ -751,7 +814,7 @@ impl HfPreprocessorConfig {
             config.do_rescale = do_rescale;
         }
         if let Some(rescale_factor) = self.rescale_factor {
-            config.rescale_factor = rescale_factor;
+            config.rescale_factor = rescale_factor as f32;
         }
         if let Some(do_normalize) = self.do_normalize {
             config.do_normalize = do_normalize;
@@ -790,7 +853,7 @@ impl HfPreprocessorConfig {
             config.do_rescale = do_rescale;
         }
         if let Some(rescale_factor) = self.rescale_factor {
-            config.rescale_factor = rescale_factor;
+            config.rescale_factor = rescale_factor as f32;
         }
         if let Some(do_normalize) = self.do_normalize {
             config.do_normalize = do_normalize;
@@ -831,7 +894,7 @@ impl HfPreprocessorConfig {
             config.do_rescale = do_rescale;
         }
         if let Some(rescale_factor) = self.rescale_factor {
-            config.rescale_factor = rescale_factor;
+            config.rescale_factor = rescale_factor as f32;
         }
         if let Some(do_normalize) = self.do_normalize {
             config.do_normalize = do_normalize;
@@ -866,7 +929,7 @@ impl HfPreprocessorConfig {
             config.do_rescale = do_rescale;
         }
         if let Some(rescale_factor) = self.rescale_factor {
-            config.rescale_factor = rescale_factor;
+            config.rescale_factor = rescale_factor as f32;
         }
         if let Some(do_normalize) = self.do_normalize {
             config.do_normalize = do_normalize;
@@ -968,7 +1031,7 @@ impl HfPreprocessorConfig {
             config.do_rescale = do_rescale;
         }
         if let Some(rescale_factor) = self.rescale_factor {
-            config.rescale_factor = rescale_factor;
+            config.rescale_factor = rescale_factor as f32;
         }
         if let Some(do_normalize) = self.do_normalize {
             config.do_normalize = do_normalize;
