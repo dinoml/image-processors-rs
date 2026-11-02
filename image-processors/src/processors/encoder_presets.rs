@@ -1061,7 +1061,7 @@ impl EncoderImageProcessor {
             self.config.rescale_factor,
         )?;
         let output_size = if let Some(size) = crop_size {
-            values = center_crop_interleaved_f32(&values, target, image.channels(), size)?;
+            values = center_crop_interleaved_f32(&values, target, image.channels(), size, false)?;
             size
         } else {
             target
@@ -1519,21 +1519,33 @@ fn center_crop_origin_ties_even(delta: usize) -> usize {
     delta / 2 + usize::from(delta % 4 == 3)
 }
 
-fn center_crop_interleaved_f32(
+pub(super) fn center_crop_interleaved_f32(
     values: &[f32],
     source: ImageSize,
     channels: usize,
     target: ImageSize,
-) -> Result<Vec<f32>, PresetProcessorError> {
-    // Reuse the shared geometry. Torchvision places an odd extra padding pixel
-    // after the image; the separate PIL byte path retains its existing policy.
+    pil: bool,
+) -> Result<Vec<f32>, ImageProcessorError> {
+    // Torchvision places an odd extra padding pixel after the image and rounds
+    // crop offsets to even. PIL pads before the image and floors crop offsets.
     let padded = ImageSize::new(
         source.height.max(target.height),
         source.width.max(target.width),
     )?;
-    let padding = centered_padding(source, padded)?;
-    let left = center_crop_origin_ties_even(padded.width - target.width);
-    let top = center_crop_origin_ties_even(padded.height - target.height);
+    let mut padding = centered_padding(source, padded)?;
+    if pil {
+        std::mem::swap(&mut padding.left, &mut padding.right);
+        std::mem::swap(&mut padding.top, &mut padding.bottom);
+    }
+    let origin = |delta| {
+        if pil {
+            delta / 2
+        } else {
+            center_crop_origin_ties_even(delta)
+        }
+    };
+    let left = origin(padded.width - target.width);
+    let top = origin(padded.height - target.height);
     let crop = ImageCropBox::new(left, top, left + target.width, top + target.height);
     let count = target
         .height

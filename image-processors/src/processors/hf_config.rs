@@ -248,11 +248,20 @@ impl HfPreprocessorConfig {
 
     fn dpt_config(&self) -> Result<DptImageProcessorConfig, ProcessorConfigError> {
         let mut config = DptImageProcessorConfig::default();
+        if let Some(convert_rgb) = self.do_convert_rgb {
+            config.pixel_format = convert_rgb.then_some(PixelFormat::Rgb8);
+        }
         if let Some(size) = &self.size {
             config.size = size.image_size_or_edge("size", config.size)?;
         }
         if let Some(value) = self.do_resize {
             config.do_resize = value;
+        }
+        if self.do_center_crop.unwrap_or(false) {
+            config.crop_size = Some(match &self.crop_size {
+                Some(size) => size.image_size_or_edge("crop_size", config.size)?,
+                None => config.size,
+            });
         }
         if let Some(value) = &self.resample {
             config.resample = parse_hf_resample(value, config.resample);

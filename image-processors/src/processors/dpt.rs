@@ -26,6 +26,10 @@ pub struct DptImageProcessorConfig {
     pub size: ImageSize,
     /// Whether decoded pixels are resized.
     pub do_resize: bool,
+    /// Optional pixel conversion before geometry; `None` preserves source channels.
+    pub pixel_format: Option<PixelFormat>,
+    /// Optional center crop after resize and before rescale or normalization.
+    pub crop_size: Option<ImageSize>,
     /// Source interpolation filter.
     pub resample: ResizeFilter,
     /// Whether byte values are rescaled.
@@ -58,6 +62,8 @@ impl Default for DptImageProcessorConfig {
                 width: 384,
             },
             do_resize: true,
+            pixel_format: Some(PixelFormat::Rgb8),
+            crop_size: None,
             resample: ResizeFilter::Bicubic,
             do_rescale: true,
             rescale_factor: 1.0 / 255.0,
@@ -115,6 +121,9 @@ impl DptImageProcessor {
             ));
         }
         ImageSize::new(config.size.height, config.size.width)?;
+        if let Some(size) = config.crop_size {
+            ImageSize::new(size.height, size.width)?;
+        }
         Ok(Self { config })
     }
 
@@ -125,6 +134,7 @@ impl DptImageProcessor {
     pub fn preprocess_image(&self, image: &ImageFrame) -> Result<Tensor, ImageProcessorError> {
         let mut config = ImageProcessorConfig {
             do_resize: self.config.do_resize,
+            pixel_format: self.config.pixel_format,
             resample: self.config.resample,
             do_rescale: false,
             do_normalize: false,
@@ -157,6 +167,27 @@ impl DptImageProcessor {
             ImageProcessorOptions::default(),
             precision,
         )?;
+        if let Some(size) = self.config.crop_size {
+            let source = ImageSize::new(tensor.height(), tensor.width())?;
+            let interleaved = tensor.to_layout(Layout::NHWC)?;
+            let channels = interleaved.shape()[3];
+            let TensorData::F32(values) = interleaved.data() else {
+                return Err(ImageProcessorError::ExpectedDataType("floating pixels"));
+            };
+            let values = super::encoder_presets::center_crop_interleaved_f32(
+                values,
+                source,
+                channels,
+                size,
+                self.config.backend == DptResizeBackend::Pil,
+            )?;
+            tensor = Tensor::new(
+                TensorData::F32(values),
+                vec![1, size.height, size.width, channels],
+                Layout::NHWC,
+            )?
+            .to_layout(processor.config().output_layout)?;
+        }
         // PIL rescales through FP64 and narrows to FP32 before normalization.
         // Torchvision fuses rescale into normalization statistics in FP32.
         if self.config.backend == DptResizeBackend::Torchvision
@@ -297,25 +328,28 @@ impl DptImageProcessor {
             target.unwrap_or(source),
             precision,
         )?;
-        let labels = segmentation
-            .class_ids
+        let masks = Self::semantic_masks(&segmentation.class_ids);
+        Ok(DptSemanticPrediction {
+            segmentation,
+            masks,
+        })
+    }
+
+    /// Build sorted per-class byte masks from an independently supplied class map.
+    pub fn semantic_masks(class_ids: &[i64]) -> std::collections::BTreeMap<i64, Vec<u8>> {
+        let labels = class_ids
             .iter()
             .copied()
             .collect::<std::collections::BTreeSet<_>>();
-        let masks = labels
+        labels
             .into_iter()
             .map(|label| {
-                let mask = segmentation
-                    .class_ids
+                let mask = class_ids
                     .iter()
                     .map(|id| if *id == label { 255 } else { 0 })
                     .collect();
                 (label, mask)
             })
-            .collect();
-        Ok(DptSemanticPrediction {
-            segmentation,
-            masks,
-        })
+            .collect()
     }
 }
