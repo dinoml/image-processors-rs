@@ -825,7 +825,10 @@ impl TaskVisionImageProcessorConfig {
         )
     }
 
-    fn tensor_processor_config(&self, pixel_format: PixelFormat) -> ImageProcessorConfig {
+    pub(super) fn tensor_processor_config(
+        &self,
+        pixel_format: PixelFormat,
+    ) -> ImageProcessorConfig {
         ImageProcessorConfig {
             do_resize: false,
             height: None,
@@ -998,6 +1001,61 @@ impl TaskVisionImageProcessor {
     /// Returns this processor's configuration.
     pub fn config(&self) -> &TaskVisionImageProcessorConfig {
         &self.config
+    }
+
+    /// Resize an image, split its longer axis into overlapping squares, and normalize each crop.
+    ///
+    /// The configured resize must produce a shorter axis equal to `patch_size`.
+    /// Post-resize padding is applied to individual crops, after splitting.
+    /// Crop geometry and semantic restoration share one plan.
+    ///
+    /// # Errors
+    /// Reports incompatible geometry, cropping, or tensor conversion errors.
+    pub fn preprocess_overlapping_image(
+        &self,
+        image: &ImageFrame,
+        patch_size: usize,
+    ) -> Result<(Vec<ProcessorOutput>, super::OverlappingImagePlan), ImageProcessorError> {
+        let mut unpadded_config = self.config.clone();
+        unpadded_config.post_resize_padding = TaskVisionPadding::None;
+        let unpadded_processor = Self::new(unpadded_config)?;
+        let (prepared, original_size, resized_size) = unpadded_processor.prepare_image(image)?;
+        let plan = super::OverlappingImagePlan::new(original_size, resized_size, patch_size)?;
+        let mut outputs = Vec::with_capacity(plan.crops().len());
+        for crop in plan.crops() {
+            let frame = crate::transforms::crop_frame(&prepared, *crop)?;
+            let frame = apply_task_padding(frame, self.config.post_resize_padding)?;
+            let tensor = self.tensor_processor.preprocess_image(&frame)?;
+            let size = ImageSize::new(frame.height(), frame.width())?;
+            outputs.push(self.output_with_metadata(tensor, original_size, size)?);
+        }
+        Ok((outputs, plan))
+    }
+
+    /// Preprocess one image with bottom/right zero padding to a fixed minimum canvas.
+    ///
+    /// Padding is applied in pixel space after configured geometry and before
+    /// rescaling/normalization. Larger images retain their dimensions.
+    ///
+    /// # Errors
+    /// Reports invalid canvas dimensions, geometry, padding or tensor conversion.
+    pub fn preprocess_image_output_with_canvas(
+        &self,
+        image: &ImageFrame,
+        canvas: ImageSize,
+    ) -> Result<ProcessorOutput, ImageProcessorError> {
+        ImageSize::new(canvas.height, canvas.width)?;
+        let (frame, original_size, _) = self.prepare_image(image)?;
+        let padding = Padding::new(
+            0,
+            canvas.width.saturating_sub(frame.width()),
+            canvas.height.saturating_sub(frame.height()),
+            0,
+        );
+        let frame = pad_frame(&frame, padding, &[0])?;
+        let size = ImageSize::new(frame.height(), frame.width())?;
+        let tensor = self.tensor_processor.preprocess_image(&frame)?;
+        self.output_with_metadata(tensor, original_size, size)
     }
 
     /// Preprocesses one decoded RGB image into typed task-vision outputs.
@@ -1277,7 +1335,7 @@ impl TaskVisionImageProcessor {
         self.output_with_metadata(tensor, original_size, target_size)
     }
 
-    fn prepare_image(
+    pub(super) fn prepare_image(
         &self,
         image: &ImageFrame,
     ) -> Result<(ImageFrame, ImageSize, ImageSize), ImageProcessorError> {
@@ -2172,20 +2230,34 @@ fn apply_task_resize(
             longest_edge,
             multiple,
         } => {
-            if config.preset == TaskVisionProcessorPreset::Yolos {
-                let target = super::detection::shortest_edge_resize_output_size_with_policy(
-                    source,
-                    ShortestEdgeResizeConfig {
+            if matches!(
+                config.preset,
+                TaskVisionProcessorPreset::Yolos | TaskVisionProcessorPreset::Eomt
+            ) {
+                let mut target = if config.preset == TaskVisionProcessorPreset::Eomt {
+                    crate::transforms::shortest_edge_resize_size_with_raw_cap(
+                        source,
                         shortest_edge,
                         longest_edge,
-                    },
-                    super::detection::ShortestEdgeResizePolicy::Yolos,
-                )?;
-                let multiple = multiple.unwrap_or(16);
-                let target = ImageSize::new(
-                    target.height / multiple * multiple,
-                    target.width / multiple * multiple,
-                )?;
+                        0,
+                    )?
+                } else {
+                    super::detection::shortest_edge_resize_output_size_with_policy(
+                        source,
+                        ShortestEdgeResizeConfig {
+                            shortest_edge,
+                            longest_edge,
+                        },
+                        super::detection::ShortestEdgeResizePolicy::Yolos,
+                    )?
+                };
+                if config.preset == TaskVisionProcessorPreset::Yolos {
+                    let multiple = multiple.unwrap_or(16);
+                    target = ImageSize::new(
+                        target.height / multiple * multiple,
+                        target.width / multiple * multiple,
+                    )?;
+                }
                 return resize_frame_with_decision(
                     &frame,
                     target,

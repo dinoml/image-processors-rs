@@ -952,6 +952,44 @@ pub fn longest_edge_resize_size_ties_even(
 ///
 /// Returns an error when dimensions are invalid, `shortest_edge` is zero,
 /// `longest_edge` is zero, or arithmetic overflows.
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Transformers computes capped sizes in double precision, rounds the short edge and truncates the long edge"
+)]
+pub(crate) fn shortest_edge_resize_size_with_raw_cap(
+    original_size: ImageSize,
+    shortest_edge: usize,
+    longest_edge: Option<usize>,
+    minimum_extent: usize,
+) -> Result<ImageSize, TransformError> {
+    validate_size(original_size)?;
+    if shortest_edge == 0 || longest_edge == Some(0) {
+        return Err(TransformError::InvalidScaleFactor(0));
+    }
+    let shortest = original_size.height.min(original_size.width);
+    let longest = original_size.height.max(original_size.width);
+    let raw_short = longest_edge
+        .filter(|cap| longest as f64 / shortest as f64 * shortest_edge as f64 > *cap as f64)
+        .map(|cap| cap as f64 * shortest as f64 / longest as f64);
+    let short = raw_short.map_or(shortest_edge, |value| value.round_ties_even() as usize);
+    if shortest == short {
+        return Ok(original_size);
+    }
+    let long = (raw_short.unwrap_or(short as f64) * longest as f64 / shortest as f64) as usize;
+    let (height, width) = if original_size.width < original_size.height {
+        (long, short)
+    } else {
+        (short, long)
+    };
+    ImageSize::new(height.max(minimum_extent), width.max(minimum_extent))
+}
+
+/// Compute aspect-preserving dimensions with rounded short-edge capping.
+///
+/// # Errors
+/// Reports invalid dimensions or arithmetic overflow.
 pub fn shortest_edge_resize_size(
     original_size: ImageSize,
     shortest_edge: usize,

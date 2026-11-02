@@ -90,9 +90,15 @@ pub(super) fn restore_eomt_mask_logits(
     source_size: ImageSize,
     canvas_size: ImageSize,
     target_size: ImageSize,
+    longest_edge: Option<usize>,
 ) -> Result<Vec<f32>, TransformError> {
     let canvas_logits = resize_mask_planes_bilinear(values, plane_count, source_size, canvas_size)?;
-    let requested_crop_size = eomt_aspect_resize_size(target_size, canvas_size)?;
+    let requested_crop_size = crate::transforms::shortest_edge_resize_size_with_raw_cap(
+        target_size,
+        canvas_size.height,
+        longest_edge,
+        0,
+    )?;
     // Python's top-left tensor slice truncates an overlong stop at the canvas
     // boundary. This matters when the rounded shortest edge already equals the
     // source edge while the unrounded longest-edge cap is slightly smaller.
@@ -113,6 +119,118 @@ pub(super) fn restore_eomt_mask_logits(
         restored.extend(resize_f32_image_bilinear(&cropped, crop_size, target_size)?);
     }
     Ok(restored)
+}
+
+/// Compose window scores, average overlapping pixels and restore original sizes.
+#[allow(
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    reason = "Keep the upstream window score composition and reconstruction together"
+)]
+pub(super) fn post_process_eomt_semantic_windows(
+    class_logits: &[f32],
+    mask_logits: &[f32],
+    num_queries: usize,
+    num_labels_with_background: usize,
+    mask_size: ImageSize,
+    canvas_size: ImageSize,
+    target_sizes: &[ImageSize],
+    offsets: &[usize],
+    longest_edge: Option<usize>,
+) -> Result<Vec<SemanticSegmentationPrediction>, TransformError> {
+    validate_len(offsets.len(), offsets.len() / 3 * 3)?;
+    if num_labels_with_background < 2 {
+        return Err(TransformError::InvalidClassCount(
+            num_labels_with_background,
+        ));
+    }
+    let batch = offsets.len() / 3;
+    let class_stride = checked_mul(num_queries, num_labels_with_background)?;
+    let mask_stride = checked_mul(num_queries, pixels(mask_size)?)?;
+    validate_len(class_logits.len(), checked_mul(batch, class_stride)?)?;
+    validate_len(mask_logits.len(), checked_mul(batch, mask_stride)?)?;
+    let labels = num_labels_with_background - 1;
+    let canvas_pixels = pixels(canvas_size)?;
+    let mut outputs = Vec::with_capacity(target_sizes.len());
+    for (image_index, target) in target_sizes.iter().copied().enumerate() {
+        let resized = crate::transforms::shortest_edge_resize_size_with_raw_cap(
+            target,
+            canvas_size.height,
+            longest_edge,
+            0,
+        )?;
+        let mut crops = Vec::new();
+        let mut predictions = Vec::new();
+        for (window, offset) in offsets.chunks_exact(3).enumerate() {
+            if offset[0] >= target_sizes.len() {
+                return Err(TransformError::ImageSizeOverflow);
+            }
+            if offset[0] != image_index {
+                continue;
+            }
+            let (start, end) = (offset[1], offset[2]);
+            let vertical = target.height > target.width;
+            let extent = if vertical {
+                resized.height
+            } else {
+                resized.width
+            };
+            if start >= extent || end <= start {
+                return Err(TransformError::ImageSizeOverflow);
+            }
+            let height = if vertical {
+                (end.min(extent) - start).min(canvas_size.height)
+            } else {
+                resized.height.min(canvas_size.height)
+            };
+            let width = if vertical {
+                resized.width.min(canvas_size.width)
+            } else {
+                (end.min(extent) - start).min(canvas_size.width)
+            };
+            let crop = if vertical {
+                crate::transforms::ImageCropBox::new(0, start, width, start + height)
+            } else {
+                crate::transforms::ImageCropBox::new(start, 0, start + width, height)
+            };
+            let masks = resize_mask_planes_bilinear(
+                &mask_logits[window * mask_stride..(window + 1) * mask_stride],
+                num_queries,
+                mask_size,
+                canvas_size,
+            )?;
+            let prediction = post_process_semantic_segmentation(
+                &class_logits[window * class_stride..(window + 1) * class_stride],
+                &masks,
+                num_queries,
+                num_labels_with_background,
+                canvas_size,
+                None,
+            )?;
+            let mut scores = Vec::with_capacity(checked_mul(labels, checked_mul(height, width)?)?);
+            for label in 0..labels {
+                for row in 0..height {
+                    let source = label * canvas_pixels + row * canvas_size.width;
+                    scores.extend_from_slice(&prediction.scores[source..source + width]);
+                }
+            }
+            crops.push(crop);
+            predictions.push(SemanticSegmentationPrediction {
+                size: ImageSize::new(height, width)?,
+                num_labels: labels,
+                class_ids: Vec::new(),
+                scores,
+            });
+        }
+        let plan = crate::processors::OverlappingImagePlan::from_crops(
+            target,
+            resized,
+            canvas_size.height,
+            crops,
+        )?;
+        outputs.push(plan.merge_semantic_predictions(&predictions)?);
+    }
+    Ok(outputs)
 }
 
 pub(super) fn post_process_maskformer_instance(
@@ -444,40 +562,6 @@ fn resize_binary_mask_nearest(
         }
     }
     Ok(resized)
-}
-
-fn eomt_aspect_resize_size(
-    original_size: ImageSize,
-    canvas_size: ImageSize,
-) -> Result<ImageSize, TransformError> {
-    let source_shortest = original_size.height.min(original_size.width) as f64;
-    let source_longest = original_size.height.max(original_size.width) as f64;
-    let requested_shortest = canvas_size.height as f64;
-    let raw_shortest = (source_longest / source_shortest * requested_shortest
-        > canvas_size.width as f64)
-        .then(|| canvas_size.width as f64 * source_shortest / source_longest);
-    let shortest =
-        raw_shortest.map_or(canvas_size.height, |value| value.round_ties_even() as usize);
-
-    let already_at_shortest_edge = (original_size.height <= original_size.width
-        && original_size.height == shortest)
-        || (original_size.width <= original_size.height && original_size.width == shortest);
-    let (height, width) = if already_at_shortest_edge {
-        (original_size.height, original_size.width)
-    } else if original_size.width < original_size.height {
-        let height = raw_shortest.map_or_else(
-            || shortest as f64 * original_size.height as f64 / original_size.width as f64,
-            |raw| raw * original_size.height as f64 / original_size.width as f64,
-        );
-        (height as usize, shortest)
-    } else {
-        let width = raw_shortest.map_or_else(
-            || shortest as f64 * original_size.width as f64 / original_size.height as f64,
-            |raw| raw * original_size.width as f64 / original_size.height as f64,
-        );
-        (shortest, width as usize)
-    };
-    ImageSize::new(height, width)
 }
 
 fn validate_query_mask_inputs(
