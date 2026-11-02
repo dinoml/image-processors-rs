@@ -1,6 +1,7 @@
 //! Detection annotation and segmentation transforms.
 
 use super::*;
+use crate::tensor::DType;
 use std::collections::BTreeSet;
 
 /// Absolute bounding box in corner format `(x_min, y_min, x_max, y_max)`.
@@ -701,28 +702,116 @@ pub fn post_process_sigmoid_top_k_object_detection(
     score_threshold: f32,
     top_k: usize,
 ) -> Result<Vec<ObjectDetectionPrediction>, TransformError> {
+    post_process_sigmoid_top_k_object_detection_with_options(
+        logits,
+        pred_boxes,
+        num_labels,
+        target_size,
+        SigmoidTopKDetectionOptions {
+            score_threshold,
+            top_k,
+            precision: DType::F32,
+            box_scaling: DetectionBoxScaling::ScaleCenterThenConvert,
+        },
+    )
+}
+
+/// Arithmetic order for normalized center boxes and image-size scaling.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DetectionBoxScaling {
+    /// Scale the center and dimensions, then convert to corners (DETR convention).
+    ScaleCenterThenConvert,
+    /// Convert normalized boxes to corners, then scale (OmDet convention).
+    ConvertThenScale,
+}
+
+/// Score selection and tensor arithmetic for flattened query/class ranking.
+#[derive(Clone, Copy, Debug)]
+pub struct SigmoidTopKDetectionOptions {
+    /// Keep scores strictly above this threshold, compared in tensor precision.
+    pub score_threshold: f32,
+    /// Number of flattened query/class pairs retained before thresholding.
+    pub top_k: usize,
+    /// Precision of decoded tensor values and every output arithmetic boundary.
+    pub precision: DType,
+    /// Ordering of center-box conversion and target-size scaling.
+    pub box_scaling: DetectionBoxScaling,
+}
+
+/// Restore sigmoid-ranked detections with explicit tensor precision and box order.
+///
+/// Inputs are decoded values from tensors in `precision`. Sigmoid, threshold
+/// comparison, half-dimensions, corner conversion and scaling retain that tensor's
+/// rounding boundaries. Returned FP32 values represent the resulting stored values.
+/// Existing DETR callers retain their FP32 scale-before-conversion behavior through
+/// [`post_process_sigmoid_top_k_object_detection`].
+///
+/// # Errors
+/// Reports invalid dimensions, logits, boxes, thresholds, unsupported precision,
+/// or nonfinite geometry after rounding.
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "Image dimensions participate in upstream FP32 tensor arithmetic"
+)]
+pub fn post_process_sigmoid_top_k_object_detection_with_options(
+    logits: &[f32],
+    pred_boxes: &[DetectionCenterBox],
+    num_labels: usize,
+    target_size: ImageSize,
+    options: SigmoidTopKDetectionOptions,
+) -> Result<Vec<ObjectDetectionPrediction>, TransformError> {
+    validate_detection_precision(options.precision)?;
     validate_detection_postprocess_inputs(
         logits,
         pred_boxes,
         num_labels,
         target_size,
-        score_threshold,
+        options.score_threshold,
     )?;
 
-    let ranked = rank_sigmoid_query_classes(logits, top_k)?;
+    let rounded = |value| round_detection_value(value, options.precision);
+    let ranked = rank_sigmoid_query_classes(logits, options.top_k, options.precision)?;
+    let width = rounded(target_size.width as f32);
+    let height = rounded(target_size.height as f32);
 
     let mut predictions = Vec::with_capacity(ranked.len());
     for (score, flat_index) in ranked {
-        if score <= score_threshold {
+        if score <= rounded(options.score_threshold) {
             continue;
         }
         let query_index = flat_index / num_labels;
         let class_label = flat_index % num_labels;
+        let bbox = pred_boxes[query_index];
+        let (center_x, center_y, half_width, half_height, scale_x, scale_y) =
+            match options.box_scaling {
+                DetectionBoxScaling::ScaleCenterThenConvert => (
+                    rounded(bbox.center_x * width),
+                    rounded(bbox.center_y * height),
+                    rounded(rounded(bbox.width * width) * 0.5),
+                    rounded(rounded(bbox.height * height) * 0.5),
+                    1.0,
+                    1.0,
+                ),
+                DetectionBoxScaling::ConvertThenScale => (
+                    bbox.center_x,
+                    bbox.center_y,
+                    rounded(bbox.width * 0.5),
+                    rounded(bbox.height * 0.5),
+                    width,
+                    height,
+                ),
+            };
+        let bbox = DetectionBoundingBox::new(
+            rounded(rounded(center_x - half_width) * scale_x),
+            rounded(rounded(center_y - half_height) * scale_y),
+            rounded(rounded(center_x + half_width) * scale_x),
+            rounded(rounded(center_y + half_height) * scale_y),
+        )?;
         predictions.push(ObjectDetectionPrediction {
             score,
             class_label: i64::try_from(class_label)
                 .map_err(|_| TransformError::ImageSizeOverflow)?,
-            bbox: pred_boxes[query_index].to_absolute_corners(target_size)?,
+            bbox,
         });
     }
     Ok(predictions)
@@ -770,7 +859,11 @@ pub fn post_process_sigmoid_top_k_instance_segmentation(
     let size = options.target_size.unwrap_or(mask_size);
     validate_size(size)?;
     let output_pixels = checked_pixels(size)?;
-    let ranked = rank_sigmoid_query_classes(class_logits, options.top_k.unwrap_or(num_queries))?;
+    let ranked = rank_sigmoid_query_classes(
+        class_logits,
+        options.top_k.unwrap_or(num_queries),
+        DType::F32,
+    )?;
     let candidates = ranked
         .into_iter()
         .filter(|(score, _)| *score > options.score_threshold)
@@ -854,12 +947,18 @@ pub fn post_process_sigmoid_top_k_instance_segmentation(
 fn rank_sigmoid_query_classes(
     logits: &[f32],
     top_k: usize,
+    precision: DType,
 ) -> Result<Vec<(f32, usize)>, TransformError> {
     let mut ranked = logits
         .iter()
         .copied()
         .enumerate()
-        .map(|(index, logit)| Ok((sigmoid_score(logit)?, index)))
+        .map(|(index, logit)| {
+            Ok((
+                round_detection_value(sigmoid_score(logit)?, precision),
+                index,
+            ))
+        })
         .collect::<Result<Vec<_>, TransformError>>()?;
     ranked.sort_unstable_by(|left, right| {
         right
@@ -869,6 +968,22 @@ fn rank_sigmoid_query_classes(
     });
     ranked.truncate(top_k.min(ranked.len()));
     Ok(ranked)
+}
+
+fn validate_detection_precision(precision: DType) -> Result<(), TransformError> {
+    if matches!(precision, DType::F32 | DType::F16 | DType::BF16) {
+        Ok(())
+    } else {
+        Err(TransformError::UnsupportedDetectionPrecision(precision))
+    }
+}
+
+fn round_detection_value(value: f32, precision: DType) -> f32 {
+    match precision {
+        DType::F16 => half::f16::from_f32(value).to_f32(),
+        DType::BF16 => half::bf16::from_f32(value).to_f32(),
+        _ => value,
+    }
 }
 
 fn validate_detection_postprocess_inputs(
@@ -1283,6 +1398,103 @@ pub fn non_max_suppression(
         keep.push(candidate);
     }
 
+    Ok(keep)
+}
+
+/// Class-aware NMS using per-class groups or torchvision's coordinate-offset policy.
+///
+/// `coordinate_offsets` selects the small-input torchvision batched-NMS path;
+/// offsets and translated boxes retain the supplied tensor precision. Otherwise
+/// each class uses the existing NMS owner directly. If translating boxes would
+/// overflow the selected precision, groups preserve class-aware NMS without
+/// manufacturing nonfinite coordinates. Output indices refer to
+/// `predictions` and are globally sorted by descending score. Callers choose the
+/// strategy from their source's CPU/GPU dispatch boundary.
+///
+/// # Errors
+/// Rejects invalid precision, negative class labels, invalid thresholds, nonfinite
+/// geometry, or any error reported by [`non_max_suppression`].
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "Match class-ID conversion to upstream floating tensors"
+)]
+pub fn non_max_suppression_by_class(
+    predictions: &[ObjectDetectionPrediction],
+    iou_threshold: f32,
+    precision: DType,
+    coordinate_offsets: bool,
+) -> Result<Vec<usize>, TransformError> {
+    validate_detection_precision(precision)?;
+    validate_iou_threshold(iou_threshold)?;
+    if predictions.iter().any(|value| value.class_label < 0) {
+        return Err(TransformError::InvalidClassCount(0));
+    }
+    let scores = predictions
+        .iter()
+        .map(|value| value.score)
+        .collect::<Vec<_>>();
+    if coordinate_offsets {
+        let rounded = |value| round_detection_value(value, precision);
+        let maximum = predictions
+            .iter()
+            .flat_map(|value| {
+                [
+                    value.bbox.x_min,
+                    value.bbox.y_min,
+                    value.bbox.x_max,
+                    value.bbox.y_max,
+                ]
+            })
+            .reduce(f32::max)
+            .unwrap_or(0.0);
+        let step = rounded(maximum + 1.0);
+        let boxes = predictions
+            .iter()
+            .map(|value| {
+                let offset = rounded(rounded(value.class_label as f32) * step);
+                DetectionBoundingBox::new(
+                    rounded(value.bbox.x_min + offset),
+                    rounded(value.bbox.y_min + offset),
+                    rounded(value.bbox.x_max + offset),
+                    rounded(value.bbox.y_max + offset),
+                )
+            })
+            .collect::<Result<Vec<_>, _>>();
+        if let Ok(boxes) = boxes {
+            return non_max_suppression(&boxes, &scores, iou_threshold);
+        }
+    }
+    let classes = predictions
+        .iter()
+        .map(|value| value.class_label)
+        .collect::<BTreeSet<_>>();
+    let mut keep = Vec::new();
+    for class in classes {
+        let indices = predictions
+            .iter()
+            .enumerate()
+            .filter_map(|(index, value)| (value.class_label == class).then_some(index))
+            .collect::<Vec<_>>();
+        let boxes = indices
+            .iter()
+            .map(|&index| predictions[index].bbox)
+            .collect::<Vec<_>>();
+        let scores = indices
+            .iter()
+            .map(|&index| scores[index])
+            .collect::<Vec<_>>();
+        keep.extend(
+            non_max_suppression(&boxes, &scores, iou_threshold)?
+                .into_iter()
+                .map(|index| indices[index]),
+        );
+    }
+    keep.sort_unstable_by(|&left, &right| {
+        predictions[right]
+            .score
+            .total_cmp(&predictions[left].score)
+            .then_with(|| left.cmp(&right))
+    });
     Ok(keep)
 }
 
