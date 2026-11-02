@@ -1,0 +1,566 @@
+//! Sapiens2 FP32 pose crops and UDP DARK heatmap decoding.
+//!
+//! Source: Transformers models/sapiens2/image_processing_sapiens2.py. Crop
+//! sampling retains floating pixels and chooses bilinear when downscaling and
+//! bicubic when upscaling. It does not use VitPose's integer-quantized affine path.
+
+use image_resize_kernels::{
+    gaussian_blur_zero_f32_planes, grid_sample_f32_planes, GridInterpolation,
+};
+use thiserror::Error;
+
+use super::TaskVisionPoseBox;
+use crate::tensor::{Layout, Tensor, TensorData, TensorError};
+use crate::transforms::{
+    centered_padding, convert_frame_pixel_format, pad_frame, resize_f32_bilinear_interleaved,
+    resize_frame_with_decision, ImageSize, ResizeMode, TransformError,
+};
+use crate::{ImageFrame, ImageProcessor, ImageProcessorConfig, ImageProcessorError};
+
+/// Errors from crop geometry, heatmap decoding or shared preprocessing.
+#[derive(Debug, Error)]
+pub enum Sapiens2ProcessorError {
+    /// Invalid tensor, geometry or decoder settings.
+    #[error("invalid Sapiens2 processor input: {0}")]
+    Invalid(&'static str),
+    /// Shared preprocessing failed.
+    #[error(transparent)]
+    Image(#[from] ImageProcessorError),
+    /// Shared grid sampling failed.
+    #[error(transparent)]
+    Sampling(#[from] image_resize_kernels::ResizeError),
+    /// Tensor construction failed.
+    #[error(transparent)]
+    Tensor(#[from] TensorError),
+    /// Image geometry was invalid.
+    #[error(transparent)]
+    Geometry(#[from] TransformError),
+    /// Shared center cropping failed.
+    #[error(transparent)]
+    Preset(#[from] super::encoder_presets::PresetProcessorError),
+}
+
+/// A decoded person with confidence-filtered keypoints in image coordinates.
+#[derive(Debug, Clone)]
+pub struct Sapiens2Pose {
+    /// XY positions, optionally rescaled to a requested output image size.
+    pub keypoints: Vec<[f32; 2]>,
+    /// Unblurred heatmap peak confidences.
+    pub scores: Vec<f32>,
+    /// Original keypoint channel identifiers.
+    pub labels: Vec<usize>,
+    /// XYXY bounding box in the same coordinate system as the keypoints.
+    pub bbox: [f32; 4],
+}
+
+/// Configured whole-image Sapiens2 preprocessing, including optional symmetric padding.
+pub struct Sapiens2ImageProcessor {
+    config: ImageProcessorConfig,
+    processor: ImageProcessor,
+    size: ImageSize,
+    do_pad: bool,
+    center_crop: Option<ImageSize>,
+}
+
+impl Sapiens2ImageProcessor {
+    /// Create a processor from the selected checkpoint settings.
+    ///
+    /// # Errors
+    /// Reports invalid geometry or shared tensor conversion settings.
+    pub fn new(
+        config: ImageProcessorConfig,
+        size: ImageSize,
+        do_pad: bool,
+        center_crop: Option<ImageSize>,
+    ) -> Result<Self, Sapiens2ProcessorError> {
+        ImageSize::new(size.height, size.width)?;
+        if let Some(crop) = center_crop {
+            ImageSize::new(crop.height, crop.width)?;
+        }
+        let mut tensor_config = config.clone();
+        tensor_config.do_resize = false;
+        tensor_config.pixel_format = Some(crate::PixelFormat::Rgb8);
+        tensor_config.output_layout = Layout::NCHW;
+        Ok(Self {
+            config,
+            processor: ImageProcessor::new(tensor_config)?,
+            size,
+            do_pad,
+            center_crop,
+        })
+    }
+
+    /// Resize, optionally pad/crop, rescale and normalize decoded images.
+    ///
+    /// # Errors
+    /// Reports incompatible image shapes or shared preprocessing failures.
+    pub fn preprocess(&self, images: &[ImageFrame]) -> Result<Tensor, Sapiens2ProcessorError> {
+        let mut prepared = Vec::with_capacity(images.len());
+        for image in images {
+            let mut image = convert_frame_pixel_format(image, crate::PixelFormat::Rgb8)?;
+            if self.config.do_resize {
+                let target = if self.do_pad {
+                    sapiens2_resize_size(ImageSize::new(image.height(), image.width())?, self.size)?
+                } else {
+                    self.size
+                };
+                image = resize_frame_with_decision(
+                    &image,
+                    target,
+                    self.config.resize_decision(),
+                    ResizeMode::Default,
+                )?;
+                if self.do_pad {
+                    image = pad_frame(&image, centered_padding(target, self.size)?, &[0])?;
+                }
+            }
+            if let Some(crop) = self.center_crop {
+                image = super::encoder_presets::center_crop_with_padding_rounding(
+                    &image, crop, true, false,
+                )?;
+            }
+            prepared.push(image);
+        }
+        Ok(self.processor.preprocess_images(&prepared)?)
+    }
+}
+
+/// Sapiens2 crop processor using shared RGB conversion and grid kernels.
+pub struct Sapiens2PoseProcessor {
+    config: ImageProcessorConfig,
+    source_processor: ImageProcessor,
+    size: ImageSize,
+}
+
+impl Sapiens2PoseProcessor {
+    /// Create a processor from checkpoint-selected scaling and normalization.
+    /// The target must have two or more pixels along each axis (UDP endpoints).
+    ///
+    /// # Errors
+    /// Reports invalid sizes or shared normalization configuration.
+    pub fn new(
+        config: ImageProcessorConfig,
+        size: ImageSize,
+    ) -> Result<Self, Sapiens2ProcessorError> {
+        if size.height < 2 || size.width < 2 {
+            return Err(Sapiens2ProcessorError::Invalid(
+                "crop size must exceed one pixel",
+            ));
+        }
+        // Validate the selected normalization in its existing owner.
+        ImageProcessor::new(config.clone())?;
+        if config.do_normalize
+            && (![1, 3].contains(&config.image_mean.len())
+                || ![1, 3].contains(&config.image_std.len()))
+        {
+            return Err(Sapiens2ProcessorError::Invalid(
+                "RGB normalization requires one or three statistics",
+            ));
+        }
+        let mut source = config.clone();
+        source.do_resize = false;
+        source.do_normalize = false;
+        source.do_rescale = false;
+        source.do_binarize = false;
+        source.pixel_format = Some(crate::PixelFormat::Rgb8);
+        source.output_layout = Layout::NCHW;
+        Ok(Self {
+            config,
+            source_processor: ImageProcessor::new(source)?,
+            size,
+        })
+    }
+
+    /// Crop persons from one decoded image into normalized NCHW FP32 pixels.
+    ///
+    /// # Errors
+    /// Reports empty boxes, degenerate images, overflow or preprocessing failures.
+    pub fn preprocess(
+        &self,
+        image: &ImageFrame,
+        boxes: &[TaskVisionPoseBox],
+        flip: bool,
+    ) -> Result<Tensor, Sapiens2ProcessorError> {
+        if boxes.is_empty() || image.width() < 2 || image.height() < 2 {
+            return Err(Sapiens2ProcessorError::Invalid(
+                "nonempty boxes and a nondegenerate image are required",
+            ));
+        }
+        let source = self.source_processor.preprocess_image(image)?;
+        let TensorData::F32(values) = source.data() else {
+            return Err(Sapiens2ProcessorError::Invalid(
+                "source pixels must be FP32",
+            ));
+        };
+        let target_pixels = self
+            .size
+            .height
+            .checked_mul(self.size.width)
+            .ok_or(Sapiens2ProcessorError::Invalid("crop size overflow"))?;
+        let length = boxes
+            .len()
+            .checked_mul(3)
+            .and_then(|n| n.checked_mul(target_pixels))
+            .ok_or(Sapiens2ProcessorError::Invalid("crop batch overflow"))?;
+        let mut output = Vec::with_capacity(length);
+        for &bbox in boxes {
+            let (center, scale) = crop_geometry(bbox, self.size);
+            let sx = (self.size.width - 1) as f32 / scale[0];
+            let sy = (self.size.height - 1) as f32 / scale[1];
+            let mut grid = Vec::with_capacity(target_pixels);
+            for y in 0..self.size.height {
+                for x in 0..self.size.width {
+                    let ix = x as f32 / sx + center[0] - 0.5 * scale[0];
+                    let iy = y as f32 / sy + center[1] - 0.5 * scale[1];
+                    grid.push([
+                        2.0 * ix / (image.width() - 1) as f32 - 1.0,
+                        2.0 * iy / (image.height() - 1) as f32 - 1.0,
+                    ]);
+                }
+            }
+            let interpolation = if sx.min(sy) < 1.0 {
+                GridInterpolation::Bilinear
+            } else {
+                GridInterpolation::Bicubic
+            };
+            let mut crop = grid_sample_f32_planes(
+                values,
+                image_resize_kernels::ImageSize::new(image.height(), image.width())?,
+                3,
+                &grid,
+                image_resize_kernels::ImageSize::new(self.size.height, self.size.width)?,
+                interpolation,
+            )?;
+            for channel in 0..3 {
+                let mean = if self.config.do_normalize {
+                    self.config.image_mean[if self.config.image_mean.len() == 1 {
+                        0
+                    } else {
+                        channel
+                    }]
+                } else {
+                    0.0
+                };
+                let std = if self.config.do_normalize {
+                    self.config.image_std[if self.config.image_std.len() == 1 {
+                        0
+                    } else {
+                        channel
+                    }]
+                } else {
+                    1.0
+                };
+                for value in &mut crop[channel * target_pixels..(channel + 1) * target_pixels] {
+                    if self.config.do_rescale {
+                        *value *= self.config.rescale_factor;
+                    }
+                    if self.config.do_normalize {
+                        *value = (*value - mean) / std;
+                    }
+                }
+            }
+            output.extend(crop);
+        }
+        if flip {
+            for row in output.chunks_exact_mut(self.size.width) {
+                row.reverse();
+            }
+        }
+        Ok(Tensor::new(
+            TensorData::F32(output),
+            vec![boxes.len(), 3, self.size.height, self.size.width],
+            Layout::NCHW,
+        )?)
+    }
+
+    /// Decode NCHW heatmaps with FP32 UDP DARK refinement and source remapping.
+    /// `flipped` supplies raw flipped-input predictions and the mirrored channel pairs.
+    ///
+    /// # Errors
+    /// Reports inconsistent shapes, invalid kernel size or output scaling settings.
+    #[allow(clippy::too_many_arguments)] // Keep the independent decode inputs explicit.
+    pub fn postprocess(
+        &self,
+        heatmaps: &Tensor,
+        flipped: Option<(&Tensor, &[[usize; 2]])>,
+        boxes: &[TaskVisionPoseBox],
+        kernel: usize,
+        threshold: Option<f32>,
+        source_size: Option<ImageSize>,
+        target_size: Option<ImageSize>,
+    ) -> Result<Vec<Sapiens2Pose>, Sapiens2ProcessorError> {
+        if heatmaps.shape().len() != 4
+            || heatmaps.shape()[0] != boxes.len()
+            || heatmaps.layout() != Layout::NCHW
+        {
+            return Err(Sapiens2ProcessorError::Invalid(
+                "heatmaps must have shape [persons,keypoints,height,width]",
+            ));
+        }
+        if kernel <= 1 || kernel.is_multiple_of(2) || kernel > isize::MAX as usize {
+            return Err(Sapiens2ProcessorError::Invalid(
+                "blur kernel must be odd and greater than one",
+            ));
+        }
+        if target_size.is_some() && source_size.is_none() {
+            return Err(Sapiens2ProcessorError::Invalid(
+                "target scaling requires source size",
+            ));
+        }
+        let TensorData::F32(original) = heatmaps.data() else {
+            return Err(Sapiens2ProcessorError::Invalid(
+                "DARK heatmaps must be FP32",
+            ));
+        };
+        let mut maps = original.clone();
+        if let Some((flipped, pairs)) = flipped {
+            let TensorData::F32(values) = flipped.data() else {
+                return Err(Sapiens2ProcessorError::Invalid(
+                    "flipped heatmaps must be FP32",
+                ));
+            };
+            if flipped.shape() != heatmaps.shape() || flipped.layout() != Layout::NCHW {
+                return Err(Sapiens2ProcessorError::Invalid(
+                    "flipped heatmaps differ in shape",
+                ));
+            }
+            let shape = heatmaps.shape();
+            let mut channels = (0..shape[1]).collect::<Vec<_>>();
+            for &[left, right] in pairs {
+                if left >= shape[1] || right >= shape[1] {
+                    return Err(Sapiens2ProcessorError::Invalid(
+                        "flip pair exceeds heatmap channels",
+                    ));
+                }
+                channels[left] = right;
+                channels[right] = left;
+            }
+            for person in 0..shape[0] {
+                for (channel, &source) in channels.iter().enumerate() {
+                    for y in 0..shape[2] {
+                        for x in 0..shape[3] {
+                            let index =
+                                ((person * shape[1] + channel) * shape[2] + y) * shape[3] + x;
+                            let source = ((person * shape[1] + source) * shape[2] + y) * shape[3]
+                                + shape[3]
+                                - 1
+                                - x;
+                            maps[index] = (maps[index] + values[source]) / 2.0;
+                        }
+                    }
+                }
+            }
+        }
+        let shape = heatmaps.shape();
+        let (channels, height, width) = (shape[1], shape[2], shape[3]);
+        if height < 2 || width < 2 || channels == 0 {
+            return Err(Sapiens2ProcessorError::Invalid(
+                "heatmap dimensions must exceed one",
+            ));
+        }
+        let sigma = (0.3 * ((kernel - 1) as f64 * 0.5 - 1.0) + 0.8) as f32;
+        let mut blurred = gaussian_blur_zero_f32_planes(
+            &maps,
+            image_resize_kernels::ImageSize::new(height, width)?,
+            boxes.len() * channels,
+            kernel,
+            sigma,
+        )?;
+        for (source, destination) in maps
+            .chunks_exact(height * width)
+            .zip(blurred.chunks_exact_mut(height * width))
+        {
+            let maximum = source.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+            let blurred_max = destination
+                .iter()
+                .copied()
+                .fold(f32::NEG_INFINITY, f32::max);
+            let gain = if blurred_max > 0.0 {
+                maximum / blurred_max
+            } else {
+                1.0
+            };
+            for value in destination {
+                *value = (*value * gain).clamp(1e-3, 50.0).ln();
+            }
+        }
+        let mut results = Vec::with_capacity(boxes.len());
+        for (person, &bbox) in boxes.iter().enumerate() {
+            let (center, scale) = crop_geometry(bbox, self.size);
+            let output_scale = match (source_size, target_size) {
+                (Some(source), Some(target)) => [
+                    target.width as f32 / source.width as f32,
+                    target.height as f32 / source.height as f32,
+                ],
+                _ => [1.0, 1.0],
+            };
+            let mut result = Sapiens2Pose {
+                keypoints: Vec::new(),
+                scores: Vec::new(),
+                labels: Vec::new(),
+                bbox: [
+                    bbox.top_left_x() * output_scale[0],
+                    bbox.top_left_y() * output_scale[1],
+                    (bbox.top_left_x() + bbox.width()) * output_scale[0],
+                    (bbox.top_left_y() + bbox.height()) * output_scale[1],
+                ],
+            };
+            for channel in 0..channels {
+                let plane = &maps[(person * channels + channel) * height * width
+                    ..(person * channels + channel + 1) * height * width];
+                let (mut peak, mut score) = (0, plane[0]);
+                for (index, &value) in plane.iter().enumerate().skip(1) {
+                    if value > score {
+                        peak = index;
+                        score = value;
+                    }
+                }
+                if threshold.is_some_and(|threshold| {
+                    score.partial_cmp(&threshold) != Some(std::cmp::Ordering::Greater)
+                }) {
+                    continue;
+                }
+                let (x, y) = if score > 0.0 {
+                    ((peak % width) as isize, (peak / width) as isize)
+                } else {
+                    (-1, -1)
+                };
+                // Replicate padding permits the -1 sentinel and border derivatives.
+                let at = |dy: isize, dx: isize| {
+                    // The upstream flattened padded tensor lets a -1 sentinel's
+                    // negative neighbor wrap into the preceding padded row.
+                    let padded_width = width + 2;
+                    let padded_plane = (height + 2) * padded_width;
+                    let index = ((person * channels + channel) * padded_plane) as isize
+                        + (x + 1)
+                        + (y + 1) * padded_width as isize
+                        + dx
+                        + dy * padded_width as isize;
+                    let padded_len = boxes.len() * channels * padded_plane;
+                    let index = index.rem_euclid(padded_len as isize) as usize;
+                    let plane = index / padded_plane;
+                    let within = index % padded_plane;
+                    let row = (within / padded_width).saturating_sub(1).min(height - 1);
+                    let column = (within % padded_width).saturating_sub(1).min(width - 1);
+                    blurred[(plane * height + row) * width + column]
+                };
+                let c = at(0, 0);
+                let gx = 0.5 * (at(0, 1) - at(0, -1));
+                let gy = 0.5 * (at(1, 0) - at(-1, 0));
+                let xx = at(0, 1) - 2.0 * c + at(0, -1) + f32::EPSILON;
+                let yy = at(1, 0) - 2.0 * c + at(-1, 0) + f32::EPSILON;
+                let xy = 0.5
+                    * (at(1, 1) - at(0, 1) - at(1, 0) + c + c - at(0, -1) - at(-1, 0) + at(-1, -1));
+                let determinant = xx * yy - xy * xy;
+                let px = x as f32 - (yy * gx - xy * gy) / determinant;
+                let py = y as f32 - (-xy * gx + xx * gy) / determinant;
+                result.keypoints.push([
+                    (px / (width - 1) as f32 * scale[0] + center[0] - 0.5 * scale[0])
+                        * output_scale[0],
+                    (py / (height - 1) as f32 * scale[1] + center[1] - 0.5 * scale[1])
+                        * output_scale[1],
+                ]);
+                result.scores.push(score);
+                result.labels.push(channel);
+            }
+            results.push(result);
+        }
+        Ok(results)
+    }
+}
+
+fn crop_geometry(bbox: TaskVisionPoseBox, size: ImageSize) -> ([f32; 2], [f32; 2]) {
+    let center = [
+        bbox.top_left_x() + bbox.width() / 2.0,
+        bbox.top_left_y() + bbox.height() / 2.0,
+    ];
+    let width = bbox.width() * 1.25;
+    let height = bbox.height() * 1.25;
+    let aspect = size.width as f32 / size.height as f32;
+    let scale = if width > height * aspect {
+        [width, width / aspect]
+    } else {
+        [height * aspect, height]
+    };
+    (center, scale)
+}
+
+/// Aspect-preserving resize with both enlargement and reduction, using the
+/// FP64 scale-then-truncate policy of Transformers get_image_size_for_max_height_width.
+///
+/// # Errors
+/// Returns an error for invalid dimensions or a result smaller than one pixel.
+pub fn sapiens2_resize_size(
+    source: ImageSize,
+    target: ImageSize,
+) -> Result<ImageSize, TransformError> {
+    ImageSize::new(source.height, source.width)?;
+    ImageSize::new(target.height, target.width)?;
+    let scale = (target.height as f64 / source.height as f64)
+        .min(target.width as f64 / source.width as f64);
+    ImageSize::new(
+        (source.height as f64 * scale) as usize,
+        (source.width as f64 * scale) as usize,
+    )
+}
+
+/// Composite a premultiplied FP32 RGB foreground and alpha over a decoded background.
+/// Backgrounds are converted to unit floating pixels before non-antialiased
+/// bilinear resize. Output quantization follows Torchvision's scale=true uint8 conversion.
+///
+/// # Errors
+/// Reports inconsistent CHW tensor shapes or shared conversion/resize failures.
+pub fn composite_sapiens2_matting(
+    foreground: &Tensor,
+    alpha: &Tensor,
+    background: &ImageFrame,
+) -> Result<Tensor, Sapiens2ProcessorError> {
+    if foreground.layout() != Layout::CHW
+        || alpha.layout() != Layout::CHW
+        || foreground.shape().len() != 3
+        || alpha.shape().len() != 3
+        || foreground.shape()[0] != 3
+        || alpha.shape()[0] != 1
+        || foreground.shape()[1..] != alpha.shape()[1..]
+    {
+        return Err(Sapiens2ProcessorError::Invalid(
+            "matting requires matching RGB/alpha CHW maps",
+        ));
+    }
+    let (TensorData::F32(foreground_values), TensorData::F32(alpha_values)) =
+        (foreground.data(), alpha.data())
+    else {
+        return Err(Sapiens2ProcessorError::Invalid("matting maps must be FP32"));
+    };
+    let background =
+        ImageProcessor::new(ImageProcessorConfig::default())?.preprocess_image(background)?;
+    let TensorData::F32(background_values) = background.data() else {
+        return Err(Sapiens2ProcessorError::Invalid(
+            "background must convert to FP32",
+        ));
+    };
+    let source = ImageSize::new(background.height(), background.width())?;
+    let target = ImageSize::new(foreground.height(), foreground.width())?;
+    let mut resized = Vec::new();
+    for plane in background_values.chunks_exact(source.height * source.width) {
+        resized.extend(resize_f32_bilinear_interleaved(
+            plane, source, 1, target, false,
+        )?);
+    }
+    let pixels = target.height * target.width;
+    let values = foreground_values
+        .iter()
+        .zip(resized)
+        .enumerate()
+        .map(|(index, (&foreground, background))| {
+            let value =
+                (foreground + (1.0 - alpha_values[index % pixels]) * background).clamp(0.0, 1.0);
+            (value * (256.0 - 1e-3)) as u8
+        })
+        .collect::<Vec<_>>();
+    Ok(Tensor::new(
+        TensorData::U8(values),
+        foreground.shape().to_vec(),
+        Layout::CHW,
+    )?)
+}
