@@ -27,14 +27,15 @@ pub use crate::transforms::{
     detection_box_iou, filter_generated_masks, generate_layered_crop_boxes, logc3_to_linear,
     mask_stability_score, non_max_suppression, normalized_point_grid, pad_crop_mask,
     post_process_binary_mask, post_process_generated_masks, post_process_instance_segmentation,
-    post_process_object_detection, post_process_panoptic_segmentation,
-    post_process_semantic_segmentation, post_process_sigmoid_best_object_detection,
-    post_process_sigmoid_top_k_object_detection, resize_padded_mask_logits, scale_detection_box,
-    scale_image_point, BinaryRleMask, CropGenerationOptions, DetectionBoundingBox,
-    DetectionCenterBox, FilteredMask, GeneratedMaskPrediction, ImagePoint, ImageSize,
-    LayeredCropBox, MaskFilterOptions, ObjectDetectionPrediction, SegmentationPostProcessOptions,
-    SegmentationPostProcessPrediction, SegmentationSegmentInfo, SemanticSegmentationPrediction,
-    TransformError,
+    post_process_object_detection, post_process_oneformer_instance_segmentation,
+    post_process_panoptic_segmentation, post_process_semantic_segmentation,
+    post_process_sigmoid_best_object_detection, post_process_sigmoid_top_k_object_detection,
+    resize_padded_mask_logits, scale_detection_box, scale_image_point, BinaryRleMask,
+    CropGenerationOptions, DetectionBoundingBox, DetectionCenterBox, FilteredMask,
+    GeneratedMaskPrediction, ImagePoint, ImageSize, LayeredCropBox, MaskFilterOptions,
+    ObjectDetectionPrediction, OneFormerInstanceOptions, OneFormerTask,
+    SegmentationPostProcessOptions, SegmentationPostProcessPrediction, SegmentationSegmentInfo,
+    SemanticSegmentationPrediction, TransformError,
 };
 
 mod multiclass;
@@ -555,11 +556,22 @@ fn execute_segmentation_descriptor(
                         )?
                     }
                     RecipeSegmentationStrategy::OneFormer => {
-                        return Err(RecipePostprocessError::ExternalMetadataRequired {
-                            strategy: "one_former",
-                            task: "instance_segmentation",
-                            metadata: "class_info_file and thing class metadata",
-                        });
+                        let metadata = context.oneformer_instance().ok_or(
+                            RecipePostprocessError::ExternalMetadataRequired {
+                                strategy: "one_former",
+                                task: "instance_segmentation",
+                                metadata: "class_info_file and thing class metadata",
+                            },
+                        )?;
+                        crate::transforms::post_process_oneformer_instance_segmentation(
+                            sample_classes,
+                            sample_masks,
+                            num_queries,
+                            num_labels_with_background,
+                            mask_size,
+                            metadata,
+                            options,
+                        )?
                     }
                 };
                 predictions.push(prediction);

@@ -5,6 +5,7 @@ use thiserror::Error;
 #[derive(Clone, Copy, Debug, Default)]
 pub struct RecipePostprocessContext<'a> {
     target_sizes: Option<&'a [ImageSize]>,
+    oneformer_instance: Option<OneFormerInstanceOptions<'a>>,
 }
 
 impl<'a> RecipePostprocessContext<'a> {
@@ -21,6 +22,17 @@ impl<'a> RecipePostprocessContext<'a> {
     /// Sets caller-provided target sizes for descriptors that request them.
     pub fn with_target_sizes(mut self, target_sizes: &'a [ImageSize]) -> Self {
         self.target_sizes = Some(target_sizes);
+        self
+    }
+
+    /// Returns optional OneFormer dataset and instance-task metadata.
+    pub fn oneformer_instance(&self) -> Option<OneFormerInstanceOptions<'a>> {
+        self.oneformer_instance
+    }
+
+    /// Supplies the dataset contract required by OneFormer instance recipes.
+    pub fn with_oneformer_instance(mut self, metadata: OneFormerInstanceOptions<'a>) -> Self {
+        self.oneformer_instance = Some(metadata);
         self
     }
 }

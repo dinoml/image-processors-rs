@@ -76,16 +76,18 @@ pub use postprocess::{
     post_process_binary_mask, post_process_coordinates, post_process_dense_map,
     post_process_depth_map, post_process_generated_masks, post_process_image_tensor,
     post_process_instance_segmentation, post_process_logc3_hdr_video_tensor,
-    post_process_object_detection, post_process_panoptic_segmentation, post_process_recipe_outputs,
+    post_process_object_detection, post_process_oneformer_instance_segmentation,
+    post_process_panoptic_segmentation, post_process_recipe_outputs,
     post_process_semantic_segmentation, post_process_video_tensor, resize_padded_mask_logits,
     scale_detection_box, scale_image_point, BinaryMaskPostprocessOutput, BinaryRleMask,
     CoordinatePoint, CoordinatePostprocessOutput, CropGenerationOptions, DenseMapPostprocessOutput,
     DepthMapPostprocessOutput, DetectionBoundingBox, DetectionCenterBox, FilteredMask,
     GeneratedMaskPrediction, ImagePoint, LayeredCropBox, MaskFilterOptions,
-    ObjectDetectionPrediction, OutputHookPostprocessOutput, RecipePostprocessContext,
-    RecipePostprocessError, RecipePostprocessOutput, SegmentationPostProcessOptions,
-    SegmentationPostProcessPrediction, SegmentationSegmentInfo, SemanticSegmentationPrediction,
-    TensorPostprocessError, TokenSequencePostprocessOutput,
+    ObjectDetectionPrediction, OneFormerInstanceOptions, OneFormerTask,
+    OutputHookPostprocessOutput, RecipePostprocessContext, RecipePostprocessError,
+    RecipePostprocessOutput, SegmentationPostProcessOptions, SegmentationPostProcessPrediction,
+    SegmentationSegmentInfo, SemanticSegmentationPrediction, TensorPostprocessError,
+    TokenSequencePostprocessOutput,
 };
 #[doc(inline)]
 pub use processors::pad_spatial_tensors;

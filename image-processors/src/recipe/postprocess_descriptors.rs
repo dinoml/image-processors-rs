@@ -143,10 +143,10 @@ pub enum RecipeSegmentationStrategy {
     MaskFormer,
     /// Mask2Former postprocessing through its fixed `384 x 384` mask canvas.
     Mask2Former,
-    /// OneFormer semantic and panoptic postprocessing.
+    /// OneFormer semantic, instance and panoptic postprocessing.
     ///
     /// OneFormer instance postprocessing additionally requires dataset class
-    /// metadata and is rejected by the generic recipe executor.
+    /// metadata supplied through `RecipePostprocessContext`.
     OneFormer,
     /// EOMT postprocessing through its configured intermediate mask canvas.
     Eomt {
