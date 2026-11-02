@@ -233,6 +233,50 @@ fn fixed_coefficients(sigma: f64, side: usize) -> Result<Vec<u16>, SpatialFilter
     Ok(output)
 }
 
+/// Compute three-tap Sobel derivatives with FP32 samples and intermediates.
+///
+/// Reflect-101 borders and separable horizontal-then-vertical evaluation match
+/// the CV_32F Sobel path with grouped symmetric taps. The vertical derivative smooths
+/// each row before subtracting rows; FP64 filtering followed by a cast does not
+/// preserve these intermediate rounding boundaries.
+///
+/// # Errors
+/// Rejects invalid geometry or nonfinite samples.
+pub fn sobel_xy_f32(
+    values: &[f32],
+    size: ImageSize,
+) -> Result<(Vec<f32>, Vec<f32>), SpatialFilterError> {
+    geometry(values.len(), size, 1)?;
+    if values.iter().any(|value| !value.is_finite()) {
+        return Err(SpatialFilterError::NonFinite);
+    }
+    let mut horizontal_derivative = vec![0.0_f32; values.len()];
+    let mut horizontal_smoothing = vec![0.0_f32; values.len()];
+    for y in 0..size.height {
+        for x in 0..size.width {
+            let left = reflect101(x as isize - 1, size.width);
+            let right = reflect101(x as isize + 1, size.width);
+            let offset = y * size.width;
+            horizontal_derivative[offset + x] = values[offset + right] - values[offset + left];
+            horizontal_smoothing[offset + x] =
+                (values[offset + left] + values[offset + right]) + values[offset + x] * 2.0;
+        }
+    }
+    let mut dx = vec![0.0_f32; values.len()];
+    let mut dy = vec![0.0_f32; values.len()];
+    for y in 0..size.height {
+        let top = reflect101(y as isize - 1, size.height) * size.width;
+        let bottom = reflect101(y as isize + 1, size.height) * size.width;
+        for x in 0..size.width {
+            let offset = y * size.width + x;
+            dx[offset] = (horizontal_derivative[top + x] + horizontal_derivative[bottom + x])
+                + horizontal_derivative[offset] * 2.0;
+            dy[offset] = horizontal_smoothing[bottom + x] - horizontal_smoothing[top + x];
+        }
+    }
+    Ok((dx, dy))
+}
+
 /// Compute the two three-tap Sobel derivatives of a scalar FP64 image.
 /// Reflect-101 borders and FP64 intermediate arithmetic are retained.
 /// # Errors
