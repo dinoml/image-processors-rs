@@ -92,8 +92,8 @@ pub use postprocess::{
 };
 #[doc(inline)]
 pub use processors::{
-    pad_spatial_tensors, pad_spatial_tensors_with_alignment, OverlappingImagePlan,
-    SpatialPaddingAlignment,
+    pad_spatial_tensors, pad_spatial_tensors_with_alignment, pad_spatial_tensors_with_padding,
+    OverlappingImagePlan, SpatialPaddingAlignment, SpatialTensorPadding,
 };
 pub use processors::{
     paddle_detection_size, BlipImageProcessor, BlipImageProcessorConfig, ClipImageProcessor,
