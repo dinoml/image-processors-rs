@@ -9,7 +9,7 @@ use image_resize_kernels::{
 };
 use thiserror::Error;
 
-use super::TaskVisionPoseBox;
+use super::{ImageGptPreprocessingPolicy, TaskVisionPoseBox};
 use crate::tensor::{Layout, Tensor, TensorData, TensorError};
 use crate::transforms::{
     centered_padding, convert_frame_pixel_format, pad_frame, resize_f32_bilinear_interleaved,
@@ -56,6 +56,7 @@ pub struct Sapiens2Pose {
 /// Configured whole-image Sapiens2 preprocessing, including optional symmetric padding.
 pub struct Sapiens2ImageProcessor {
     config: ImageProcessorConfig,
+    rescale_factor: f64,
     processor: ImageProcessor,
     size: ImageSize,
     do_pad: bool,
@@ -77,17 +78,29 @@ impl Sapiens2ImageProcessor {
         if let Some(crop) = center_crop {
             ImageSize::new(crop.height, crop.width)?;
         }
+        ImageProcessor::new(config.clone())?;
+        let rescale_factor = f64::from(config.rescale_factor);
         let mut tensor_config = config.clone();
         tensor_config.do_resize = false;
+        tensor_config.do_rescale = false;
+        tensor_config.do_normalize = false;
         tensor_config.pixel_format = Some(crate::PixelFormat::Rgb8);
         tensor_config.output_layout = Layout::NCHW;
         Ok(Self {
             config,
+            rescale_factor,
             processor: ImageProcessor::new(tensor_config)?,
             size,
             do_pad,
             center_crop,
         })
+    }
+
+    /// Retain a JSON rescale factor's precision until fused normalization.
+    /// The shared tensor stage validates the factor during preprocessing.
+    pub fn with_rescale_factor(mut self, factor: f64) -> Self {
+        self.rescale_factor = factor;
+        self
     }
 
     /// Resize, optionally pad/crop, rescale and normalize decoded images.
@@ -116,18 +129,27 @@ impl Sapiens2ImageProcessor {
             }
             if let Some(crop) = self.center_crop {
                 image = super::encoder_presets::center_crop_with_padding_rounding(
-                    &image, crop, true, false,
+                    &image, crop, false, false,
                 )?;
             }
             prepared.push(image);
         }
-        Ok(self.processor.preprocess_images(&prepared)?)
+        Ok(ImageGptPreprocessingPolicy::Torchvision.finish_tensor(
+            self.processor.preprocess_images(&prepared)?,
+            self.config.do_rescale.then_some(self.rescale_factor),
+            self.config.do_normalize.then_some((
+                self.config.image_mean.as_slice(),
+                self.config.image_std.as_slice(),
+            )),
+            None,
+        )?)
     }
 }
 
 /// Sapiens2 crop processor using shared RGB conversion and grid kernels.
 pub struct Sapiens2PoseProcessor {
     config: ImageProcessorConfig,
+    rescale_factor: f64,
     source_processor: ImageProcessor,
     size: ImageSize,
 }
@@ -157,6 +179,7 @@ impl Sapiens2PoseProcessor {
                 "RGB normalization requires one or three statistics",
             ));
         }
+        let rescale_factor = f64::from(config.rescale_factor);
         let mut source = config.clone();
         source.do_resize = false;
         source.do_normalize = false;
@@ -166,9 +189,17 @@ impl Sapiens2PoseProcessor {
         source.output_layout = Layout::NCHW;
         Ok(Self {
             config,
+            rescale_factor,
             source_processor: ImageProcessor::new(source)?,
             size,
         })
+    }
+
+    /// Retain a JSON rescale factor's precision until fused normalization.
+    /// The shared tensor stage validates the factor during preprocessing.
+    pub fn with_rescale_factor(mut self, factor: f64) -> Self {
+        self.rescale_factor = factor;
+        self
     }
 
     /// Crop persons from one decoded image into normalized NCHW FP32 pixels.
@@ -223,7 +254,7 @@ impl Sapiens2PoseProcessor {
             } else {
                 GridInterpolation::Bicubic
             };
-            let mut crop = grid_sample_f32_planes(
+            let crop = grid_sample_f32_planes(
                 values,
                 image_resize_kernels::ImageSize::new(image.height(), image.width())?,
                 3,
@@ -231,34 +262,6 @@ impl Sapiens2PoseProcessor {
                 image_resize_kernels::ImageSize::new(self.size.height, self.size.width)?,
                 interpolation,
             )?;
-            for channel in 0..3 {
-                let mean = if self.config.do_normalize {
-                    self.config.image_mean[if self.config.image_mean.len() == 1 {
-                        0
-                    } else {
-                        channel
-                    }]
-                } else {
-                    0.0
-                };
-                let std = if self.config.do_normalize {
-                    self.config.image_std[if self.config.image_std.len() == 1 {
-                        0
-                    } else {
-                        channel
-                    }]
-                } else {
-                    1.0
-                };
-                for value in &mut crop[channel * target_pixels..(channel + 1) * target_pixels] {
-                    if self.config.do_rescale {
-                        *value *= self.config.rescale_factor;
-                    }
-                    if self.config.do_normalize {
-                        *value = (*value - mean) / std;
-                    }
-                }
-            }
             output.extend(crop);
         }
         if flip {
@@ -266,10 +269,18 @@ impl Sapiens2PoseProcessor {
                 row.reverse();
             }
         }
-        Ok(Tensor::new(
-            TensorData::F32(output),
-            vec![boxes.len(), 3, self.size.height, self.size.width],
-            Layout::NCHW,
+        Ok(ImageGptPreprocessingPolicy::Torchvision.finish_tensor(
+            Tensor::new(
+                TensorData::F32(output),
+                vec![boxes.len(), 3, self.size.height, self.size.width],
+                Layout::NCHW,
+            )?,
+            self.config.do_rescale.then_some(self.rescale_factor),
+            self.config.do_normalize.then_some((
+                self.config.image_mean.as_slice(),
+                self.config.image_std.as_slice(),
+            )),
+            None,
         )?)
     }
 
