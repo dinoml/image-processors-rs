@@ -482,6 +482,7 @@ impl VideoMaeImageProcessor {
 pub struct VivitImageProcessor {
     config: VivitImageProcessorConfig,
     processor: ImageProcessor,
+    resize_target: RecipeResizeTarget,
 }
 
 impl VivitImageProcessor {
@@ -492,9 +493,55 @@ impl VivitImageProcessor {
     /// Returns an error when offset/rescale settings are incompatible or the
     /// tensor-stage image processor config is invalid.
     pub fn new(config: VivitImageProcessorConfig) -> Result<Self, ImageProcessorError> {
+        let target = RecipeResizeTarget::ShortestEdge {
+            shortest_edge: config.size,
+            longest_edge: None,
+        };
+        Self::new_with_resize_target(config, target)
+    }
+
+    /// Create a ViViT processor with a general recipe resize target.
+    /// Supports fixed dimensions, uncapped shortest-edge sizing and identity.
+    /// Resize/crop flags, offset rescaling, normalization and video layout are
+    /// taken from `config`; undersized center crops are zero-padded.
+    ///
+    /// # Errors
+    /// Reports unsupported targets, invalid dimensions or tensor-stage settings.
+    pub fn new_with_resize_target(
+        config: VivitImageProcessorConfig,
+        resize_target: RecipeResizeTarget,
+    ) -> Result<Self, ImageProcessorError> {
         validate_vivit_config(&config)?;
+        if config.do_resize {
+            match resize_target {
+                RecipeResizeTarget::Fixed { size } => {
+                    ImageSize::new(size.height, size.width)?;
+                }
+                RecipeResizeTarget::ShortestEdge {
+                    shortest_edge,
+                    longest_edge: None,
+                } => {
+                    ImageSize::new(shortest_edge, shortest_edge)?;
+                }
+                RecipeResizeTarget::Dynamic => {}
+                _ => {
+                    return Err(ImageProcessorError::UnsupportedProcessorOption {
+                        field: "video resize target",
+                    });
+                }
+            }
+        }
         let processor = ImageProcessor::new(config.image_processor_config())?;
-        Ok(Self { config, processor })
+        Ok(Self {
+            config,
+            processor,
+            resize_target,
+        })
+    }
+
+    /// Effective geometry used before the shared tensor conversion stages.
+    pub fn resize_target(&self) -> RecipeResizeTarget {
+        self.resize_target
     }
 
     /// Returns this processor's family configuration.
@@ -576,7 +623,17 @@ impl VivitImageProcessor {
         }
         let prepared = images
             .iter()
-            .map(|image| vivit_prepare_frame(&self.config, image))
+            .map(|image| {
+                prepare_video_frame(
+                    image,
+                    self.resize_target,
+                    self.config.crop_size,
+                    self.config.do_resize,
+                    self.config.do_center_crop,
+                    self.config.resize_decision(),
+                    true,
+                )
+            })
             .collect::<Result<Vec<_>, _>>()?;
         self.processor
             .preprocess_images(&prepared)?
@@ -684,20 +741,6 @@ fn validate_vivit_config(config: &VivitImageProcessorConfig) -> Result<(), Image
 
 fn video_mae_prepare_frame(
     config: &VideoMaeImageProcessorConfig,
-    image: &ImageFrame,
-) -> Result<ImageFrame, ImageProcessorError> {
-    prepare_video_shortest_edge_frame(
-        image,
-        config.size,
-        config.crop_size,
-        config.do_resize,
-        config.do_center_crop,
-        config.resize_decision(),
-    )
-}
-
-fn vivit_prepare_frame(
-    config: &VivitImageProcessorConfig,
     image: &ImageFrame,
 ) -> Result<ImageFrame, ImageProcessorError> {
     prepare_video_shortest_edge_frame(

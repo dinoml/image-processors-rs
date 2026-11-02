@@ -22,7 +22,7 @@ use thiserror::Error;
 
 use crate::tensor::{ImageLayout, TensorDataView, TensorError, TensorView};
 mod stream;
-pub use stream::{transcode_rgb_video, MediaStreamError, VideoStreamOptions};
+pub use stream::{decode_rgb_video, transcode_rgb_video, MediaStreamError, VideoStreamOptions};
 
 /// Pixel storage format for decoded image frames.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -665,6 +665,41 @@ impl Default for FrameSampling {
 }
 
 impl FrameSampling {
+    /// Select an endpoint-inclusive clip using floor-rounded linspace indices.
+    /// The span is `num_frames * frame_sampling_rate`, starting at frame zero.
+    /// A one-frame clip selects index zero, matching NumPy linspace.
+    ///
+    /// # Errors
+    /// Rejects empty clips, zero count/rate, overflow and spans beyond the clip.
+    pub fn clip_indices(
+        len: usize,
+        num_frames: usize,
+        frame_sampling_rate: usize,
+    ) -> Result<Vec<usize>, MediaError> {
+        if len == 0 {
+            return Err(MediaError::EmptyFrameSequence);
+        }
+        if num_frames == 0 {
+            return Err(MediaError::InvalidFrameLimit);
+        }
+        if frame_sampling_rate == 0 {
+            return Err(MediaError::InvalidFrameStride);
+        }
+        let span = num_frames
+            .checked_mul(frame_sampling_rate)
+            .filter(|span| *span <= len)
+            .ok_or(MediaError::InvalidFrameLimit)?;
+        Ok((0..num_frames)
+            .map(|index| {
+                if num_frames == 1 {
+                    0
+                } else {
+                    ((index as u128 * (span - 1) as u128) / (num_frames - 1) as u128) as usize
+                }
+            })
+            .collect())
+    }
+
     /// Selects uniformly spaced frame indices with floor rounding.
     ///
     /// A target rate first computes `floor(len / source_fps * target_fps)`.

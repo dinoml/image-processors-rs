@@ -1201,6 +1201,32 @@ pub fn center_crop_frame(
     )
 }
 
+/// Center-crop with Transformers' zero padding for undersized dimensions.
+/// Odd missing pixels go before the image (top/left); excess pixels are cropped
+/// with floor-rounded offsets. The strict [`center_crop_frame`] API is unchanged.
+///
+/// # Errors
+/// Reports invalid target dimensions, padding overflow or frame invariants.
+pub fn center_crop_frame_with_padding(
+    frame: &ImageFrame,
+    target: ImageSize,
+) -> Result<ImageFrame, TransformError> {
+    ImageSize::new(target.height, target.width)?;
+    let missing_height = target.height.saturating_sub(frame.height());
+    let missing_width = target.width.saturating_sub(frame.width());
+    if missing_height == 0 && missing_width == 0 {
+        return center_crop_frame(frame, target);
+    }
+    let top = missing_height.div_ceil(2);
+    let left = missing_width.div_ceil(2);
+    let padded = pad_frame(
+        frame,
+        Padding::new(top, missing_width - left, missing_height - top, left),
+        &[0],
+    )?;
+    center_crop_frame(&padded, target)
+}
+
 /// Crops a frame to an absolute pixel crop box.
 ///
 /// # Errors
