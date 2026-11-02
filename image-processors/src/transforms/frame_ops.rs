@@ -2,6 +2,27 @@
 
 use super::*;
 
+/// Mirror a decoded frame horizontally, preserving pixel format and timing.
+///
+/// # Errors
+/// Reports invalid image geometry or storage.
+pub fn flip_frame_horizontal(frame: &ImageFrame) -> Result<ImageFrame, TransformError> {
+    let channels = frame.channels();
+    let mut values = Vec::with_capacity(frame.data().len());
+    for row in frame.data().chunks_exact(frame.width() * channels) {
+        for pixel in row.chunks_exact(channels).rev() {
+            values.extend_from_slice(pixel);
+        }
+    }
+    new_frame(
+        frame.width(),
+        frame.height(),
+        frame.pixel_format(),
+        values,
+        frame.timing(),
+    )
+}
+
 /// Convert decoded byte pixels to Pillow's L mode using its fixed-point weights.
 /// RGB is retained independently of alpha, matching Image.convert("L").
 /// Existing general pixel conversions keep their established rounding policy.
@@ -1493,6 +1514,39 @@ pub fn composite_mask_f32_frame(
     foreground: &ImageFrame,
     alpha: &[f32],
 ) -> Result<ImageFrame, TransformError> {
+    composite_mask_f32_frame_with_precision(
+        background,
+        foreground,
+        alpha,
+        MaskCompositePrecision::Float32,
+    )
+}
+
+/// Arithmetic precision of floating-opacity byte-frame compositing.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MaskCompositePrecision {
+    /// Compute both products and their sum in FP32.
+    Float32,
+    /// Compute foreground and complementary opacity in FP32, then multiply
+    /// background and add in FP64, matching NumPy with an FP64 background array.
+    Float32ForegroundFloat64Background,
+}
+
+/// Composite byte frames with explicit floating arithmetic and final truncation.
+///
+/// Existing FP32 compositing retains its operation order. The mixed-precision
+/// option preserves NumPy's promotion for `float32_alpha * uint8_foreground +
+/// (1 - float32_alpha) * float64_background`, without quantizing alpha first.
+/// Foreground dimensions, pixel format and timing are retained.
+///
+/// # Errors
+/// Rejects incompatible frames, invalid opacity storage or nonfinite values.
+pub fn composite_mask_f32_frame_with_precision(
+    background: &ImageFrame,
+    foreground: &ImageFrame,
+    alpha: &[f32],
+    precision: MaskCompositePrecision,
+) -> Result<ImageFrame, TransformError> {
     let size = frame_size(foreground);
     validate_frame_size("background", size, frame_size(background))?;
     validate_pixel_format(
@@ -1511,10 +1565,17 @@ pub fn composite_mask_f32_frame(
     {
         validate_mask_value(opacity)?;
         for channel in 0..channels {
-            output.push(
-                (opacity * f32::from(front[channel]) + (1.0 - opacity) * f32::from(back[channel]))
-                    as u8,
-            );
+            let front_value = opacity * f32::from(front[channel]);
+            let complement = 1.0_f32 - opacity;
+            output.push(match precision {
+                MaskCompositePrecision::Float32 => {
+                    (front_value + complement * f32::from(back[channel])) as u8
+                }
+                MaskCompositePrecision::Float32ForegroundFloat64Background => {
+                    (f64::from(front_value) + f64::from(complement) * f64::from(back[channel]))
+                        as u8
+                }
+            });
         }
     }
     new_frame(
@@ -1548,6 +1609,30 @@ pub fn resize_f32(
         kernel_size(target),
         kernel_filter(decision.filter()),
         resize_profile(decision.parity()),
+    )
+    .map_err(transform_error_from_resize)
+}
+
+/// Resize interleaved FP32 pixels with PyTorch contiguous adaptive-area semantics.
+///
+/// Uses integer adaptive-average bins for both reduction and enlargement, with
+/// FP32 accumulation and separate height/width division. No intermediate byte
+/// conversion or fractional-area weighting is applied.
+///
+/// # Errors
+/// Rejects invalid geometry, inconsistent storage, unsupported channels,
+/// overflowing sizes or nonfinite samples.
+pub fn resize_f32_area_torch(
+    values: &[f32],
+    source: ImageSize,
+    channels: usize,
+    target: ImageSize,
+) -> Result<Vec<f32>, TransformError> {
+    image_resize_kernels::resize_f32_area_torch(
+        values,
+        kernel_size(source),
+        channels,
+        kernel_size(target),
     )
     .map_err(transform_error_from_resize)
 }
