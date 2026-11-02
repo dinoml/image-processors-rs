@@ -1061,7 +1061,8 @@ impl EncoderImageProcessor {
             self.config.rescale_factor,
         )?;
         let output_size = if let Some(size) = crop_size {
-            values = center_crop_interleaved_f32(&values, target, image.channels(), size, false)?;
+            values =
+                center_crop_interleaved_f32(&values, target, image.channels(), size, false, true)?;
             size
         } else {
             target
@@ -1525,9 +1526,10 @@ pub(super) fn center_crop_interleaved_f32(
     channels: usize,
     target: ImageSize,
     pil: bool,
+    ties_even: bool,
 ) -> Result<Vec<f32>, ImageProcessorError> {
-    // Torchvision places an odd extra padding pixel after the image and rounds
-    // crop offsets to even. PIL pads before the image and floors crop offsets.
+    // Padding and crop rounding are independent: torchvision v2 rounds offsets
+    // to even, while Transformers' TorchvisionBackend floors them.
     let padded = ImageSize::new(
         source.height.max(target.height),
         source.width.max(target.width),
@@ -1538,10 +1540,10 @@ pub(super) fn center_crop_interleaved_f32(
         std::mem::swap(&mut padding.top, &mut padding.bottom);
     }
     let origin = |delta| {
-        if pil {
-            delta / 2
-        } else {
+        if ties_even {
             center_crop_origin_ties_even(delta)
+        } else {
+            delta / 2
         }
     };
     let left = origin(padded.width - target.width);

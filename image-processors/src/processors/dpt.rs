@@ -180,6 +180,7 @@ impl DptImageProcessor {
                 channels,
                 size,
                 self.config.backend == DptResizeBackend::Pil,
+                self.config.backend != DptResizeBackend::Pil,
             )?;
             tensor = Tensor::new(
                 TensorData::F32(values),
