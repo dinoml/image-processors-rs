@@ -1055,6 +1055,145 @@ pub fn post_process_panoptic_segmentation(
     )
 }
 
+/// Task conditioning used when interpreting OneFormer instance predictions.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OneFormerTask {
+    /// Semantic task conditioning, without instance evaluation label remapping.
+    Semantic,
+    /// Instance conditioning, including ADE20K evaluation label remapping.
+    Instance,
+    /// Panoptic conditioning, retaining only dataset thing classes.
+    Panoptic,
+}
+
+/// Dataset metadata and task choices for OneFormer instance interpretation.
+#[derive(Clone, Copy, Debug)]
+pub struct OneFormerInstanceOptions<'a> {
+    /// Dataset class information filename, used for ADE20K evaluation remapping.
+    pub class_info_file: &'a str,
+    /// Ordered thing-class IDs from the checkpoint processor metadata.
+    pub thing_ids: &'a [i64],
+    /// The task token supplied to the model.
+    pub task: OneFormerTask,
+    /// Apply the class-score threshold. False preserves the evaluation path.
+    pub is_demo: bool,
+}
+
+/// Interprets OneFormer query logits as instances using dataset class metadata.
+///
+/// Unlike panoptic interpretation, upstream passes raw mask logits to segment
+/// computation, without sigmoid. Top query/class pairs may reuse one query.
+///
+/// # Errors
+/// Returns an error for invalid tensor lengths, non-finite values, thresholds,
+/// image geometry, or an ADE20K evaluation label absent from `thing_ids`.
+pub fn post_process_oneformer_instance_segmentation(
+    class_logits: &[f32],
+    mask_logits: &[f32],
+    num_queries: usize,
+    num_labels_with_background: usize,
+    mask_size: ImageSize,
+    metadata: OneFormerInstanceOptions<'_>,
+    options: SegmentationPostProcessOptions,
+) -> Result<SegmentationPostProcessPrediction, TransformError> {
+    validate_size(mask_size)?;
+    if num_labels_with_background < 2 {
+        return Err(TransformError::InvalidClassCount(
+            num_labels_with_background,
+        ));
+    }
+    validate_segmentation_post_process_options(options)?;
+    let mask_pixels = checked_pixels(mask_size)?;
+    let labels = num_labels_with_background - 1;
+    validate_len(
+        class_logits.len(),
+        num_queries
+            .checked_mul(num_labels_with_background)
+            .ok_or(TransformError::ImageSizeOverflow)?,
+    )?;
+    validate_len(
+        mask_logits.len(),
+        num_queries
+            .checked_mul(mask_pixels)
+            .ok_or(TransformError::ImageSizeOverflow)?,
+    )?;
+    for &value in mask_logits {
+        validate_score_value(value)?;
+    }
+    let mut candidates = Vec::with_capacity(
+        num_queries
+            .checked_mul(labels)
+            .ok_or(TransformError::ImageSizeOverflow)?,
+    );
+    for (query_index, logits) in class_logits
+        .chunks_exact(num_labels_with_background)
+        .enumerate()
+    {
+        for (label, score) in foreground_softmax(logits, labels)?.into_iter().enumerate() {
+            candidates.push(SegmentationQueryPrediction {
+                query_index,
+                score,
+                label_id: i64::try_from(label).map_err(|_| TransformError::ImageSizeOverflow)?,
+            });
+        }
+    }
+    candidates.sort_by(|left, right| right.score.total_cmp(&left.score));
+    candidates.truncate(num_queries);
+    candidates.retain(|candidate| {
+        (!metadata.is_demo || candidate.score > options.score_threshold)
+            && (metadata.task != OneFormerTask::Panoptic
+                || metadata.thing_ids.contains(&candidate.label_id))
+    });
+    if metadata.class_info_file.contains("ade20k")
+        && !metadata.is_demo
+        && metadata.task == OneFormerTask::Instance
+    {
+        for candidate in &mut candidates {
+            let label = metadata
+                .thing_ids
+                .iter()
+                .position(|&label| label == candidate.label_id)
+                .ok_or(TransformError::InvalidClassCount(labels))?;
+            candidate.label_id =
+                i64::try_from(label).map_err(|_| TransformError::ImageSizeOverflow)?;
+        }
+    }
+    let output_size = options.target_size.unwrap_or(mask_size);
+    let output_pixels = checked_pixels(output_size)?;
+    if candidates.is_empty() {
+        return Ok(SegmentationPostProcessPrediction {
+            size: output_size,
+            segmentation: vec![-1; output_pixels],
+            segments: Vec::new(),
+        });
+    }
+    let mut weighted_masks = Vec::with_capacity(
+        candidates
+            .len()
+            .checked_mul(output_pixels)
+            .ok_or(TransformError::ImageSizeOverflow)?,
+    );
+    for candidate in &candidates {
+        let start = candidate.query_index * mask_pixels;
+        let plane = &mask_logits[start..start + mask_pixels];
+        let resized = resize_f32_image_torchvision_bilinear(plane, mask_size, output_size)?;
+        weighted_masks.extend(resized.into_iter().map(|value| value * candidate.score));
+    }
+    let (segmentation, segments) = compute_segmentation_segments(
+        &weighted_masks,
+        &candidates,
+        output_size,
+        options.mask_threshold,
+        options.overlap_mask_area_threshold,
+        &HashSet::new(),
+    )?;
+    Ok(SegmentationPostProcessPrediction {
+        size: output_size,
+        segmentation,
+        segments,
+    })
+}
+
 pub(crate) fn post_process_oneformer_panoptic_segmentation(
     class_logits: &[f32],
     mask_logits: &[f32],

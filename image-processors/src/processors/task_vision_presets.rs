@@ -1372,8 +1372,8 @@ impl TaskVisionImageProcessor {
     ///
     /// Returns an error when this preset has no query-mask segmentation
     /// descriptor, recipe construction fails, descriptor execution rejects the
-    /// supplied model outputs, or OneFormer instance output is requested; its
-    /// external dataset metadata contract is not represented by this API.
+    /// supplied model outputs, or OneFormer instance output is requested without
+    /// its dataset metadata in `RecipePostprocessContext`.
     pub fn post_process_segmentation_outputs(
         &self,
         request: impl Into<TaskVisionSegmentationRequest>,
