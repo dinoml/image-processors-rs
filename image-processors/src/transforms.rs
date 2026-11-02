@@ -35,19 +35,20 @@ pub use optical_flow::{DisUltrafast, OpticalFlowError};
 mod detection;
 pub(crate) use detection::post_process_oneformer_panoptic_segmentation;
 pub use detection::{
-    detection_box_iou, non_max_suppression, normalize_detection_annotation,
-    pad_normalized_detection_annotation, post_process_instance_segmentation,
-    post_process_object_detection, post_process_oneformer_instance_segmentation,
-    post_process_panoptic_segmentation, post_process_semantic_segmentation,
-    post_process_sigmoid_best_object_detection, post_process_sigmoid_top_k_instance_segmentation,
-    post_process_sigmoid_top_k_object_detection, prepare_coco_detection_annotation,
+    detection_box_iou, non_max_suppression, non_max_suppression_by_class,
+    normalize_detection_annotation, pad_normalized_detection_annotation,
+    post_process_instance_segmentation, post_process_object_detection,
+    post_process_oneformer_instance_segmentation, post_process_panoptic_segmentation,
+    post_process_semantic_segmentation, post_process_sigmoid_best_object_detection,
+    post_process_sigmoid_top_k_instance_segmentation, post_process_sigmoid_top_k_object_detection,
+    post_process_sigmoid_top_k_object_detection_with_options, prepare_coco_detection_annotation,
     resize_detection_annotation, scale_detection_box, CocoObjectAnnotation, DetectionAnnotation,
-    DetectionBoundingBox, DetectionCenterBox, NormalizedDetectionAnnotation,
+    DetectionBoundingBox, DetectionBoxScaling, DetectionCenterBox, NormalizedDetectionAnnotation,
     ObjectDetectionPrediction, OneFormerInstanceOptions, OneFormerTask,
     SegmentationPostProcessOptions, SegmentationPostProcessPrediction, SegmentationSegmentInfo,
     SemanticSegmentationPrediction, SigmoidInstanceSegmentationFormat,
     SigmoidInstanceSegmentationMasks, SigmoidInstanceSegmentationOptions,
-    SigmoidInstanceSegmentationPrediction,
+    SigmoidInstanceSegmentationPrediction, SigmoidTopKDetectionOptions,
 };
 mod face_geometry;
 mod frame_ops;
@@ -2195,6 +2196,9 @@ fn validate_len(actual: usize, expected: usize) -> Result<(), TransformError> {
 /// Errors returned by image transform helpers.
 #[derive(Debug, Error, PartialEq)]
 pub enum TransformError {
+    /// Detection tensor arithmetic requires FP32, FP16 or BF16 values.
+    #[error("unsupported detection tensor precision: {0:?}")]
+    UnsupportedDetectionPrecision(crate::tensor::DType),
     /// A restored floating pixel was not finite.
     #[error("nonfinite restored pixel at component {index}")]
     NonFiniteRestorationPixel {
