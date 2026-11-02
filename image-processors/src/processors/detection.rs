@@ -964,12 +964,49 @@ fn prepare_sam_frame(
     Ok((resized, original_size, reshaped_size))
 }
 
-#[allow(missing_docs)]
+/// Position of image content within a zero-padded floating tensor canvas.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SpatialPaddingAlignment {
+    /// Keep content at the top left, padding only the bottom and right.
+    TopLeft,
+    /// Center content, assigning any odd extra pixel to the bottom or right.
+    Center,
+}
+
+/// Batch image tensors on a zero-filled canvas with top-left alignment.
+///
+/// # Errors
+/// Rejects empty batches, incompatible tensor shapes/layouts, undersized targets
+/// and overflowing canvas dimensions.
 pub fn pad_spatial_tensors(
     tensors: Vec<Tensor>,
     target: ImageSize,
     output_layout: ImageLayout,
 ) -> Result<Tensor, ImageProcessorError> {
+    pad_spatial_tensors_with_alignment(
+        tensors,
+        target,
+        output_layout,
+        SpatialPaddingAlignment::TopLeft,
+    )
+}
+
+/// Batch image tensors on a zero-filled canvas with explicit content alignment.
+///
+/// Padding is applied to floating values without rescaling or normalization;
+/// normalized FP32 inputs retain their values and receive exact zero borders.
+/// Both NCHW and NHWC singleton image tensors are supported.
+///
+/// # Errors
+/// Rejects empty batches, incompatible tensor shapes/layouts, undersized targets
+/// and overflowing canvas dimensions.
+pub fn pad_spatial_tensors_with_alignment(
+    tensors: Vec<Tensor>,
+    target: ImageSize,
+    output_layout: ImageLayout,
+    alignment: SpatialPaddingAlignment,
+) -> Result<Tensor, ImageProcessorError> {
+    ImageSize::new(target.height, target.width)?;
     let first = tensors.first().ok_or(ImageProcessorError::EmptyBatch)?;
     let items = tensors.len();
     let channels = first.channels();
@@ -993,18 +1030,37 @@ pub fn pad_spatial_tensors(
             shape[tensor_layout.width_axis()],
         )?;
         validate_padding_target(target, source_size)?;
+        let origin = match alignment {
+            SpatialPaddingAlignment::TopLeft => (0, 0),
+            SpatialPaddingAlignment::Center => (
+                (target.height - source_size.height) / 2,
+                (target.width - source_size.width) / 2,
+            ),
+        };
         let source = match data {
             TensorData::F32(values) => values,
             other => other.to_vec::<f32>(),
         };
 
         match output_layout {
-            ImageLayout::ChannelsHeightWidth => {
-                copy_spatial_nchw_tensor(&source, &mut values, batch, channels, source_size, target)
-            }
-            ImageLayout::HeightWidthChannels => {
-                copy_spatial_nhwc_tensor(&source, &mut values, batch, channels, source_size, target)
-            }
+            ImageLayout::ChannelsHeightWidth => copy_spatial_nchw_tensor(
+                &source,
+                &mut values,
+                batch,
+                channels,
+                source_size,
+                target,
+                origin,
+            ),
+            ImageLayout::HeightWidthChannels => copy_spatial_nhwc_tensor(
+                &source,
+                &mut values,
+                batch,
+                channels,
+                source_size,
+                target,
+                origin,
+            ),
         }
     }
 
@@ -1025,6 +1081,7 @@ fn copy_spatial_nchw_tensor(
     channels: usize,
     source_size: ImageSize,
     target_size: ImageSize,
+    origin: (usize, usize),
 ) {
     for channel in 0..channels {
         let source_channel_offset = channel * source_size.height * source_size.width;
@@ -1032,7 +1089,8 @@ fn copy_spatial_nchw_tensor(
             ((batch * channels + channel) * target_size.height) * target_size.width;
         for row in 0..source_size.height {
             let source_start = source_channel_offset + row * source_size.width;
-            let target_start = target_channel_offset + row * target_size.width;
+            let target_start =
+                target_channel_offset + (row + origin.0) * target_size.width + origin.1;
             target_values[target_start..target_start + source_size.width]
                 .copy_from_slice(&source[source_start..source_start + source_size.width]);
         }
@@ -1046,11 +1104,14 @@ fn copy_spatial_nhwc_tensor(
     channels: usize,
     source_size: ImageSize,
     target_size: ImageSize,
+    origin: (usize, usize),
 ) {
     let source_row_values = source_size.width * channels;
     for row in 0..source_size.height {
         let source_start = row * source_row_values;
-        let target_start = ((batch * target_size.height + row) * target_size.width) * channels;
+        let target_start = (((batch * target_size.height + row + origin.0) * target_size.width)
+            + origin.1)
+            * channels;
         target_values[target_start..target_start + source_row_values]
             .copy_from_slice(&source[source_start..source_start + source_row_values]);
     }

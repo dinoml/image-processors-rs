@@ -89,8 +89,9 @@ mod detection;
 use detection::shortest_edge_resize_output_size;
 use detection::{checked_spatial_pad_mul, validate_padding_target};
 pub use detection::{
-    pad_spatial_tensors, pixel_mask_for_valid_sizes, DetrImageProcessorConfig,
-    SamImageProcessorConfig, ShortestEdgeResizeConfig,
+    pad_spatial_tensors, pad_spatial_tensors_with_alignment, pixel_mask_for_valid_sizes,
+    DetrImageProcessorConfig, SamImageProcessorConfig, ShortestEdgeResizeConfig,
+    SpatialPaddingAlignment,
 };
 mod hf_config;
 use hf_config::{default_true, HfPreprocessorConfig};

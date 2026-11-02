@@ -90,7 +90,9 @@ pub use postprocess::{
     TokenSequencePostprocessOutput,
 };
 #[doc(inline)]
-pub use processors::pad_spatial_tensors;
+pub use processors::{
+    pad_spatial_tensors, pad_spatial_tensors_with_alignment, SpatialPaddingAlignment,
+};
 pub use processors::{
     paddle_detection_size, BlipImageProcessor, BlipImageProcessorConfig, ClipImageProcessor,
     ClipImageProcessorConfig, DepthMapU16, DetrImageProcessor, DetrImageProcessorConfig,
@@ -155,7 +157,7 @@ pub use transforms::{
     post_process_sigmoid_top_k_object_detection, prepare_coco_detection_annotation,
     repeat_last_frame_batch_to_multiple, repeat_last_image_sequence_to_multiple,
     repeat_last_video_clip_to_multiple, resize_center_crop_frame, resize_center_crop_plan,
-    resize_detection_annotation, resize_fill_plan, resize_frame, resize_frame_opencv,
+    resize_detection_annotation, resize_f32, resize_fill_plan, resize_frame, resize_frame_opencv,
     resize_frame_opencv_scale_dependent, resize_frame_to_area_limit,
     resize_frame_to_bottom_right_padded_frame, resize_frame_to_fill_frame,
     resize_frame_with_decision, resize_rgb_to_fill_frame, scale_factor_resize_plan,
