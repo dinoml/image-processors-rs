@@ -30,7 +30,7 @@ use crate::recipe::{
     ProcessorRecipeStage, RecipeAspectRatioCropStage, RecipeBinaryMaskPostprocess,
     RecipeDocumentGeometryStage, RecipeError, RecipeImageSizeSource, RecipeImageSplitStage,
     RecipeObjectDetectionPostprocess, RecipePatchError, RecipePatchGridStage, RecipePatchStage,
-    RecipeResizeStage, RecipeTiledCanvasStage,
+    RecipeResizeStage, RecipeResizeTarget, RecipeTiledCanvasStage,
 };
 use crate::tensor::{
     DType, ImageLayout, Layout, Tensor, TensorData, TensorError, TensorLeadingAxis, TensorView,
@@ -116,9 +116,9 @@ pub use vlm::{
 };
 
 use crate::transforms::{
-    area_resize_plan, aspect_ratio_crop_plan, center_crop_frame, centered_padding,
-    concatenate_frames_horizontally_rgb, convert_frame_pixel_format, crop_frame, crop_region,
-    fit_inside_size, inpaint_overlay, nested_frame_batch_padding_plan, pad_frame,
+    area_resize_plan, aspect_ratio_crop_plan, center_crop_frame, center_crop_frame_with_padding,
+    centered_padding, concatenate_frames_horizontally_rgb, convert_frame_pixel_format, crop_frame,
+    crop_region, fit_inside_size, inpaint_overlay, nested_frame_batch_padding_plan, pad_frame,
     pad_frame_with_canvas_fill, patch_aligned_resize_plan, patch_grid_batch_plan,
     patch_grid_image_patches_with_decision, post_process_binary_mask,
     post_process_object_detection as post_process_detr_object_detection,
@@ -1530,6 +1530,29 @@ fn prepare_video_shortest_edge_frame(
     do_center_crop: bool,
     resize_decision: ResizeDecision,
 ) -> Result<ImageFrame, ImageProcessorError> {
+    prepare_video_frame(
+        image,
+        RecipeResizeTarget::ShortestEdge {
+            shortest_edge,
+            longest_edge: None,
+        },
+        crop_size,
+        do_resize,
+        do_center_crop,
+        resize_decision,
+        false,
+    )
+}
+
+fn prepare_video_frame(
+    image: &ImageFrame,
+    resize_target: RecipeResizeTarget,
+    crop_size: ImageSize,
+    do_resize: bool,
+    do_center_crop: bool,
+    resize_decision: ResizeDecision,
+    pad_center_crop: bool,
+) -> Result<ImageFrame, ImageProcessorError> {
     let mut frame = Cow::Borrowed(image);
 
     if frame.pixel_format() != PixelFormat::Rgb8 {
@@ -1540,7 +1563,19 @@ fn prepare_video_shortest_edge_frame(
     }
 
     if do_resize {
-        let resize_size = video_shortest_edge_resize_size(frame.as_ref(), shortest_edge)?;
+        let resize_size = match resize_target {
+            RecipeResizeTarget::Fixed { size } => ImageSize::new(size.height, size.width)?,
+            RecipeResizeTarget::ShortestEdge {
+                shortest_edge,
+                longest_edge: None,
+            } => video_shortest_edge_resize_size(frame.as_ref(), shortest_edge)?,
+            RecipeResizeTarget::Dynamic => ImageSize::new(frame.height(), frame.width())?,
+            _ => {
+                return Err(ImageProcessorError::UnsupportedProcessorOption {
+                    field: "video resize target",
+                });
+            }
+        };
         if resize_size.height != frame.height() || resize_size.width != frame.width() {
             frame = Cow::Owned(resize_frame_with_decision(
                 frame.as_ref(),
@@ -1552,7 +1587,11 @@ fn prepare_video_shortest_edge_frame(
     }
 
     if do_center_crop {
-        frame = Cow::Owned(center_crop_frame(frame.as_ref(), crop_size)?);
+        frame = Cow::Owned(if pad_center_crop {
+            center_crop_frame_with_padding(frame.as_ref(), crop_size)?
+        } else {
+            center_crop_frame(frame.as_ref(), crop_size)?
+        });
     }
 
     Ok(frame.into_owned())

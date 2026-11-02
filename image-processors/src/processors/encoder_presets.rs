@@ -1454,6 +1454,11 @@ fn center_crop_with_padding_rounding(
     ties_even: bool,
     pil_padding: bool,
 ) -> Result<ImageFrame, PresetProcessorError> {
+    if pil_padding && !ties_even {
+        return Ok(crate::transforms::center_crop_frame_with_padding(
+            image, crop_size,
+        )?);
+    }
     let missing_height = crop_size.height.saturating_sub(image.height());
     let missing_width = crop_size.width.saturating_sub(image.width());
     let padded = if missing_height == 0 && missing_width == 0 {
