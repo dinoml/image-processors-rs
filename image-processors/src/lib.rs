@@ -50,11 +50,12 @@ pub use image::{
 };
 #[doc(inline)]
 pub use media::{
-    decode_image_bytes, decode_image_bytes_with_backend, decode_image_sequence_bytes,
-    decode_image_sequence_bytes_with_backend, decode_rgb_video, load_image_from_path,
-    load_image_from_path_with_backend, load_image_sequence_from_path,
-    load_image_sequence_from_path_with_backend, load_image_sequence_from_url,
-    load_image_sequence_from_url_with_mode, load_image_sequence_from_url_with_remote_options,
+    decode_image_bytes, decode_image_bytes_oriented, decode_image_bytes_with_backend,
+    decode_image_sequence_bytes, decode_image_sequence_bytes_with_backend, decode_rgb_video,
+    load_image_from_path, load_image_from_path_oriented, load_image_from_path_with_backend,
+    load_image_sequence_from_path, load_image_sequence_from_path_with_backend,
+    load_image_sequence_from_url, load_image_sequence_from_url_with_mode,
+    load_image_sequence_from_url_with_remote_options,
     load_image_sequence_from_url_with_remote_options_and_image_decode_backend,
     load_video_from_path, load_video_from_path_with_options, load_video_from_url_with_options,
     load_video_from_url_with_remote_options, DefaultMediaLoader, FrameSampling, FrameTiming,
