@@ -420,7 +420,7 @@ pub fn resize_f32(
             values, source, channels, target, filter, false,
         ),
         ResizeProfile::TorchvisionNoAntialias => {
-            resize_f32_torchvision_no_antialias(values, source, channels, target, filter)
+            resize_f32_torchvision_no_antialias(values, source, channels, target, filter, false)
         }
         ResizeProfile::OpenCvLinear => {
             if filter != ResizeFilter::Bilinear {
@@ -1195,12 +1195,42 @@ fn resize_u8_torchvision_no_antialias(
         .iter()
         .map(|value| f32::from(*value))
         .collect::<Vec<_>>();
-    resize_f32_torchvision_no_antialias(&floating, source, channels, target, filter).map(|pixels| {
-        pixels
-            .into_iter()
-            .map(|value| value.clamp(0.0, 255.0).round_ties_even() as u8)
-            .collect()
-    })
+    resize_f32_torchvision_no_antialias(&floating, source, channels, target, filter, false).map(
+        |pixels| {
+            pixels
+                .into_iter()
+                .map(|value| value.clamp(0.0, 255.0).round_ties_even() as u8)
+                .collect()
+        },
+    )
+}
+
+/// Resize interleaved FP32 pixels with PyTorch bicubic interpolation, without antialiasing.
+///
+/// `align_corners` preserves endpoint coordinates; otherwise half-pixel coordinates
+/// are used. A singleton aligned output axis samples coordinate zero. Values are
+/// neither clamped nor quantized, and nonfinite values propagate arithmetically.
+///
+/// # Errors
+/// Returns an error for invalid dimensions, channels, storage lengths or size overflow.
+pub fn resize_f32_bicubic_interleaved(
+    values: &[f32],
+    source: ImageSize,
+    channels: usize,
+    target: ImageSize,
+    align_corners: bool,
+) -> Result<Vec<f32>, ResizeError> {
+    ImageSize::new(source.height, source.width)?;
+    ImageSize::new(target.height, target.width)?;
+    validate_image_data(values.len(), source, channels)?;
+    resize_f32_torchvision_no_antialias(
+        values,
+        source,
+        channels,
+        target,
+        ResizeFilter::Bicubic,
+        align_corners,
+    )
 }
 
 fn resize_f32_torchvision_no_antialias(
@@ -1209,6 +1239,7 @@ fn resize_f32_torchvision_no_antialias(
     channels: usize,
     target: ImageSize,
     filter: ResizeFilter,
+    align_corners: bool,
 ) -> Result<Vec<f32>, ResizeError> {
     if !matches!(
         filter,
@@ -1220,10 +1251,25 @@ fn resize_f32_torchvision_no_antialias(
         return Ok(values.to_vec());
     }
     let mut output = vec![0.0_f32; image_len(target, channels)?];
-    let scale_x = source.width as f32 / target.width as f32;
-    let scale_y = source.height as f32 / target.height as f32;
+    let scale = |input: usize, output: usize| {
+        if align_corners {
+            if output > 1 {
+                (input - 1) as f32 / (output - 1) as f32
+            } else {
+                0.0
+            }
+        } else {
+            input as f32 / output as f32
+        }
+    };
+    let scale_x = scale(source.width, target.width);
+    let scale_y = scale(source.height, target.height);
     let axis = |out: usize, scale: f32, length: usize| {
-        let position = scale * (out as f32 + 0.5) - 0.5;
+        let position = if align_corners {
+            scale * out as f32
+        } else {
+            scale * (out as f32 + 0.5) - 0.5
+        };
         let position = if filter == ResizeFilter::Bilinear {
             position.max(0.0)
         } else {

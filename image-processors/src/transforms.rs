@@ -2009,6 +2009,37 @@ pub fn resize_f32_bilinear_interleaved(
     })
 }
 
+/// Resize interleaved FP32 values with bicubic interpolation without antialiasing.
+/// Aligned corners preserve endpoint coordinates; otherwise half-pixels are used.
+/// Values remain floating point without clamping, including nonfinite values.
+///
+/// # Errors
+/// Reports invalid geometry, channel counts, storage lengths or size overflow.
+pub fn resize_f32_bicubic_interleaved(
+    values: &[f32],
+    source_size: ImageSize,
+    channels: usize,
+    target_size: ImageSize,
+    align_corners: bool,
+) -> Result<Vec<f32>, TransformError> {
+    image_resize_kernels::resize_f32_bicubic_interleaved(
+        values,
+        KernelImageSize {
+            height: source_size.height,
+            width: source_size.width,
+        },
+        channels,
+        KernelImageSize {
+            height: target_size.height,
+            width: target_size.width,
+        },
+        align_corners,
+    )
+    .map_err(|error| TransformError::ResizeKernel {
+        message: error.to_string(),
+    })
+}
+
 /// Resizes interleaved floating image values with antialiased bilinear filtering.
 ///
 /// Use `align_corners = true` for PyTorch interpolation with aligned corners.
