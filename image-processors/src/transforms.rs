@@ -953,6 +953,57 @@ pub fn shortest_edge_resize_size(
     ImageSize::new(height.max(1), width.max(1))
 }
 
+/// Resolves a capped shortest-edge resize, rounding half up before divisor flooring.
+///
+/// The aspect scale is evaluated in FP64, including the second scale when the
+/// longest-edge cap is reached. Both axes are rounded with `floor(value + 0.5)`
+/// and then down to `multiple`. The returned size is intended for one resample;
+/// resizing to an intermediate rounded size would change the image samples.
+/// This is the geometry used by Transformers' ViLT PIL processor.
+///
+/// # Errors
+/// Returns an error for zero dimensions, limits or divisor, dimension overflow,
+/// or a resolved dimension smaller than the divisor.
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Match the upstream FP64 scale and positive half-up integer conversion"
+)]
+pub fn shortest_edge_half_up_multiple_resize_size(
+    original_size: ImageSize,
+    shortest_edge: usize,
+    longest_edge: usize,
+    multiple: usize,
+) -> Result<ImageSize, TransformError> {
+    validate_size(original_size)?;
+    if shortest_edge == 0 || longest_edge == 0 || multiple == 0 {
+        return Err(TransformError::InvalidScaleFactor(0));
+    }
+    let scale = shortest_edge as f64 / original_size.height.min(original_size.width) as f64;
+    let (mut height, mut width) = if original_size.height < original_size.width {
+        (shortest_edge as f64, scale * original_size.width as f64)
+    } else {
+        (scale * original_size.height as f64, shortest_edge as f64)
+    };
+    if height.max(width) > longest_edge as f64 {
+        let scale = longest_edge as f64 / height.max(width);
+        height *= scale;
+        width *= scale;
+    }
+    if !height.is_finite()
+        || !width.is_finite()
+        || height + 0.5 >= usize::MAX as f64
+        || width + 0.5 >= usize::MAX as f64
+    {
+        return Err(TransformError::ImageSizeOverflow);
+    }
+    ImageSize::new(
+        (height + 0.5) as usize / multiple * multiple,
+        (width + 0.5) as usize / multiple * multiple,
+    )
+}
+
 /// Returns whether a source should rotate to match target orientation.
 ///
 /// # Errors

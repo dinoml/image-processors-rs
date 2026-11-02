@@ -858,7 +858,12 @@ fn padded_batch_target_for_sizes(
     Ok(target)
 }
 
-fn pixel_mask_for_valid_sizes(
+/// Builds a boolean NCHW mask with a singleton channel for top-left valid regions.
+///
+/// # Errors
+/// Returns an error when a valid region exceeds the target canvas or its
+/// element count overflows.
+pub fn pixel_mask_for_valid_sizes(
     sizes: &[ImageSize],
     target: ImageSize,
 ) -> Result<Tensor, ImageProcessorError> {
