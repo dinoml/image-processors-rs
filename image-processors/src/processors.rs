@@ -51,6 +51,7 @@ pub use encoder_presets::{
 };
 mod eomt;
 mod overlapping;
+pub mod sapiens2;
 mod task_vision_presets;
 pub use eomt::{EomtImageProcessor, EomtImageProcessorConfig};
 pub use overlapping::OverlappingImagePlan;
