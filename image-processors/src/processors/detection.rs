@@ -783,6 +783,26 @@ pub(super) fn shortest_edge_resize_output_size(
     original_size: ImageSize,
     config: ShortestEdgeResizeConfig,
 ) -> Result<ImageSize, ImageProcessorError> {
+    shortest_edge_resize_output_size_with_policy(
+        original_size,
+        config,
+        ShortestEdgeResizePolicy::Detr,
+    )
+}
+
+/// Upstream ordering of the unchanged-size shortcut relative to portrait resizing.
+pub(super) enum ShortestEdgeResizePolicy {
+    /// DETR checks for an unchanged shortest edge before either orientation.
+    Detr,
+    /// YOLOS computes portrait dimensions before checking for unchanged size.
+    Yolos,
+}
+
+pub(super) fn shortest_edge_resize_output_size_with_policy(
+    original_size: ImageSize,
+    config: ShortestEdgeResizeConfig,
+    policy: ShortestEdgeResizePolicy,
+) -> Result<ImageSize, ImageProcessorError> {
     let fallback =
         shortest_edge_resize_size(original_size, config.shortest_edge, config.longest_edge)?;
     let shortest = original_size.height.min(original_size.width);
@@ -797,7 +817,10 @@ pub(super) fn shortest_edge_resize_output_size(
     // Recomputing it from the rounded short axis shifts document pixels.
     let raw_short = cap as f64 * shortest as f64 / longest as f64;
     let short = raw_short.round_ties_even() as usize;
-    if shortest == short {
+    if shortest == short
+        && (matches!(policy, ShortestEdgeResizePolicy::Detr)
+            || original_size.height <= original_size.width)
+    {
         return Ok(original_size);
     }
     let long = (raw_short * longest as f64 / shortest as f64) as usize;

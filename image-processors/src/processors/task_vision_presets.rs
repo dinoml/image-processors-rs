@@ -2173,12 +2173,13 @@ fn apply_task_resize(
             multiple,
         } => {
             if config.preset == TaskVisionProcessorPreset::Yolos {
-                let target = super::detection::shortest_edge_resize_output_size(
+                let target = super::detection::shortest_edge_resize_output_size_with_policy(
                     source,
                     ShortestEdgeResizeConfig {
                         shortest_edge,
                         longest_edge,
                     },
+                    super::detection::ShortestEdgeResizePolicy::Yolos,
                 )?;
                 let multiple = multiple.unwrap_or(16);
                 let target = ImageSize::new(
