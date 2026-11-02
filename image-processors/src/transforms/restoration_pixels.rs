@@ -1,6 +1,58 @@
 //! Lossless integer restoration images and floating pixel preparation.
 
-use super::TransformError;
+use super::{grayscale_opencv, new_frame, ImageSize, TransformError};
+use crate::media::{FrameTiming, ImageFrame, PixelFormat};
+
+/// Decode-compatible byte grayscale normalization, dividing in FP64 before FP32.
+///
+/// Already-decoded luma is preserved; RGB input uses the shared integer luma
+/// conversion. The division boundary follows NumPy `np.float32(img / 255.)`.
+///
+/// # Errors
+/// Reports invalid decoded image storage or grayscale conversion failures.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "upstream explicitly converts the FP64 quotient to FP32"
+)]
+pub fn prepare_grayscale_u8(image: &ImageFrame) -> Result<Vec<f32>, TransformError> {
+    let gray = grayscale_opencv(image)?;
+    Ok(gray
+        .data()
+        .iter()
+        .map(|value| (f64::from(*value) / 255.0) as f32)
+        .collect())
+}
+
+/// Clamp unit-range grayscale predictions and quantize using ties-to-even rounding.
+///
+/// # Errors
+/// Rejects incompatible image storage, nonfinite predictions or invalid dimensions.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "finite clamped predictions round to the byte interval"
+)]
+pub fn finish_grayscale_u8(
+    values: &[f32],
+    size: ImageSize,
+    timing: FrameTiming,
+) -> Result<ImageFrame, TransformError> {
+    let expected = restoration_image_len(size.height, size.width, 1)?;
+    if values.len() != expected {
+        return Err(TransformError::InvalidBufferLength {
+            expected,
+            actual: values.len(),
+        });
+    }
+    if let Some(index) = values.iter().position(|value| !value.is_finite()) {
+        return Err(TransformError::NonFiniteRestorationPixel { index });
+    }
+    let data = values
+        .iter()
+        .map(|value| (value.clamp(0.0, 1.0) * 255.0).round_ties_even() as u8)
+        .collect();
+    new_frame(size.width, size.height, PixelFormat::Luma8, data, timing)
+}
 
 /// Interleaved decoded pixel order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
