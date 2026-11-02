@@ -69,7 +69,7 @@ pub fn resize_frame_pillow_reducing_gap(
     let data =
         if frame.pixel_format() == PixelFormat::Rgba8 && filter != KernelResizeFilter::Nearest {
             let mut premultiplied = frame.data().to_vec();
-            for pixel in premultiplied.chunks_exact_mut(4) {
+            for pixel in premultiplied.as_chunks_mut::<4>().0 {
                 for channel in 0..3 {
                     let product = u16::from(pixel[channel]) * u16::from(pixel[3]) + 128;
                     pixel[channel] = (((product >> 8) + product) >> 8) as u8;
@@ -86,7 +86,7 @@ pub fn resize_frame_pillow_reducing_gap(
             .map_err(|error| TransformError::ResizeKernel {
                 message: error.to_string(),
             })?;
-            for pixel in resized.chunks_exact_mut(4) {
+            for pixel in resized.as_chunks_mut::<4>().0 {
                 if pixel[3] != 0 && pixel[3] != 255 {
                     for channel in 0..3 {
                         pixel[channel] =
