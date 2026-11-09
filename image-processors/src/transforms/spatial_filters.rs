@@ -150,6 +150,85 @@ fn kernel(
     Ok(size)
 }
 
+/// Separable Gaussian filtering with FP32 coefficients and reflect-101 borders.
+///
+/// Each axis has an explicit odd support and sigma. Coefficients, their
+/// normalization and both convolution passes remain FP32, matching tensor
+/// Gaussian preprocessing. The horizontal pass precedes the vertical pass.
+/// Existing OpenCV-compatible filters retain their coefficient precision.
+///
+/// # Errors
+/// Rejects invalid geometry, nonfinite samples, invalid sigma/support, or a
+/// reflection radius at least as large as its input dimension.
+pub fn gaussian_blur_tensor_f32(
+    values: &[f32],
+    size: ImageSize,
+    channels: usize,
+    sigma: [f32; 2],
+    support: ImageSize,
+) -> Result<Vec<f32>, SpatialFilterError> {
+    geometry(values.len(), size, channels)?;
+    if values.iter().any(|value| !value.is_finite()) {
+        return Err(SpatialFilterError::NonFinite);
+    }
+    let mut kernels = Vec::with_capacity(2);
+    for (side, extent, sigma) in [
+        (support.height, size.height, sigma[0]),
+        (support.width, size.width, sigma[1]),
+    ] {
+        if !sigma.is_finite() || sigma <= 0.0 {
+            return Err(SpatialFilterError::Sigma);
+        }
+        if side == 0 || side.is_multiple_of(2) || side / 2 >= extent {
+            return Err(SpatialFilterError::Kernel);
+        }
+        let mut weights = (0..side)
+            .map(|index| {
+                let distance = index as f32 - (side / 2) as f32;
+                (-(distance * distance) / (2.0 * (sigma * sigma))).exp()
+            })
+            .collect::<Vec<_>>();
+        let sum: f32 = weights.iter().sum();
+        for weight in &mut weights {
+            *weight /= sum;
+        }
+        kernels.push(weights);
+    }
+    let mut intermediate = vec![0.0; values.len()];
+    let mut output = vec![0.0; values.len()];
+    for y in 0..size.height {
+        for x in 0..size.width {
+            for channel in 0..channels {
+                let mut sum = 0.0_f32;
+                for (tap, weight) in kernels[1].iter().enumerate() {
+                    let column = reflect101(
+                        x as isize + tap as isize - (support.width / 2) as isize,
+                        size.width,
+                    );
+                    sum += values[(y * size.width + column) * channels + channel] * weight;
+                }
+                intermediate[(y * size.width + x) * channels + channel] = sum;
+            }
+        }
+    }
+    for y in 0..size.height {
+        for x in 0..size.width {
+            for channel in 0..channels {
+                let mut sum = 0.0_f32;
+                for (tap, weight) in kernels[0].iter().enumerate() {
+                    let row = reflect101(
+                        y as isize + tap as isize - (support.height / 2) as isize,
+                        size.height,
+                    );
+                    sum += intermediate[(row * size.width + x) * channels + channel] * weight;
+                }
+                output[(y * size.width + x) * channels + channel] = sum;
+            }
+        }
+    }
+    Ok(output)
+}
+
 /// Gaussian filtering of interleaved FP32 values with reflect-101 borders.
 ///
 /// Automatic support is `round(8*sigma+1)|1`; explicit support preserves the
