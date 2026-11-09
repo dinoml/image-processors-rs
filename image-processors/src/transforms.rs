@@ -109,8 +109,14 @@ pub use frame_ops::{
 pub use raster_drawing::{
     draw_line_rgb, ellipse_polygon, fill_circle_rgb, fill_convex_polygon_rgb,
 };
+mod auxiliary;
 mod canny;
 mod spatial_filters;
+pub use auxiliary::{
+    auxiliary_resize_pad, color_palette, content_shuffle, fast_guided_filter_rgb,
+    pyramid_expand_u8, remove_small_objects, scribble_binary, scribble_edges, scribble_xdog,
+    standard_lineart, tile_preprocess, tile_preprocess_guided, tile_preprocess_simple, NumpyPcg64,
+};
 pub use canny::canny_u8;
 #[cfg(test)]
 use frame_ops::convert_to_rgb;
