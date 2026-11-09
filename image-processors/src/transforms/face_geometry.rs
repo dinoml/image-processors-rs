@@ -1,15 +1,15 @@
-//! Similarity estimation and byte RGB affine resampling in Rust.
+//! Similarity estimation and affine/perspective image resampling in Rust.
 
 use super::ImageSize;
 
-/// Invalid landmark or affine-image input.
+/// Invalid landmark or transformed-image input.
 #[derive(Debug, Clone, Copy)]
 pub enum FaceGeometryError {
     /// Invalid, insufficient or degenerate corresponding landmarks.
     Landmarks,
     /// Invalid image storage or dimensions.
     Geometry,
-    /// Noninvertible affine transform.
+    /// Noninvertible image transform.
     Singular,
 }
 impl std::fmt::Display for FaceGeometryError {
@@ -228,37 +228,216 @@ pub fn warp_affine_u8(
         for x in 0..target.width {
             let xx = (x0 + (a * x as f64 * 1024.0).round_ties_even() as i64) >> 5;
             let yy = (y0 + (d * x as f64 * 1024.0).round_ties_even() as i64) >> 5;
-            let sx = xx >> 5;
-            let sy = yy >> 5;
-            let fx = (xx & 31) as u32;
-            let fy = (yy & 31) as u32;
-            let weights = [
-                (32 - fx) * (32 - fy),
-                fx * (32 - fy),
-                (32 - fx) * fy,
-                fx * fy,
-            ];
-            for channel in 0..channels {
-                let mut sum = 0_u32;
-                for (tap, (dx, dy)) in [(0, 0), (1, 0), (0, 1), (1, 1)].into_iter().enumerate() {
-                    let px = sx + dx;
-                    let py = sy + dy;
-                    let sample = if px >= 0
-                        && py >= 0
-                        && px < source.width as i64
-                        && py < source.height as i64
-                    {
-                        values[(py as usize * source.width + px as usize) * channels + channel]
-                    } else {
-                        border[channel]
-                    };
-                    sum += u32::from(sample) * weights[tap];
-                }
-                output[(y * target.width + x) * channels + channel] = ((sum + 512) >> 10) as u8;
-            }
+            let start = (y * target.width + x) * channels;
+            bilinear_u8(
+                values,
+                source,
+                border,
+                [xx, yy],
+                &mut output[start..start + channels],
+            );
         }
     }
     Ok(output)
+}
+
+/// Warp a quadrilateral in an interleaved RGB image to a rectangular canvas.
+///
+/// `corners` are FP32 source pixel coordinates corresponding to destination
+/// `(0, height)`, `(0, 0)`, `(width, 0)`, `(width, height)`, respectively.
+/// Coordinates describe canvas edges, without a half-pixel offset. The FP64
+/// homography is solved with partial-pivot elimination, then inverted for
+/// sampling. Perspective division rounds directly to a five-bit interpolation
+/// lattice; unlike affine sampling it has no ten-bit intermediate accumulator.
+/// Byte bilinear interpolation rounds once, with a constant RGB border.
+///
+/// This is the sampling contract used by MediaPipe's CPU ImageToTensor path.
+/// It is implemented entirely in Rust and does not call OpenCV.
+///
+/// # Errors
+/// Rejects invalid RGB storage, nonfinite corners, zero/overflowing dimensions,
+/// dimensions outside the signed-short remapping range, or singular transforms.
+pub fn warp_perspective_quad_rgb(
+    values: &[u8],
+    source: ImageSize,
+    target: ImageSize,
+    corners: [[f32; 2]; 4],
+    border: [u8; 3],
+) -> Result<Vec<u8>, FaceGeometryError> {
+    let source_len = source
+        .width
+        .checked_mul(source.height)
+        .and_then(|len| len.checked_mul(3));
+    let output_len = target
+        .width
+        .checked_mul(target.height)
+        .and_then(|len| len.checked_mul(3));
+    if [source.width, source.height, target.width, target.height]
+        .into_iter()
+        .any(|size| size == 0 || size >= i16::MAX as usize)
+        || source_len != Some(values.len())
+        || output_len.is_none()
+        || corners.iter().flatten().any(|value| !value.is_finite())
+    {
+        return Err(FaceGeometryError::Geometry);
+    }
+    let inverse = quad_inverse(corners, target)?;
+    let mut output = vec![0; output_len.ok_or(FaceGeometryError::Geometry)?];
+    for y in 0..target.height {
+        let row_x = inverse[1] * y as f64 + inverse[2];
+        let row_y = inverse[4] * y as f64 + inverse[5];
+        let row_w = inverse[7] * y as f64 + inverse[8];
+        for x in 0..target.width {
+            let denominator = row_w + inverse[6] * x as f64;
+            let scale = if denominator == 0.0 {
+                0.0
+            } else {
+                32.0 / denominator
+            };
+            let fixed_x = ((row_x + inverse[0] * x as f64) * scale)
+                .clamp(f64::from(i32::MIN), f64::from(i32::MAX))
+                .round_ties_even() as i64;
+            let fixed_y = ((row_y + inverse[3] * x as f64) * scale)
+                .clamp(f64::from(i32::MIN), f64::from(i32::MAX))
+                .round_ties_even() as i64;
+            let start = (y * target.width + x) * 3;
+            bilinear_u8(
+                values,
+                source,
+                &border,
+                [fixed_x, fixed_y],
+                &mut output[start..start + 3],
+            );
+        }
+    }
+    Ok(output)
+}
+
+fn quad_inverse(corners: [[f32; 2]; 4], target: ImageSize) -> Result<[f64; 9], FaceGeometryError> {
+    let destinations = [
+        [0.0, target.height as f32],
+        [0.0, 0.0],
+        [target.width as f32, 0.0],
+        [target.width as f32, target.height as f32],
+    ];
+    let mut equations = [[0.0_f64; 9]; 8];
+    for (index, ([x, y], [u, v])) in corners.into_iter().zip(destinations).enumerate() {
+        // Source point products are evaluated in FP32 before entering the FP64 solve.
+        equations[index] = [
+            f64::from(x),
+            f64::from(y),
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            f64::from(-x * u),
+            f64::from(-y * u),
+            f64::from(u),
+        ];
+        equations[index + 4] = [
+            0.0,
+            0.0,
+            0.0,
+            f64::from(x),
+            f64::from(y),
+            1.0,
+            f64::from(-x * v),
+            f64::from(-y * v),
+            f64::from(v),
+        ];
+    }
+    if equations.iter().flatten().any(|value| !value.is_finite()) {
+        return Err(FaceGeometryError::Geometry);
+    }
+    for column in 0..8 {
+        let mut pivot = column;
+        for (row, equation) in equations.iter().enumerate().skip(column + 1) {
+            if equation[column].abs() > equations[pivot][column].abs() {
+                pivot = row;
+            }
+        }
+        if equations[pivot][column].abs() < f64::EPSILON * 100.0 {
+            return Err(FaceGeometryError::Singular);
+        }
+        equations.swap(column, pivot);
+        let pivot_row = equations[column];
+        let reciprocal = -1.0 / pivot_row[column];
+        for equation in equations.iter_mut().skip(column + 1) {
+            let multiplier = equation[column] * reciprocal;
+            for (coefficient, &pivot_value) in equation.iter_mut().zip(&pivot_row).skip(column + 1)
+            {
+                *coefficient += multiplier * pivot_value;
+            }
+        }
+    }
+    let mut forward = [0.0; 9];
+    forward[8] = 1.0;
+    for row in (0..8).rev() {
+        let equation = equations[row];
+        let mut value = equation[8];
+        for (&coefficient, &known) in equation[..8].iter().zip(&forward[..8]).skip(row + 1) {
+            value -= coefficient * known;
+        }
+        forward[row] = value / equation[row];
+    }
+    let [a, b, c, d, e, f, g, h, i] = forward;
+    let determinant = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+    if determinant == 0.0 || !determinant.is_finite() {
+        return Err(FaceGeometryError::Singular);
+    }
+    let reciprocal = 1.0 / determinant;
+    let inverse = [
+        e * i - f * h,
+        c * h - b * i,
+        b * f - c * e,
+        f * g - d * i,
+        a * i - c * g,
+        c * d - a * f,
+        d * h - e * g,
+        b * g - a * h,
+        a * e - b * d,
+    ]
+    .map(|value| value * reciprocal);
+    if inverse.iter().any(|value| !value.is_finite()) {
+        return Err(FaceGeometryError::Singular);
+    }
+    Ok(inverse)
+}
+
+fn bilinear_u8(
+    values: &[u8],
+    source: ImageSize,
+    border: &[u8],
+    fixed: [i64; 2],
+    output: &mut [u8],
+) {
+    let channels = border.len();
+    let [xx, yy] = fixed;
+    let sx = xx >> 5;
+    let sy = yy >> 5;
+    let fx = (xx & 31) as u32;
+    let fy = (yy & 31) as u32;
+    let weights = [
+        (32 - fx) * (32 - fy),
+        fx * (32 - fy),
+        (32 - fx) * fy,
+        fx * fy,
+    ];
+    for (channel, pixel) in output.iter_mut().enumerate() {
+        let mut sum = 0_u32;
+        for (tap, (dx, dy)) in [(0, 0), (1, 0), (0, 1), (1, 1)].into_iter().enumerate() {
+            let px = sx + dx;
+            let py = sy + dy;
+            let sample =
+                if px >= 0 && py >= 0 && px < source.width as i64 && py < source.height as i64 {
+                    values[(py as usize * source.width + px as usize) * channels + channel]
+                } else {
+                    border[channel]
+                };
+            sum += u32::from(sample) * weights[tap];
+        }
+        *pixel = ((sum + 512) >> 10) as u8;
+    }
 }
 
 trait AffineFloat: Copy {
