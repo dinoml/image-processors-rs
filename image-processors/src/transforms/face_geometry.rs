@@ -282,6 +282,165 @@ impl Default for PerspectiveWarpOptions {
     }
 }
 
+/// Sample byte pixels at an arbitrary inverse coordinate map.
+///
+/// Coordinates are FP32 source pixel `(x, y)` pairs in output row-major order.
+/// They round directly to the five-bit interpolation lattice. Interpolation
+/// and constant borders share the existing affine warp sampler.
+///
+/// # Errors
+/// Rejects invalid storage, nonfinite coordinates, dimensions outside the
+/// signed-short remapping range, or other than one to four channels.
+pub fn remap_bilinear_u8(
+    values: &[u8],
+    source: ImageSize,
+    target: ImageSize,
+    coordinates: &[[f32; 2]],
+    border: &[u8],
+) -> Result<Vec<u8>, FaceGeometryError> {
+    let channels = border.len();
+    let input_len = source
+        .width
+        .checked_mul(source.height)
+        .and_then(|pixels| pixels.checked_mul(channels));
+    let pixels = target
+        .width
+        .checked_mul(target.height)
+        .ok_or(FaceGeometryError::Geometry)?;
+    let output_len = pixels
+        .checked_mul(channels)
+        .ok_or(FaceGeometryError::Geometry)?;
+    if !(1..=4).contains(&channels)
+        || [source.width, source.height, target.width, target.height]
+            .iter()
+            .any(|&size| size == 0 || size >= i16::MAX as usize)
+        || input_len != Some(values.len())
+        || coordinates.len() != pixels
+        || coordinates.iter().flatten().any(|value| !value.is_finite())
+    {
+        return Err(FaceGeometryError::Geometry);
+    }
+    let mut output = vec![0; output_len];
+    for (coordinate, pixel) in coordinates.iter().zip(output.chunks_exact_mut(channels)) {
+        let fixed = coordinate.map(|value| {
+            let rounded = (value * 32.0).round_ties_even() as i32;
+            let base = (rounded >> 5).clamp(i16::MIN as i32, i16::MAX as i32);
+            i64::from(base) * 32 + i64::from(rounded & 31)
+        });
+        bilinear_u8(values, source, border, fixed, pixel);
+    }
+    Ok(output)
+}
+
+/// Bilinearly remap interleaved FP32 pixels with replicated image borders.
+///
+/// Coordinates round to the same five-bit lattice as [`remap_bilinear_u8`].
+/// Pixel values remain floating point, including NaN and infinity.
+/// # Errors
+/// Rejects invalid dimensions, storage, channel counts or nonfinite coordinates.
+pub fn remap_bilinear_f32(
+    values: &[f32],
+    source: ImageSize,
+    target: ImageSize,
+    coordinates: &[[f32; 2]],
+    channels: usize,
+) -> Result<Vec<f32>, FaceGeometryError> {
+    let pixels = target
+        .width
+        .checked_mul(target.height)
+        .ok_or(FaceGeometryError::Geometry)?;
+    let length = pixels
+        .checked_mul(channels)
+        .ok_or(FaceGeometryError::Geometry)?;
+    if channels == 0
+        || source.width == 0
+        || source.height == 0
+        || target.width == 0
+        || target.height == 0
+        || source
+            .width
+            .checked_mul(source.height)
+            .and_then(|n| n.checked_mul(channels))
+            != Some(values.len())
+        || coordinates.len() != pixels
+        || coordinates.iter().flatten().any(|v| !v.is_finite())
+        || [source.width, source.height, target.width, target.height]
+            .iter()
+            .any(|&n| n >= i16::MAX as usize)
+    {
+        return Err(FaceGeometryError::Geometry);
+    }
+    let mut output = vec![0.0; length];
+    for (coordinate, pixel) in coordinates.iter().zip(output.chunks_exact_mut(channels)) {
+        let fixed = coordinate.map(|v| (v * 32.0).round_ties_even() as i32);
+        let x = (fixed[0] >> 5).clamp(i16::MIN as i32, i16::MAX as i32);
+        let y = (fixed[1] >> 5).clamp(i16::MIN as i32, i16::MAX as i32);
+        let fx = (fixed[0] & 31) as f32 / 32.0;
+        let fy = (fixed[1] & 31) as f32 / 32.0;
+        for (channel, value) in pixel.iter_mut().enumerate() {
+            for (dx, dy, weight) in [
+                (0, 0, (1.0 - fx) * (1.0 - fy)),
+                (1, 0, fx * (1.0 - fy)),
+                (0, 1, (1.0 - fx) * fy),
+                (1, 1, fx * fy),
+            ] {
+                let sx = (x + dx).clamp(0, source.width as i32 - 1) as usize;
+                let sy = (y + dy).clamp(0, source.height as i32 - 1) as usize;
+                *value += values[(sy * source.width + sx) * channels + channel] * weight;
+            }
+        }
+    }
+    Ok(output)
+}
+
+/// Nearest-neighbor byte remapping with replicated borders.
+///
+/// Floating source coordinates round to even before clamping to the image.
+/// # Errors
+/// Rejects invalid geometry, storage or nonfinite coordinates.
+pub fn remap_nearest_u8(
+    values: &[u8],
+    source: ImageSize,
+    target: ImageSize,
+    coordinates: &[[f32; 2]],
+    channels: usize,
+) -> Result<Vec<u8>, FaceGeometryError> {
+    let pixels = target
+        .width
+        .checked_mul(target.height)
+        .ok_or(FaceGeometryError::Geometry)?;
+    let length = pixels
+        .checked_mul(channels)
+        .ok_or(FaceGeometryError::Geometry)?;
+    if channels == 0
+        || source.width == 0
+        || source.height == 0
+        || target.width == 0
+        || target.height == 0
+        || source
+            .width
+            .checked_mul(source.height)
+            .and_then(|n| n.checked_mul(channels))
+            != Some(values.len())
+        || coordinates.len() != pixels
+        || coordinates.iter().flatten().any(|v| !v.is_finite())
+        || [source.width, source.height, target.width, target.height]
+            .iter()
+            .any(|&n| n >= i16::MAX as usize)
+    {
+        return Err(FaceGeometryError::Geometry);
+    }
+    let mut output = vec![0; length];
+    for (coordinate, pixel) in coordinates.iter().zip(output.chunks_exact_mut(channels)) {
+        let x = (coordinate[0].round_ties_even() as i32).clamp(0, source.width as i32 - 1) as usize;
+        let y =
+            (coordinate[1].round_ties_even() as i32).clamp(0, source.height as i32 - 1) as usize;
+        let start = (y * source.width + x) * channels;
+        pixel.copy_from_slice(&values[start..start + channels]);
+    }
+    Ok(output)
+}
+
 /// Warp a quadrilateral in an interleaved RGB image to a rectangular canvas.
 ///
 /// `corners` are FP32 source pixel coordinates corresponding to destination
