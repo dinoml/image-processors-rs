@@ -1037,14 +1037,6 @@ fn validate_opencv_dimensions(source: ImageSize, target: ImageSize) -> Result<()
     Ok(())
 }
 
-fn opencv_linear_axis(
-    output: usize,
-    input: usize,
-    horizontal: bool,
-) -> Vec<(usize, usize, f32, f32)> {
-    opencv_linear_axis_with_scale(output, input, horizontal, input as f64 / output as f64)
-}
-
 fn opencv_linear_axis_with_scale(
     output: usize,
     input: usize,
@@ -1149,13 +1141,80 @@ fn resize_u8_opencv_linear(
     if filter != ResizeFilter::Bilinear {
         return Err(ResizeError::UnsupportedOpenCvFilter);
     }
+    resize_u8_opencv_linear_with_inverse_scales(
+        values,
+        source,
+        channels,
+        target,
+        [
+            source.width as f64 / target.width as f64,
+            source.height as f64 / target.height as f64,
+        ],
+    )
+}
+
+/// Resize bytes with INTER_LINEAR and explicit `fx`/`fy`, without native OpenCV.
+///
+/// Returns `(target_size, pixels)`. Output extents use nearest-even rounding of
+/// source extents times the supplied scales. Sampling uses their reciprocals,
+/// rather than recomputing scales from those rounded output extents.
+///
+/// # Errors
+/// Reports nonpositive/nonfinite scales, invalid image storage or channels,
+/// zero output extents, dimension limits and size overflow.
+pub fn resize_u8_opencv_linear_with_scale(
+    values: &[u8],
+    source: ImageSize,
+    channels: usize,
+    scale_x: f64,
+    scale_y: f64,
+) -> Result<(ImageSize, Vec<u8>), ResizeError> {
+    ImageSize::new(source.height, source.width)?;
+    validate_image_data(values.len(), source, channels)?;
+    for (axis, scale) in [("x", scale_x), ("y", scale_y)] {
+        if !scale.is_finite() || scale <= 0.0 {
+            return Err(ResizeError::InvalidExplicitScale { axis, scale });
+        }
+    }
+    let dimension = |name, input: usize, scale: f64| {
+        let value = (input as f64 * scale).round_ties_even();
+        if !value.is_finite() || value > i32::MAX as f64 {
+            return Err(ResizeError::DimensionTooLarge {
+                dimension: name,
+                value: value as usize,
+                max: i32::MAX as usize,
+            });
+        }
+        Ok(value as usize)
+    };
+    let target = ImageSize::new(
+        dimension("target height", source.height, scale_y)?,
+        dimension("target width", source.width, scale_x)?,
+    )?;
+    let pixels = resize_u8_opencv_linear_with_inverse_scales(
+        values,
+        source,
+        channels,
+        target,
+        [1.0 / scale_x, 1.0 / scale_y],
+    )?;
+    Ok((target, pixels))
+}
+
+fn resize_u8_opencv_linear_with_inverse_scales(
+    values: &[u8],
+    source: ImageSize,
+    channels: usize,
+    target: ImageSize,
+    inverse_scales: [f64; 2],
+) -> Result<Vec<u8>, ResizeError> {
     ImageSize::new(target.height, target.width)?;
     validate_opencv_dimensions(source, target)?;
     if source == target {
         return Ok(values.to_vec());
     }
-    let axis = |output: usize, input: usize, horizontal: bool| {
-        opencv_linear_axis(output, input, horizontal)
+    let axis = |output: usize, input: usize, horizontal: bool, scale: f64| {
+        opencv_linear_axis_with_scale(output, input, horizontal, scale)
             .into_iter()
             .map(|(first, second, left, right)| {
                 let left = (left * 2048.0).round_ties_even() as i32;
@@ -1164,8 +1223,8 @@ fn resize_u8_opencv_linear(
             })
             .collect::<Vec<_>>()
     };
-    let columns = axis(target.width, source.width, true);
-    let rows = axis(target.height, source.height, false);
+    let columns = axis(target.width, source.width, true, inverse_scales[0]);
+    let rows = axis(target.height, source.height, false, inverse_scales[1]);
     let mut output = vec![0; image_len(target, channels)?];
     output
         .par_chunks_exact_mut(target.width * channels)
@@ -2857,6 +2916,14 @@ pub enum ResizeError {
     /// A floating-point scale was not finite.
     #[error("scale factor must be finite, got {0}")]
     InvalidScaleFactor(f32),
+    /// Explicit coordinate scale was nonpositive or nonfinite.
+    #[error("explicit {axis} scale must be positive and finite, got {scale}")]
+    InvalidExplicitScale {
+        /// Spatial axis (`x` or `y`).
+        axis: &'static str,
+        /// Rejected scale.
+        scale: f64,
+    },
     /// A resize profile has no floating-point implementation.
     #[error("resize profile {0:?} does not support FP32 input")]
     UnsupportedFloatProfile(ResizeProfile),

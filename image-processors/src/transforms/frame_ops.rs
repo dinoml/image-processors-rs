@@ -165,6 +165,36 @@ pub fn resize_frame_opencv(
     )
 }
 
+/// Resize a byte frame with INTER_LINEAR and explicit `fx`/`fy` coordinates.
+///
+/// Output dimensions use nearest-even rounding; sampling retains the supplied
+/// scales. Pixel format and frame timing are preserved. This uses Rust kernels
+/// and does not link or call native OpenCV.
+///
+/// # Errors
+/// Reports invalid scales, image storage, dimensions or size overflow.
+pub fn resize_frame_opencv_linear_with_scale(
+    frame: &ImageFrame,
+    scale_x: f64,
+    scale_y: f64,
+) -> Result<ImageFrame, TransformError> {
+    let (target, data) = image_resize_kernels::resize_u8_opencv_linear_with_scale(
+        frame.data(),
+        kernel_size(frame_size(frame)),
+        frame.channels(),
+        scale_x,
+        scale_y,
+    )
+    .map_err(transform_error_from_resize)?;
+    new_frame(
+        target.width,
+        target.height,
+        frame.pixel_format(),
+        data,
+        frame.timing(),
+    )
+}
+
 /// Resize a byte frame with INTER_AREA reduction and a selected OpenCV
 /// enlargement mode. Pixel format and frame timing are preserved.
 ///
