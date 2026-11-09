@@ -9,7 +9,7 @@ use super::{
 };
 use crate::image::{
     BatchExecution, ImageProcessor, ImageProcessorConfig, ImageProcessorError,
-    ImageProcessorOptions,
+    ImageProcessorOptions, ImageProcessorPrecision,
 };
 use crate::media::{ImageDecodeBackend, ImageFrame, PixelFormat};
 use crate::tensor::{ImageLayout, Layout, Tensor, TensorData, VideoLayout};
@@ -261,7 +261,23 @@ impl VisualClozeProcessor {
         &self,
         input_images: &[Vec<Option<ImageFrame>>],
     ) -> Result<VisualClozePreprocessOutput, ImageProcessorError> {
-        visual_cloze_preprocess_grid(&self.config, &self.processor, input_images)
+        self.preprocess_image_grid_with_precision(input_images, ImageProcessorPrecision::Byte)
+    }
+
+    /// Preprocesses a grid with explicit precision after byte resize and cropping.
+    ///
+    /// `Byte` preserves the existing preprocessing behavior. Selecting
+    /// `Float32 { rescale_divisor: Some(255.0) }` divides pixels before FP32
+    /// normalization, without a second rescale or floating image resize.
+    ///
+    /// # Errors
+    /// Reports invalid grids, precision options, geometry or tensor conversion.
+    pub fn preprocess_image_grid_with_precision(
+        &self,
+        input_images: &[Vec<Option<ImageFrame>>],
+        precision: ImageProcessorPrecision,
+    ) -> Result<VisualClozePreprocessOutput, ImageProcessorError> {
+        visual_cloze_preprocess_grid(&self.config, &self.processor, input_images, precision)
     }
 
     /// Preprocesses one image for VisualCloze's upsampling stage.
@@ -275,6 +291,27 @@ impl VisualClozeProcessor {
         image: &ImageFrame,
         target: ImageSize,
     ) -> Result<VisualClozePreprocessOutput, ImageProcessorError> {
+        self.preprocess_image_upsampling_with_precision(
+            image,
+            target,
+            ImageProcessorPrecision::Byte,
+        )
+    }
+
+    /// Preprocesses an upsampling image with explicit pixel-conversion precision.
+    ///
+    /// Resize remains in byte precision. A supplied FP32 rescale divisor replaces
+    /// the default rescale multiplier; normalization follows in FP32. `Byte`
+    /// retains the existing VAE conversion and resizing behavior.
+    ///
+    /// # Errors
+    /// Reports invalid targets, precision options, resize or tensor conversion.
+    pub fn preprocess_image_upsampling_with_precision(
+        &self,
+        image: &ImageFrame,
+        target: ImageSize,
+        precision: ImageProcessorPrecision,
+    ) -> Result<VisualClozePreprocessOutput, ImageProcessorError> {
         let resized = resize_frame_with_decision(
             image,
             target,
@@ -282,13 +319,16 @@ impl VisualClozeProcessor {
             ResizeMode::Default,
         )
         .map_err(ImageProcessorError::Transform)?;
-        let tensor = self.processor.preprocess_image_with_options(
+        let tensor = visual_cloze_convert_image(
+            &self.config,
+            &self.processor,
             &resized,
             ImageProcessorOptions {
                 height: Some(target.height),
                 width: Some(target.width),
                 resize_mode: None,
             },
+            precision,
         )?;
         let mask = visual_cloze_upsampling_mask_tensor(target)?;
         let metadata = nested_image_grid_metadata(vec![vec![target]], vec![vec![true]])
@@ -313,6 +353,7 @@ fn visual_cloze_preprocess_grid(
     config: &VisualClozeProcessorConfig,
     processor: &VaeImageProcessor,
     input_images: &[Vec<Option<ImageFrame>>],
+    precision: ImageProcessorPrecision,
 ) -> Result<VisualClozePreprocessOutput, ImageProcessorError> {
     let columns = visual_cloze_validate_grid(input_images)?;
     let rows = input_images.len();
@@ -404,7 +445,13 @@ fn visual_cloze_preprocess_grid(
     for row in &processed_frames {
         let mut tensor_row = Vec::with_capacity(columns);
         for image in row {
-            tensor_row.push(processor.preprocess_image(image)?);
+            tensor_row.push(visual_cloze_convert_image(
+                config,
+                processor,
+                image,
+                ImageProcessorOptions::default(),
+                precision,
+            )?);
         }
         images.push(tensor_row);
     }
@@ -431,6 +478,30 @@ fn visual_cloze_preprocess_grid(
         target_position,
         metadata,
     })
+}
+
+fn visual_cloze_convert_image(
+    config: &VisualClozeProcessorConfig,
+    processor: &VaeImageProcessor,
+    image: &ImageFrame,
+    options: ImageProcessorOptions,
+    precision: ImageProcessorPrecision,
+) -> Result<Tensor, ImageProcessorError> {
+    if matches!(precision, ImageProcessorPrecision::Byte) {
+        return processor.preprocess_image_with_options(image, options);
+    }
+    let mut conversion = config.image_processor_config();
+    // Geometry was already handled by the family processor in byte precision.
+    conversion.do_resize = false;
+    if matches!(
+        precision,
+        ImageProcessorPrecision::Float32 {
+            rescale_divisor: Some(_)
+        }
+    ) {
+        conversion.do_rescale = false;
+    }
+    ImageProcessor::new(conversion)?.preprocess_image_with_precision(image, options, precision)
 }
 
 fn visual_cloze_validate_grid(
