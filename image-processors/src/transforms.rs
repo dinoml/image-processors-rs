@@ -106,7 +106,9 @@ pub use frame_ops::{
     resize_f64_opencv, resize_frame_pillow_reducing_gap, resize_u16_lanczos4,
     rotate_frame_90_clockwise,
 };
-pub use raster_drawing::{ellipse_polygon, fill_circle_rgb, fill_convex_polygon_rgb};
+pub use raster_drawing::{
+    draw_line_rgb, ellipse_polygon, fill_circle_rgb, fill_convex_polygon_rgb,
+};
 mod canny;
 mod spatial_filters;
 pub use canny::canny_u8;
