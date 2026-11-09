@@ -32,9 +32,9 @@ fn hline(values: &mut [u8], size: ImageSize, y: i64, left: i64, right: i64, colo
         values[(row + x) * 3..(row + x) * 3 + 3].copy_from_slice(&color);
     }
 }
-fn clip(mut a: [i64; 2], mut b: [i64; 2], size: ImageSize) -> Option<([i64; 2], [i64; 2])> {
-    let right = size.width as i64 - 1;
-    let bottom = size.height as i64 - 1;
+fn clip(mut a: [i64; 2], mut b: [i64; 2], size: [i64; 2]) -> Option<([i64; 2], [i64; 2])> {
+    let right = size[0] - 1;
+    let bottom = size[1] - 1;
     let code = |p: [i64; 2]| {
         i32::from(p[0] < 0)
             + i32::from(p[0] > right) * 2
@@ -78,7 +78,11 @@ fn clip(mut a: [i64; 2], mut b: [i64; 2], size: ImageSize) -> Option<([i64; 2], 
     }
 }
 fn line(values: &mut [u8], size: ImageSize, a: [i32; 2], b: [i32; 2], color: [u8; 3]) {
-    let Some((mut a, mut b)) = clip(a.map(i64::from), b.map(i64::from), size) else {
+    let Some((mut a, mut b)) = clip(
+        a.map(i64::from),
+        b.map(i64::from),
+        [size.width as i64, size.height as i64],
+    ) else {
         return;
     };
     if a[0] > b[0] {
@@ -110,6 +114,130 @@ fn line(values: &mut [u8], size: ImageSize, a: [i32; 2], b: [i32; 2], color: [u8
             }
         }
     }
+}
+
+// Sixteen-bit border stepping retains the fractional vertices of thick strokes.
+// Rounding vertices to integers first changes diagonal LINE_8 coverage.
+fn line_fixed(values: &mut [u8], size: ImageSize, a: [i64; 2], b: [i64; 2], color: [u8; 3]) {
+    let Some((mut a, mut b)) = clip(
+        a,
+        b,
+        [(size.width as i64) << 16, (size.height as i64) << 16],
+    ) else {
+        return;
+    };
+    let dx = b[0] - a[0];
+    let dy = b[1] - a[1];
+    let horizontal = dx.abs() > dy.abs();
+    let major = usize::from(!horizontal);
+    let minor = 1 - major;
+    if b[major] < a[major] {
+        std::mem::swap(&mut a, &mut b);
+    }
+    let distance = b[major] - a[major];
+    let step = (i128::from(b[minor] - a[minor]) * 65536 / i128::from(distance | 1)) as i64;
+    let count = distance >> 16;
+    let end = b.map(|v| (v + 32768) >> 16);
+    hline(values, size, end[1], end[0], end[0], color);
+    let start = (a[major] + 32768) >> 16;
+    let mut fraction = a[minor] + 32768;
+    for offset in 0..=count {
+        let point = if horizontal {
+            [start + offset, fraction >> 16]
+        } else {
+            [fraction >> 16, start + offset]
+        };
+        hline(values, size, point[1], point[0], point[0], color);
+        fraction += step;
+    }
+}
+
+/// Draw a round-capped, eight-connected RGB line with integer endpoints.
+///
+/// Preserves the scalar LINE_8 stroke convention: sixteen-bit perpendicular
+/// offsets round ties to even, polygon borders retain their fractional position,
+/// scan edges round once, and endpoint disks use the integer midpoint rasterizer.
+/// Source semantics: OpenCV `drawing.cpp`, `ThickLine`, `Line2` and
+/// `FillConvexPoly`; no native library or bindings are used.
+///
+/// # Errors
+/// Rejects invalid RGB storage, empty/oversized image dimensions or thickness
+/// outside `1..=32767`. Endpoints may lie outside the image and are clipped.
+pub fn draw_line_rgb(
+    values: &mut [u8],
+    size: ImageSize,
+    start: [i32; 2],
+    end: [i32; 2],
+    color: [u8; 3],
+    thickness: i32,
+) -> Result<(), FaceGeometryError> {
+    validate(values, size)?;
+    if !(1..=32767).contains(&thickness) {
+        return Err(FaceGeometryError::Geometry);
+    }
+    if thickness == 1 {
+        line(values, size, start, end, color);
+        return Ok(());
+    }
+    let mut start = start.map(i64::from);
+    let mut end = end.map(i64::from);
+    let dimensions = [size.width as i64, size.height as i64];
+    if [start, end]
+        .iter()
+        .any(|p| p[0] < 0 || p[1] < 0 || p[0] >= dimensions[0] || p[1] >= dimensions[1])
+    {
+        let margin = i64::from(thickness);
+        let Some((a, b)) = clip(
+            start.map(|v| v + margin),
+            end.map(|v| v + margin),
+            dimensions.map(|v| v + 2 * margin),
+        ) else {
+            return Ok(());
+        };
+        start = a.map(|v| v - margin);
+        end = b.map(|v| v - margin);
+    }
+    let fixed_start = start.map(|v| v << 16);
+    let fixed_end = end.map(|v| v << 16);
+    let dx = (fixed_start[0] - fixed_end[0]) as f64 / 65536.0;
+    let dy = (fixed_end[1] - fixed_start[1]) as f64 / 65536.0;
+    let squared_length = dx * dx + dy * dy;
+    let radius = i64::from(thickness) << 15;
+    if squared_length > f64::EPSILON {
+        let scale = (radius as f64 + f64::from(thickness & 1) * 32768.0) / squared_length.sqrt();
+        let perpendicular = [
+            (dy * scale).round_ties_even() as i64,
+            (dx * scale).round_ties_even() as i64,
+        ];
+        let corners = [
+            [
+                fixed_start[0] + perpendicular[0],
+                fixed_start[1] + perpendicular[1],
+            ],
+            [
+                fixed_start[0] - perpendicular[0],
+                fixed_start[1] - perpendicular[1],
+            ],
+            [
+                fixed_end[0] - perpendicular[0],
+                fixed_end[1] - perpendicular[1],
+            ],
+            [
+                fixed_end[0] + perpendicular[0],
+                fixed_end[1] + perpendicular[1],
+            ],
+        ];
+        fill_convex_polygon::<16>(values, size, corners.len(), |index| corners[index], color)?;
+    }
+    let cap_radius = ((radius + 32768) >> 16) as i32;
+    for center in [start, end] {
+        let center = [
+            i32::try_from(center[0]).map_err(|_| FaceGeometryError::Geometry)?,
+            i32::try_from(center[1]).map_err(|_| FaceGeometryError::Geometry)?,
+        ];
+        fill_circle_rgb(values, size, center, cap_radius, color)?;
+    }
+    Ok(())
 }
 
 /// Integer points of a rotated full ellipse, with one-degree sampling.
@@ -162,18 +290,34 @@ pub fn fill_convex_polygon_rgb(
     points: &[[i32; 2]],
     color: [u8; 3],
 ) -> Result<(), FaceGeometryError> {
+    fill_convex_polygon::<0>(
+        values,
+        size,
+        points.len(),
+        |index| points[index].map(i64::from),
+        color,
+    )
+}
+
+fn fill_convex_polygon<const SHIFT: u32>(
+    values: &mut [u8],
+    size: ImageSize,
+    n: usize,
+    point_at: impl Fn(usize) -> [i64; 2],
+    color: [u8; 3],
+) -> Result<(), FaceGeometryError> {
     validate(values, size)?;
-    if points.is_empty() {
+    if n == 0 {
         return Err(FaceGeometryError::Geometry);
     }
-    let n = points.len();
-    let mut previous = points[n - 1];
+    let mut previous = point_at(n - 1);
     let mut minimum = 0;
-    let mut ymin = points[0][1];
+    let mut ymin = point_at(0)[1];
     let mut ymax = ymin;
-    let mut xmin = points[0][0];
+    let mut xmin = point_at(0)[0];
     let mut xmax = xmin;
-    for (i, &point) in points.iter().enumerate() {
+    for i in 0..n {
+        let point = point_at(i);
         if point[1] < ymin {
             ymin = point[1];
             minimum = i;
@@ -181,10 +325,31 @@ pub fn fill_convex_polygon_rgb(
         ymax = ymax.max(point[1]);
         xmin = xmin.min(point[0]);
         xmax = xmax.max(point[0]);
-        line(values, size, previous, point, color);
+        if SHIFT == 0 {
+            line(
+                values,
+                size,
+                previous.map(|v| v as i32),
+                point.map(|v| v as i32),
+                color,
+            );
+        } else {
+            line_fixed(
+                values,
+                size,
+                previous.map(|v| v << (16 - SHIFT)),
+                point.map(|v| v << (16 - SHIFT)),
+                color,
+            );
+        }
         previous = point;
     }
-    if n < 3 || xmax < 0 || ymax < 0 || xmin >= size.width as i32 || ymin >= size.height as i32 {
+    let rounding = (1_i64 << SHIFT) >> 1;
+    let xmin = (xmin + rounding) >> SHIFT;
+    let xmax = (xmax + rounding) >> SHIFT;
+    let ymin = (ymin + rounding) >> SHIFT;
+    let ymax = (ymax + rounding) >> SHIFT;
+    if n < 3 || xmax < 0 || ymax < 0 || xmin >= size.width as i64 || ymin >= size.height as i64 {
         return Ok(());
     }
     #[derive(Clone, Copy)]
@@ -201,19 +366,19 @@ pub fn fill_convex_polygon_rgb(
             direction: 1,
             x: -65536,
             dx: 0,
-            end: i64::from(ymin),
+            end: ymin,
         },
         Edge {
             index: minimum,
             direction: n - 1,
             x: -65536,
             dx: 0,
-            end: i64::from(ymin),
+            end: ymin,
         },
     ];
     let mut remaining = n as i64;
-    let ymax = i64::from(ymax).min(size.height as i64 - 1);
-    for y in i64::from(ymin)..=ymax {
+    let ymax = ymax.min(size.height as i64 - 1);
+    for y in ymin..=ymax {
         for edge in &mut edges {
             if y >= edge.end {
                 let mut start = edge.index;
@@ -221,10 +386,10 @@ pub fn fill_convex_polygon_rgb(
                 let mut found = false;
                 while remaining > 0 {
                     remaining -= 1;
-                    let end = i64::from(points[index][1]);
+                    let end = (point_at(index)[1] + rounding) >> SHIFT;
                     if end > y {
-                        let first = i64::from(points[start][0]) << 16;
-                        let last = i64::from(points[index][0]) << 16;
+                        let first = point_at(start)[0] << (16 - SHIFT);
+                        let last = point_at(index)[0] << (16 - SHIFT);
                         edge.end = end;
                         edge.dx = ((last - first) * 2 + (end - y)) / (2 * (end - y));
                         edge.x = first;
