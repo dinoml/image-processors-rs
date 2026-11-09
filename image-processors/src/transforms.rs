@@ -29,10 +29,11 @@ pub use restoration_degradation::{
 };
 pub use restoration_pixels::{
     finish_grayscale_u8, finish_restoration_pixels, finish_signed_restoration_rgb,
-    normalize_rgb_f64, prepare_grayscale_u8, prepare_restoration_pixels, restoration_grayscale,
-    restoration_image_len, restoration_rgb_byte_values, restoration_source_range,
-    restoration_to_rgb, PreparedRestorationPixels, RestorationComposite, RestorationImage,
-    RestorationImageView, RestorationPixelFormat, RestorationPixels,
+    normalize_rgb_f64, normalize_rgb_f64_with_options, prepare_grayscale_u8,
+    prepare_restoration_pixels, restoration_grayscale, restoration_image_len,
+    restoration_rgb_byte_values, restoration_source_range, restoration_to_rgb,
+    PreparedRestorationPixels, RestorationComposite, RestorationImage, RestorationImageView,
+    RestorationPixelFormat, RestorationPixels, RgbNormalization,
 };
 pub use srmd_conditioning::{srmd_gaussian_kernel, SrmdConditioningError, SrmdPcaProjection};
 mod planar_tiles;

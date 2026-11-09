@@ -389,6 +389,10 @@ pub fn restoration_source_range(image: RestorationImageView<'_>) -> f32 {
 }
 
 /// Normalize interleaved RGB samples into selected-order CHW floating features.
+///
+/// Division uses FP64, followed by FP32 conversion and FP32 normalization.
+/// Use [`normalize_rgb_f64_with_options`] to keep normalization in FP64 until
+/// the final output conversion, as NumPy preprocessing does.
 /// # Errors
 /// Rejects invalid extents, storage or zero standard deviations.
 pub fn normalize_rgb_f64(
@@ -400,8 +404,60 @@ pub fn normalize_rgb_f64(
     std: [f32; 3],
     bgr: bool,
 ) -> Result<Vec<f32>, TransformError> {
+    normalize_rgb_f64_with_options(
+        values,
+        height,
+        width,
+        divisor,
+        RgbNormalization::Float32 { mean, std },
+        bgr,
+    )
+}
+
+/// Arithmetic boundary for channel normalization of FP64 RGB samples.
+///
+/// Both modes return FP32 CHW features. Channel statistics retain the selected
+/// arithmetic precision, rather than being rounded through another mode.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum RgbNormalization {
+    /// Divide in FP64, narrow to FP32, then normalize in FP32.
+    Float32 {
+        /// Per-channel means in output RGB/BGR order.
+        mean: [f32; 3],
+        /// Per-channel standard deviations in output RGB/BGR order.
+        std: [f32; 3],
+    },
+    /// Divide and normalize in FP64, narrowing only the completed feature.
+    Float64 {
+        /// Per-channel means in output RGB/BGR order.
+        mean: [f64; 3],
+        /// Per-channel standard deviations in output RGB/BGR order.
+        std: [f64; 3],
+    },
+}
+
+/// Normalize interleaved FP64 RGB samples with an explicit arithmetic boundary.
+///
+/// The operation order is division, mean subtraction, standard-deviation
+/// division, and CHW packing. `bgr` selects reversed source channel order.
+/// No intermediate pixel quantization or additional rescaling is performed.
+///
+/// # Errors
+/// Rejects invalid extents, storage, divisor or zero standard deviations.
+pub fn normalize_rgb_f64_with_options(
+    values: &[f64],
+    height: usize,
+    width: usize,
+    divisor: f64,
+    normalization: RgbNormalization,
+    bgr: bool,
+) -> Result<Vec<f32>, TransformError> {
     let length = restoration_image_len(height, width, 3)?;
-    if values.len() != length || std.contains(&0.0) || !divisor.is_finite() || divisor == 0.0 {
+    let zero_std = match normalization {
+        RgbNormalization::Float32 { std, .. } => std.contains(&0.0),
+        RgbNormalization::Float64 { std, .. } => std.contains(&0.0),
+    };
+    if values.len() != length || zero_std || !divisor.is_finite() || divisor == 0.0 {
         return Err(TransformError::InvalidChannelDataLength {
             channels: 3,
             actual: values.len(),
@@ -411,10 +467,17 @@ pub fn normalize_rgb_f64(
     let mut result = vec![0.0; length];
     for channel in 0..3 {
         for index in 0..pixels {
-            // Conversion to FP32 precedes tensor normalization, as img2tensor does.
-            let value =
-                (values[index * 3 + if bgr { 2 - channel } else { channel }] / divisor) as f32;
-            result[channel * pixels + index] = (value - mean[channel]) / std[channel];
+            let value = values[index * 3 + if bgr { 2 - channel } else { channel }] / divisor;
+            result[channel * pixels + index] = match normalization {
+                RgbNormalization::Float32 { mean, std } => {
+                    // img2tensor narrows before tensor normalization.
+                    (value as f32 - mean[channel]) / std[channel]
+                }
+                RgbNormalization::Float64 { mean, std } => {
+                    // NumPy retains the FP64 array until constructing its tensor.
+                    ((value - mean[channel]) / std[channel]) as f32
+                }
+            };
         }
     }
     Ok(result)
