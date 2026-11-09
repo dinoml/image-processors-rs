@@ -422,6 +422,38 @@ pub fn composite_alpha_to_rgb(
     Ok(output)
 }
 
+/// Composite byte RGBA over a fixed RGB background, retaining FP32 channels.
+///
+/// Alpha is divided by 255 in FP32, then `(1 - alpha) * background +
+/// alpha * foreground` is evaluated without byte rounding or truncation.
+/// Gray and RGB input values are converted to RGB and promoted unchanged.
+/// This is suitable before floating-point resize and tensor normalization.
+/// The existing byte-returning compositor retains its conversion semantics.
+///
+/// # Errors
+/// Returns an error when the input does not contain complete pixels.
+pub fn composite_alpha_to_rgb_f32(
+    values: &[u8],
+    pixel_format: PixelFormat,
+    background: [u8; 3],
+) -> Result<Vec<f32>, TransformError> {
+    if pixel_format != PixelFormat::Rgba8 {
+        return convert_to_rgb(values, pixel_format.channels())
+            .map(|values| values.into_iter().map(f32::from).collect());
+    }
+    validate_pixel_chunks(values, 4)?;
+    let mut output = Vec::with_capacity(values.len() / 4 * 3);
+    for pixel in values.as_chunks::<4>().0 {
+        let alpha = f32::from(pixel[3]) / 255.0;
+        for channel in 0..3 {
+            let background = (1.0 - alpha) * f32::from(background[channel]);
+            let foreground = alpha * f32::from(pixel[channel]);
+            output.push(background + foreground);
+        }
+    }
+    Ok(output)
+}
+
 /// Convert planar RGB floating-point pixels to one NTSC grayscale plane.
 ///
 /// Values retain their current scale and precision; callers choose whether to
