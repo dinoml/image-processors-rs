@@ -73,7 +73,9 @@ pub use frame_ops::{
     rotate_frame_90_clockwise,
 };
 pub use raster_drawing::{ellipse_polygon, fill_circle_rgb, fill_convex_polygon_rgb};
+mod canny;
 mod spatial_filters;
+pub use canny::canny_u8;
 #[cfg(test)]
 use frame_ops::convert_to_rgb;
 pub use frame_ops::{
