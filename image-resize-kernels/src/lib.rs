@@ -26,6 +26,9 @@ pub use pillow_reduce::resize_u8_pillow_reducing_gap;
 pub use planar::{resize_f32_planes, TensorInterpolation};
 pub use sampling::{grid_sample_f32_planes, GridInterpolation};
 pub use torch_area::resize_f32_area_torch;
+mod skimage;
+#[doc(inline)]
+pub use skimage::resize_f64_skimage_bilinear_constant;
 
 /// Image dimensions in height-width order.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

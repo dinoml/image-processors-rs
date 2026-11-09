@@ -81,9 +81,11 @@ pub use multimodal_presets::{
     TableRecognition, TextRecognition, MULTIMODAL_CLASS_ALIASES, MULTIMODAL_PRESETS,
 };
 mod marigold;
+mod saliency;
 pub use marigold::{
     MarigoldImageProcessor, MarigoldImageProcessorConfig, MarigoldPreprocessOutput,
 };
+pub use saliency::{U2NetImageProcessor, U2NetPostprocessOutput};
 mod vae;
 use vae::validate_vae_config;
 pub use vae::{

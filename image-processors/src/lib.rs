@@ -117,11 +117,12 @@ pub use processors::{
     TaskVisionColorMode, TaskVisionImageProcessor, TaskVisionImageProcessorConfig,
     TaskVisionKeypointMatchingOutput, TaskVisionPadding, TaskVisionPoseBox,
     TaskVisionProcessorFamily, TaskVisionProcessorPreset, TaskVisionResize,
-    TaskVisionSegmentationRequest, VaeImageProcessor, VaeImageProcessorConfig,
-    VaeImageProcessorLdm3d, VaeOutputType, VaePostprocessOutput, VideoMaeImageProcessor,
-    VideoMaeImageProcessorConfig, VisualClozePreprocessOutput, VisualClozeProcessor,
-    VisualClozeProcessorConfig, VitImageProcessor, VitImageProcessorConfig, VivitImageProcessor,
-    VivitImageProcessorConfig, WanAnimateImageProcessor, WanAnimateImageProcessorConfig,
+    TaskVisionSegmentationRequest, U2NetImageProcessor, U2NetPostprocessOutput, VaeImageProcessor,
+    VaeImageProcessorConfig, VaeImageProcessorLdm3d, VaeOutputType, VaePostprocessOutput,
+    VideoMaeImageProcessor, VideoMaeImageProcessorConfig, VisualClozePreprocessOutput,
+    VisualClozeProcessor, VisualClozeProcessorConfig, VitImageProcessor, VitImageProcessorConfig,
+    VivitImageProcessor, VivitImageProcessorConfig, WanAnimateImageProcessor,
+    WanAnimateImageProcessorConfig,
 };
 #[doc(inline)]
 pub use recipe::{

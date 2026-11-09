@@ -42,6 +42,35 @@ pub use planar_tiles::{
 };
 mod optical_flow;
 pub use optical_flow::{DisUltrafast, OpticalFlowError};
+/// Resizes FP64 interleaved pixels with scikit-image order-one constant-boundary semantics.
+///
+/// Downsampling uses the source's Gaussian prefilter; values remain FP64.
+///
+/// # Errors
+/// Reports invalid geometry, buffer lengths, channels, or nonfinite values.
+pub fn resize_f64_skimage_bilinear_constant(
+    values: &[f64],
+    source: ImageSize,
+    channels: usize,
+    target: ImageSize,
+) -> Result<Vec<f64>, TransformError> {
+    image_resize_kernels::resize_f64_skimage_bilinear_constant(
+        values,
+        KernelImageSize {
+            height: source.height,
+            width: source.width,
+        },
+        channels,
+        KernelImageSize {
+            height: target.height,
+            width: target.width,
+        },
+    )
+    .map_err(|error| TransformError::ResizeKernel {
+        message: error.to_string(),
+    })
+}
+
 mod detection;
 pub(crate) use detection::post_process_oneformer_panoptic_segmentation;
 pub use detection::{
