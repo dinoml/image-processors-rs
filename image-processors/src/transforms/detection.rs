@@ -1373,6 +1373,15 @@ pub struct KeypointDetection {
     pub keypoints: Vec<ImagePoint>,
 }
 
+/// Confidence assigned to a group merged by weighted keypoint suppression.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WeightedNmsScore {
+    /// Preserve the highest-confidence detection's score, as in MediaPipe.
+    Leading,
+    /// Average grouped scores, as in zmurez/MediaPipePyTorch's BlazeDetector.
+    Mean,
+}
+
 /// Merge overlapping boxes and landmarks with MediaPipe's weighted NMS policy.
 ///
 /// Candidates are visited by descending confidence, with input order resolving
@@ -1394,6 +1403,30 @@ pub struct KeypointDetection {
 pub fn weighted_keypoint_non_max_suppression(
     detections: &[KeypointDetection],
     iou_threshold: f32,
+) -> Result<Vec<KeypointDetection>, TransformError> {
+    weighted_keypoint_non_max_suppression_with_score(
+        detections,
+        iou_threshold,
+        WeightedNmsScore::Leading,
+    )
+}
+
+/// Merge boxes and landmarks with an explicit confidence policy.
+///
+/// Group membership and FP32 coordinate blending follow
+/// [`weighted_keypoint_non_max_suppression`]. The `Mean` policy follows
+/// zmurez/MediaPipePyTorch's `BlazeDetector._weighted_non_max_suppression`:
+/// multiple overlapping detections receive their arithmetic mean confidence;
+/// singleton groups retain the original coordinates and confidence unchanged.
+///
+/// # Errors
+///
+/// Reports the same invalid thresholds, geometry, scores and accumulation
+/// failures as [`weighted_keypoint_non_max_suppression`].
+pub fn weighted_keypoint_non_max_suppression_with_score(
+    detections: &[KeypointDetection],
+    iou_threshold: f32,
+    score_policy: WeightedNmsScore,
 ) -> Result<Vec<KeypointDetection>, TransformError> {
     validate_iou_threshold(iou_threshold)?;
     let keypoint_count = detections
@@ -1437,8 +1470,16 @@ pub fn weighted_keypoint_non_max_suppression(
                 total_score += candidate.score;
                 corners[0] += candidate.bbox.x_min * candidate.score;
                 corners[1] += candidate.bbox.y_min * candidate.score;
-                corners[2] += (candidate.bbox.x_min + candidate.bbox.width()) * candidate.score;
-                corners[3] += (candidate.bbox.y_min + candidate.bbox.height()) * candidate.score;
+                // Keep the existing Leading policy's arithmetic unchanged.
+                let (x_max, y_max) = match score_policy {
+                    WeightedNmsScore::Leading => (
+                        candidate.bbox.x_min + candidate.bbox.width(),
+                        candidate.bbox.y_min + candidate.bbox.height(),
+                    ),
+                    WeightedNmsScore::Mean => (candidate.bbox.x_max, candidate.bbox.y_max),
+                };
+                corners[2] += x_max * candidate.score;
+                corners[3] += y_max * candidate.score;
                 for (sum, point) in keypoints.iter_mut().zip(&candidate.keypoints) {
                     sum.x += point.x * candidate.score;
                     sum.y += point.y * candidate.score;
@@ -1450,6 +1491,11 @@ pub fn weighted_keypoint_non_max_suppression(
         if group_size == 0 {
             output.push(leading.clone());
             break;
+        }
+        if score_policy == WeightedNmsScore::Mean && group_size == 1 {
+            output.push(leading.clone());
+            std::mem::swap(&mut order, &mut remaining);
+            continue;
         }
         validate_score_value(total_score)?;
         if total_score <= 0.0 {
@@ -1469,7 +1515,10 @@ pub fn weighted_keypoint_non_max_suppression(
         }
         output.push(KeypointDetection {
             bbox,
-            score: leading.score,
+            score: match score_policy {
+                WeightedNmsScore::Leading => leading.score,
+                WeightedNmsScore::Mean => total_score / group_size as f32,
+            },
             keypoints,
         });
         std::mem::swap(&mut order, &mut remaining);
