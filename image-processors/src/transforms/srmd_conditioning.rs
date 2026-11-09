@@ -66,7 +66,10 @@ impl SrmdPcaProjection {
             return Err(SrmdConditioningError::NonFinite);
         }
         let mut coefficients = [0.0_f32; 15];
-        for (component, row) in coefficients.iter_mut().zip(self.matrix.chunks_exact(225)) {
+        for (component, row) in coefficients
+            .iter_mut()
+            .zip(self.matrix.as_chunks::<225>().0)
+        {
             let mut sum = 0.0_f64;
             for (index, weight) in row.iter().enumerate() {
                 // MATLAB vec(kernel) traverses rows within each column.
