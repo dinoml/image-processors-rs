@@ -96,6 +96,127 @@ pub struct BinaryRleMask {
     pub counts: Vec<usize>,
 }
 
+/// Eight-connected region polarity used by SAM mask cleanup.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MaskRegionMode {
+    /// Fill background components smaller than the area threshold.
+    Holes,
+    /// Remove small foreground components, retaining the largest if all are small.
+    Islands,
+}
+
+/// Apply SAM's eight-connected small-region cleanup without native dependencies.
+///
+/// Components strictly smaller than `area_threshold` are changed. Hole mode
+/// follows upstream even for background components touching an image boundary.
+/// The boolean reports whether upstream's small-component path was selected.
+///
+/// # Errors
+/// Returns invalid dimensions, length mismatches or image-size overflow.
+pub fn remove_small_mask_regions(
+    mask: &[bool],
+    size: ImageSize,
+    area_threshold: usize,
+    mode: MaskRegionMode,
+) -> Result<(Vec<bool>, bool), TransformError> {
+    validate_size(size)?;
+    validate_len(mask.len(), checked_pixels(size)?)?;
+    let foreground = mode == MaskRegionMode::Islands;
+    let mut labels = vec![0usize; mask.len()];
+    let mut areas = vec![0usize];
+    let mut pending = Vec::new();
+    for start in 0..mask.len() {
+        if mask[start] != foreground || labels[start] != 0 {
+            continue;
+        }
+        let label = areas.len();
+        labels[start] = label;
+        pending.push(start);
+        let mut area = 0usize;
+        while let Some(index) = pending.pop() {
+            area += 1;
+            let y = index / size.width;
+            let x = index % size.width;
+            for row in y.saturating_sub(1)..=y.saturating_add(1).min(size.height - 1) {
+                for column in x.saturating_sub(1)..=x.saturating_add(1).min(size.width - 1) {
+                    let neighbor = row * size.width + column;
+                    if mask[neighbor] == foreground && labels[neighbor] == 0 {
+                        labels[neighbor] = label;
+                        pending.push(neighbor);
+                    }
+                }
+            }
+        }
+        areas.push(area);
+    }
+    let changed = areas.iter().skip(1).any(|&area| area < area_threshold);
+    if !changed {
+        return Ok((mask.to_vec(), false));
+    }
+    let mut largest = 0usize;
+    for label in 1..areas.len() {
+        if areas[label] > areas[largest] {
+            largest = label;
+        }
+    }
+    let all_small = areas.iter().skip(1).all(|&area| area < area_threshold);
+    let cleaned = labels
+        .iter()
+        .zip(mask)
+        .map(|(&label, &value)| match mode {
+            MaskRegionMode::Holes => value || label != 0 && areas[label] < area_threshold,
+            MaskRegionMode::Islands => {
+                label != 0 && (areas[label] >= area_threshold || all_small && label == largest)
+            }
+        })
+        .collect();
+    Ok((cleaned, true))
+}
+
+/// Encode uncompressed mask runs as COCO's signed, delta-coded ASCII counts.
+///
+/// The result is the `counts` string used alongside `[height, width]` in COCO
+/// RLE annotations. The first three runs are absolute; subsequent runs are
+/// differences from the run two positions earlier, as in maskApi.c/rleToString.
+/// No compression library or native bindings are involved.
+///
+/// # Errors
+/// Returns invalid dimensions, run totals differing from the canvas, or overflow.
+pub fn binary_rle_to_coco_counts(rle: &BinaryRleMask) -> Result<String, TransformError> {
+    validate_size(rle.size)?;
+    let pixels = checked_pixels(rle.size)?;
+    let total = rle.counts.iter().try_fold(0usize, |total, &count| {
+        total
+            .checked_add(count)
+            .ok_or(TransformError::ImageSizeOverflow)
+    })?;
+    validate_len(total, pixels)?;
+    let mut encoded = String::new();
+    for (index, &count) in rle.counts.iter().enumerate() {
+        let mut value = count as i128;
+        if index > 2 {
+            value -= rle.counts[index - 2] as i128;
+        }
+        loop {
+            let mut character = (value & 0x1f) as u8;
+            value >>= 5;
+            let more = if character & 0x10 != 0 {
+                value != -1
+            } else {
+                value != 0
+            };
+            if more {
+                character |= 0x20;
+            }
+            encoded.push(char::from(character + 48));
+            if !more {
+                break;
+            }
+        }
+    }
+    Ok(encoded)
+}
+
 /// Binary mask encoded as one-based start/length pairs in row-major order.
 /// This is RF-DETR's `return_coco_annotation` representation, distinct from
 /// the column-major alternating run counts in BinaryRleMask.
