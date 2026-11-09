@@ -1130,7 +1130,15 @@ fn execute_token_sequence_descriptor(
 
 /// Decodes row-major `[batch, steps, vocabulary]` logits for recipe execution
 /// and processor-specific structured-output adapters.
-pub(crate) fn decode_token_sequences(
+///
+/// Returned scores are the selected input values. Callers supplying probabilities
+/// retain probability confidence scores; this function does not apply softmax.
+///
+/// # Errors
+///
+/// Returns an error for zero or overflowing dimensions, a mismatched value count,
+/// non-finite values, or decoder token ids outside the vocabulary.
+pub fn decode_token_sequences(
     descriptor: &RecipeTokenSequencePostprocess,
     values: &[f32],
     batch: usize,

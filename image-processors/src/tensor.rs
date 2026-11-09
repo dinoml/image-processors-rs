@@ -1211,6 +1211,83 @@ impl Tensor {
         Ok(self.with_data(self.data.map_to(|value| value * scale)))
     }
 
+    /// Pads the spatial axes with a floating-point constant and returns `F32` storage.
+    ///
+    /// Padding is applied in tensor space, after any rescaling or normalization.
+    /// All image/video layouts retain their axis order and leading-axis meaning.
+    /// Existing values are converted to FP32 without byte quantization; padding
+    /// never changes batch, frame, patch, image or channel counts.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for the non-spatial `NC` layout or when padded dimensions
+    /// or the output element count overflow `usize`.
+    pub fn pad_spatial(
+        &self,
+        padding: crate::transforms::Padding,
+        fill: f32,
+    ) -> Result<Self, TensorError> {
+        if self.layout == Layout::NC {
+            return Err(TensorError::UnsupportedSpatialLayout(self.layout));
+        }
+        let height_axis = self.layout.height_axis();
+        let width_axis = self.layout.width_axis();
+        let mut shape = self.shape.clone();
+        shape[height_axis] = shape[height_axis]
+            .checked_add(padding.top)
+            .and_then(|height| height.checked_add(padding.bottom))
+            .ok_or(TensorError::ShapeElementCountOverflow)?;
+        shape[width_axis] = shape[width_axis]
+            .checked_add(padding.left)
+            .and_then(|width| width.checked_add(padding.right))
+            .ok_or(TensorError::ShapeElementCountOverflow)?;
+        let output_len = checked_product(shape.iter().copied())?;
+        let trailing_values = checked_product(self.shape[width_axis + 1..].iter().copied())?;
+        let values = self.data.to_vec::<f32>();
+        let mut output = vec![fill; output_len];
+        let source_size = crate::transforms::ImageSize {
+            height: self.shape[height_axis],
+            width: self.shape[width_axis],
+        };
+        let target_size = crate::transforms::ImageSize {
+            height: shape[height_axis],
+            width: shape[width_axis],
+        };
+        let leading = checked_product(self.shape[..height_axis].iter().copied())?;
+        let origin = (padding.top, padding.left);
+        // Reuse the same row-copy primitives as batched/aligned processor padding.
+        if trailing_values == 1 {
+            copy_spatial_nchw_tensor(
+                &values,
+                &mut output,
+                0,
+                leading,
+                source_size,
+                target_size,
+                origin,
+            );
+        } else {
+            let sample_len = checked_product(self.shape[height_axis..].iter().copied())?;
+            for (batch, sample) in values.chunks_exact(sample_len).enumerate() {
+                copy_spatial_nhwc_tensor(
+                    sample,
+                    &mut output,
+                    batch,
+                    trailing_values,
+                    source_size,
+                    target_size,
+                    origin,
+                );
+            }
+        }
+        Ok(Self {
+            data: TensorData::F32(output),
+            shape,
+            layout: self.layout,
+            leading_axis: self.leading_axis,
+        })
+    }
+
     /// Multiplies logical FP32 values by an FP64 factor and returns `F32` storage.
     ///
     /// Each value is promoted before multiplication and rounded to FP32 afterward.
@@ -1550,6 +1627,49 @@ fn validate_leading_axis(
     }
 }
 
+pub(crate) fn copy_spatial_nchw_tensor(
+    source: &[f32],
+    target_values: &mut [f32],
+    batch: usize,
+    channels: usize,
+    source_size: crate::transforms::ImageSize,
+    target_size: crate::transforms::ImageSize,
+    origin: (usize, usize),
+) {
+    for channel in 0..channels {
+        let source_channel_offset = channel * source_size.height * source_size.width;
+        let target_channel_offset =
+            ((batch * channels + channel) * target_size.height) * target_size.width;
+        for row in 0..source_size.height {
+            let source_start = source_channel_offset + row * source_size.width;
+            let target_start =
+                target_channel_offset + (row + origin.0) * target_size.width + origin.1;
+            target_values[target_start..target_start + source_size.width]
+                .copy_from_slice(&source[source_start..source_start + source_size.width]);
+        }
+    }
+}
+
+pub(crate) fn copy_spatial_nhwc_tensor(
+    source: &[f32],
+    target_values: &mut [f32],
+    batch: usize,
+    channels: usize,
+    source_size: crate::transforms::ImageSize,
+    target_size: crate::transforms::ImageSize,
+    origin: (usize, usize),
+) {
+    let source_row_values = source_size.width * channels;
+    for row in 0..source_size.height {
+        let source_start = row * source_row_values;
+        let target_start = (((batch * target_size.height + row + origin.0) * target_size.width)
+            + origin.1)
+            * channels;
+        target_values[target_start..target_start + source_row_values]
+            .copy_from_slice(&source[source_start..source_start + source_row_values]);
+    }
+}
+
 fn checked_product(values: impl IntoIterator<Item = usize>) -> Result<usize, TensorError> {
     values
         .into_iter()
@@ -1732,6 +1852,9 @@ pub enum TensorError {
     /// The layout does not have a leading batch or frame axis.
     #[error("layout {0:?} does not have a leading batch/frame axis")]
     UnsupportedLeadingAxis(Layout),
+    /// Spatial padding was requested for a layout without image axes.
+    #[error("layout {0:?} does not have spatial axes")]
+    UnsupportedSpatialLayout(Layout),
     /// A tensor rescale factor was not finite.
     #[error("tensor rescale scale must be finite, got {0}")]
     NonFiniteScale(f32),

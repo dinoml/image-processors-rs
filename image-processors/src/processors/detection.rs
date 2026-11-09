@@ -1,6 +1,7 @@
 //! DETR and SAM processor support.
 
 use super::*;
+use crate::tensor::{copy_spatial_nchw_tensor, copy_spatial_nhwc_tensor};
 
 /// Aspect-preserving resize target with an optional longest-edge cap.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1206,49 +1207,6 @@ fn padded_spatial_coordinate(
                 period - offset - 1
             })
         }
-    }
-}
-
-fn copy_spatial_nchw_tensor(
-    source: &[f32],
-    target_values: &mut [f32],
-    batch: usize,
-    channels: usize,
-    source_size: ImageSize,
-    target_size: ImageSize,
-    origin: (usize, usize),
-) {
-    for channel in 0..channels {
-        let source_channel_offset = channel * source_size.height * source_size.width;
-        let target_channel_offset =
-            ((batch * channels + channel) * target_size.height) * target_size.width;
-        for row in 0..source_size.height {
-            let source_start = source_channel_offset + row * source_size.width;
-            let target_start =
-                target_channel_offset + (row + origin.0) * target_size.width + origin.1;
-            target_values[target_start..target_start + source_size.width]
-                .copy_from_slice(&source[source_start..source_start + source_size.width]);
-        }
-    }
-}
-
-fn copy_spatial_nhwc_tensor(
-    source: &[f32],
-    target_values: &mut [f32],
-    batch: usize,
-    channels: usize,
-    source_size: ImageSize,
-    target_size: ImageSize,
-    origin: (usize, usize),
-) {
-    let source_row_values = source_size.width * channels;
-    for row in 0..source_size.height {
-        let source_start = row * source_row_values;
-        let target_start = (((batch * target_size.height + row + origin.0) * target_size.width)
-            + origin.1)
-            * channels;
-        target_values[target_start..target_start + source_row_values]
-            .copy_from_slice(&source[source_start..source_start + source_row_values]);
     }
 }
 
