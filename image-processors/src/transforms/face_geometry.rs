@@ -241,6 +241,47 @@ pub fn warp_affine_u8(
     Ok(output)
 }
 
+/// Sampling used by a perspective image warp.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum PerspectiveInterpolation {
+    /// Round source coordinates to the nearest pixel, with ties to even.
+    Nearest,
+    /// Five-bit bilinear interpolation with one final byte rounding.
+    #[default]
+    Bilinear,
+}
+
+/// Pixel values used outside a perspective warp's source image.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PerspectiveBorder {
+    /// One constant value for each RGB channel.
+    Constant([u8; 3]),
+    /// Extend the closest source edge pixel.
+    Replicate,
+}
+
+/// Explicit sampling and coordinate conventions for a perspective warp.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PerspectiveWarpOptions {
+    /// Source-pixel interpolation.
+    pub interpolation: PerspectiveInterpolation,
+    /// Sampling beyond the source image.
+    pub border: PerspectiveBorder,
+    /// Interpret corners as canvas edges and sample destination pixel centers.
+    /// This applies `T(-0.5) * forward * T(0.5)` before matrix inversion.
+    pub pixel_centers: bool,
+}
+
+impl Default for PerspectiveWarpOptions {
+    fn default() -> Self {
+        Self {
+            interpolation: PerspectiveInterpolation::Bilinear,
+            border: PerspectiveBorder::Constant([0; 3]),
+            pixel_centers: false,
+        }
+    }
+}
+
 /// Warp a quadrilateral in an interleaved RGB image to a rectangular canvas.
 ///
 /// `corners` are FP32 source pixel coordinates corresponding to destination
@@ -264,6 +305,36 @@ pub fn warp_perspective_quad_rgb(
     corners: [[f32; 2]; 4],
     border: [u8; 3],
 ) -> Result<Vec<u8>, FaceGeometryError> {
+    warp_perspective_quad_rgb_with_options(
+        values,
+        source,
+        target,
+        corners,
+        PerspectiveWarpOptions {
+            border: PerspectiveBorder::Constant(border),
+            ..Default::default()
+        },
+    )
+}
+
+/// Warp RGB bytes using explicit interpolation, border and pixel-center options.
+///
+/// Corner order and the homography solve match [`warp_perspective_quad_rgb`].
+/// Nearest sampling rounds directly to integer source coordinates. Bilinear
+/// sampling retains the existing five-bit interpolation lattice. Replicated
+/// borders clamp remapping coordinates, without allocating a padded image.
+/// `pixel_centers` implements the half-pixel correction used by MediaPipe's CPU
+/// ImageCroppingCalculator; its nearest/replicate path is entirely Rust.
+///
+/// # Errors
+/// Rejects invalid storage, dimensions, nonfinite corners or singular transforms.
+pub fn warp_perspective_quad_rgb_with_options(
+    values: &[u8],
+    source: ImageSize,
+    target: ImageSize,
+    corners: [[f32; 2]; 4],
+    options: PerspectiveWarpOptions,
+) -> Result<Vec<u8>, FaceGeometryError> {
     let source_len = source
         .width
         .checked_mul(source.height)
@@ -281,7 +352,15 @@ pub fn warp_perspective_quad_rgb(
     {
         return Err(FaceGeometryError::Geometry);
     }
-    let inverse = quad_inverse(corners, target)?;
+    let inverse = quad_inverse(corners, target, options.pixel_centers)?;
+    let border = match options.border {
+        PerspectiveBorder::Constant(rgb) => rgb,
+        PerspectiveBorder::Replicate => [0; 3],
+    };
+    let lattice = match options.interpolation {
+        PerspectiveInterpolation::Nearest => 1.0,
+        PerspectiveInterpolation::Bilinear => 32.0,
+    };
     let mut output = vec![0; output_len.ok_or(FaceGeometryError::Geometry)?];
     for y in 0..target.height {
         let row_x = inverse[1] * y as f64 + inverse[2];
@@ -292,28 +371,56 @@ pub fn warp_perspective_quad_rgb(
             let scale = if denominator == 0.0 {
                 0.0
             } else {
-                32.0 / denominator
+                lattice / denominator
             };
-            let fixed_x = ((row_x + inverse[0] * x as f64) * scale)
+            let mut fixed_x = ((row_x + inverse[0] * x as f64) * scale)
                 .clamp(f64::from(i32::MIN), f64::from(i32::MAX))
                 .round_ties_even() as i64;
-            let fixed_y = ((row_y + inverse[3] * x as f64) * scale)
+            let mut fixed_y = ((row_y + inverse[3] * x as f64) * scale)
                 .clamp(f64::from(i32::MIN), f64::from(i32::MAX))
                 .round_ties_even() as i64;
             let start = (y * target.width + x) * 3;
-            bilinear_u8(
-                values,
-                source,
-                &border,
-                [fixed_x, fixed_y],
-                &mut output[start..start + 3],
-            );
+            if options.interpolation == PerspectiveInterpolation::Nearest {
+                fixed_x = fixed_x.clamp(i64::from(i16::MIN), i64::from(i16::MAX));
+                fixed_y = fixed_y.clamp(i64::from(i16::MIN), i64::from(i16::MAX));
+                if options.border == PerspectiveBorder::Replicate {
+                    fixed_x = fixed_x.clamp(0, source.width as i64 - 1);
+                    fixed_y = fixed_y.clamp(0, source.height as i64 - 1);
+                }
+                let pixel = if fixed_x >= 0
+                    && fixed_y >= 0
+                    && fixed_x < source.width as i64
+                    && fixed_y < source.height as i64
+                {
+                    let offset = (fixed_y as usize * source.width + fixed_x as usize) * 3;
+                    &values[offset..offset + 3]
+                } else {
+                    &border
+                };
+                output[start..start + 3].copy_from_slice(pixel);
+            } else {
+                if options.border == PerspectiveBorder::Replicate {
+                    fixed_x = fixed_x.clamp(0, (source.width as i64 - 1) * 32);
+                    fixed_y = fixed_y.clamp(0, (source.height as i64 - 1) * 32);
+                }
+                bilinear_u8(
+                    values,
+                    source,
+                    &border,
+                    [fixed_x, fixed_y],
+                    &mut output[start..start + 3],
+                );
+            }
         }
     }
     Ok(output)
 }
 
-fn quad_inverse(corners: [[f32; 2]; 4], target: ImageSize) -> Result<[f64; 9], FaceGeometryError> {
+fn quad_inverse(
+    corners: [[f32; 2]; 4],
+    target: ImageSize,
+    pixel_centers: bool,
+) -> Result<[f64; 9], FaceGeometryError> {
     let destinations = [
         [0.0, target.height as f32],
         [0.0, 0.0],
@@ -379,6 +486,17 @@ fn quad_inverse(corners: [[f32; 2]; 4], target: ImageSize) -> Result<[f64; 9], F
             value -= coefficient * known;
         }
         forward[row] = value / equation[row];
+    }
+    if pixel_centers {
+        // Match ImageCroppingCalculator's FP64 multiply order: shift the
+        // destination first, then the source, and invert the corrected matrix.
+        for column in 0..3 {
+            forward[column] -= 0.5 * forward[6 + column];
+            forward[3 + column] -= 0.5 * forward[6 + column];
+        }
+        forward[2] += 0.5 * (forward[0] + forward[1]);
+        forward[5] += 0.5 * (forward[3] + forward[4]);
+        forward[8] += 0.5 * (forward[6] + forward[7]);
     }
     let [a, b, c, d, e, f, g, h, i] = forward;
     let determinant = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
