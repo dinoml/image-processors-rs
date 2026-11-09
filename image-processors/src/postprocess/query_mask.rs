@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 
-use half::{bf16, f16};
-
-use crate::tensor::DType;
+use crate::tensor::{round_float_values_to_dtype, DType};
 use crate::transforms::{
     post_process_semantic_segmentation, resize_f32_image_bilinear,
     resize_f32_image_torchvision_bilinear, ImageSize, SegmentationPostProcessOptions,
@@ -41,13 +39,7 @@ pub(super) fn resize_mask_planes_bilinear_preserving_dtype(
     dtype: DType,
 ) -> Result<Vec<f32>, TransformError> {
     let mut resized = resize_mask_planes_bilinear(values, plane_count, source_size, target_size)?;
-    for value in &mut resized {
-        *value = match dtype {
-            DType::F16 => f32::from(f16::from_f32(*value)),
-            DType::BF16 => f32::from(bf16::from_f32(*value)),
-            _ => *value,
-        };
-    }
+    round_float_values_to_dtype(&mut resized, dtype);
     Ok(resized)
 }
 

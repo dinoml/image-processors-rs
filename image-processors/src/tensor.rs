@@ -6,6 +6,17 @@ use half::{bf16, f16};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+/// Round widened floating tensor values at a source-dtype operation boundary.
+pub(crate) fn round_float_values_to_dtype(values: &mut [f32], dtype: DType) {
+    for value in values {
+        *value = match dtype {
+            DType::F16 => f32::from(f16::from_f32(*value)),
+            DType::BF16 => f32::from(bf16::from_f32(*value)),
+            _ => *value,
+        };
+    }
+}
+
 /// Tensor memory layout.
 #[allow(
     clippy::upper_case_acronyms,

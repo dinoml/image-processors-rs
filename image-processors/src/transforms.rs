@@ -158,9 +158,9 @@ pub use masks::{
     binary_mask_to_start_length_rle, binary_rle_to_mask, box_near_crop_edge,
     filter_generated_masks, generate_layered_crop_boxes, mask_stability_score,
     normalized_point_grid, pad_crop_mask, post_process_binary_mask, post_process_generated_masks,
-    resize_padded_mask_logits, scale_image_point, BinaryRleMask, BinaryStartLengthRleMask,
-    CropGenerationOptions, FilteredMask, GeneratedMaskPrediction, ImagePoint, LayeredCropBox,
-    MaskFilterOptions,
+    resize_padded_mask_logits, resize_padded_mask_logits_with_dtype, scale_image_point,
+    BinaryRleMask, BinaryStartLengthRleMask, CropGenerationOptions, FilteredMask,
+    GeneratedMaskPrediction, ImagePoint, LayeredCropBox, MaskFilterOptions,
 };
 pub use patch_grid::{
     aspect_ratio_tile_frames, flatten_hwc_patches, patch_grid_batch_plan, patch_grid_image_patches,
@@ -2428,6 +2428,9 @@ fn validate_len(actual: usize, expected: usize) -> Result<(), TransformError> {
 /// Errors returned by image transform helpers.
 #[derive(Debug, Error, PartialEq)]
 pub enum TransformError {
+    /// Mask interpolation requires FP32, FP16 or BF16 source logits.
+    #[error("unsupported mask tensor precision: {0:?}")]
+    UnsupportedMaskPrecision(crate::tensor::DType),
     /// Detection tensor arithmetic requires FP32, FP16 or BF16 values.
     #[error("unsupported detection tensor precision: {0:?}")]
     UnsupportedDetectionPrecision(crate::tensor::DType),
