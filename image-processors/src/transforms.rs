@@ -95,8 +95,9 @@ mod face_geometry;
 mod frame_ops;
 mod raster_drawing;
 pub use face_geometry::{
-    estimate_similarity, estimate_similarity_lmeds, invert_affine, warp_affine_f64,
-    warp_affine_rgb, warp_affine_u16, warp_affine_u8, warp_perspective_quad_rgb, FaceGeometryError,
+    estimate_similarity, estimate_similarity_lmeds, invert_affine, warp_affine_f32,
+    warp_affine_f64, warp_affine_rgb, warp_affine_u16, warp_affine_u8, warp_perspective_quad_rgb,
+    FaceGeometryError,
 };
 pub use frame_ops::{
     convert_frame_to_pillow_luma, flip_frame_horizontal, resize_f32_area_torch, resize_f32_opencv,

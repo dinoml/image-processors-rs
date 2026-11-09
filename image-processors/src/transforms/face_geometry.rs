@@ -494,6 +494,25 @@ impl AffineFloat for f32 {
     }
 }
 
+/// Affine FP32 image/mask resampling on the source INTER_LINEAR coordinate lattice.
+///
+/// Pixels are interleaved, with one constant border value per channel (one to
+/// four channels). The forward transform maps source to destination pixel
+/// coordinates. Sampling retains FP32 products and accumulation without byte
+/// quantization, using the same coordinate lattice as [`warp_affine_f64`].
+///
+/// # Errors
+/// Rejects invalid geometry, storage, transforms or nonfinite values.
+pub fn warp_affine_f32(
+    values: &[f32],
+    source: ImageSize,
+    target: ImageSize,
+    forward: [[f64; 3]; 2],
+    border: &[f32],
+) -> Result<Vec<f32>, FaceGeometryError> {
+    warp_affine_float(values, source, target, forward, border)
+}
+
 /// Affine FP64 image/mask resampling on the source INTER_LINEAR coordinate lattice.
 /// INTER_AREA in warpAffine selects this same bilinear interpolation path.
 /// # Errors
