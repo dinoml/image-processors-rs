@@ -1,6 +1,7 @@
 //! SAM-style mask and crop transforms.
 
 use super::*;
+use crate::tensor::{round_float_values_to_dtype, DType};
 
 /// Image-space point in x-y order.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -497,6 +498,38 @@ pub fn resize_padded_mask_logits(
     reshaped_input_size: ImageSize,
     original_size: ImageSize,
 ) -> Result<Vec<f32>, TransformError> {
+    resize_padded_mask_logits_with_dtype(
+        mask_logits,
+        mask_size,
+        pad_size,
+        reshaped_input_size,
+        original_size,
+        DType::F32,
+    )
+}
+
+/// Restore a padded mask while preserving its source interpolation dtype.
+///
+/// Input values are losslessly widened FP32 views of FP32, FP16 or BF16
+/// logits. The padded-canvas interpolation is rounded to `dtype` before
+/// cropping, and the final interpolation is rounded to `dtype` before
+/// returning widened FP32 values for thresholding and stability scoring.
+///
+/// # Errors
+///
+/// Returns an error for non-floating dtypes, invalid sizes or buffer lengths,
+/// nonfinite input logits, or a crop extending beyond the padded canvas.
+pub fn resize_padded_mask_logits_with_dtype(
+    mask_logits: &[f32],
+    mask_size: ImageSize,
+    pad_size: ImageSize,
+    reshaped_input_size: ImageSize,
+    original_size: ImageSize,
+    dtype: DType,
+) -> Result<Vec<f32>, TransformError> {
+    if !matches!(dtype, DType::F32 | DType::F16 | DType::BF16) {
+        return Err(TransformError::UnsupportedMaskPrecision(dtype));
+    }
     validate_size(mask_size)?;
     validate_size(pad_size)?;
     validate_size(reshaped_input_size)?;
@@ -508,7 +541,8 @@ pub fn resize_padded_mask_logits(
         });
     }
 
-    let padded_logits = resize_f32_bilinear(mask_logits, mask_size, pad_size)?;
+    let mut padded_logits = resize_f32_bilinear(mask_logits, mask_size, pad_size)?;
+    round_float_values_to_dtype(&mut padded_logits, dtype);
     let mut unpadded_logits = Vec::with_capacity(checked_pixels(reshaped_input_size)?);
     for y in 0..reshaped_input_size.height {
         let row_start = y
@@ -518,7 +552,9 @@ pub fn resize_padded_mask_logits(
             .extend_from_slice(&padded_logits[row_start..row_start + reshaped_input_size.width]);
     }
 
-    resize_f32_bilinear(&unpadded_logits, reshaped_input_size, original_size)
+    let mut restored = resize_f32_bilinear(&unpadded_logits, reshaped_input_size, original_size)?;
+    round_float_values_to_dtype(&mut restored, dtype);
+    Ok(restored)
 }
 
 /// Resizes and binarizes one padded mask-logit plane.
