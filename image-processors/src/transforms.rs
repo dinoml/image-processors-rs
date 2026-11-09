@@ -83,13 +83,13 @@ pub use detection::{
     post_process_sigmoid_top_k_object_detection,
     post_process_sigmoid_top_k_object_detection_with_options, prepare_coco_detection_annotation,
     resize_detection_annotation, scale_detection_box, weighted_keypoint_non_max_suppression,
-    CocoObjectAnnotation, DetectionAnnotation, DetectionBoundingBox, DetectionBoxScaling,
-    DetectionCenterBox, KeypointDetection, NormalizedDetectionAnnotation,
-    ObjectDetectionPrediction, OneFormerInstanceOptions, OneFormerTask,
-    SegmentationPostProcessOptions, SegmentationPostProcessPrediction, SegmentationSegmentInfo,
-    SemanticSegmentationPrediction, SigmoidInstanceSegmentationFormat,
+    weighted_keypoint_non_max_suppression_with_score, CocoObjectAnnotation, DetectionAnnotation,
+    DetectionBoundingBox, DetectionBoxScaling, DetectionCenterBox, KeypointDetection,
+    NormalizedDetectionAnnotation, ObjectDetectionPrediction, OneFormerInstanceOptions,
+    OneFormerTask, SegmentationPostProcessOptions, SegmentationPostProcessPrediction,
+    SegmentationSegmentInfo, SemanticSegmentationPrediction, SigmoidInstanceSegmentationFormat,
     SigmoidInstanceSegmentationMasks, SigmoidInstanceSegmentationOptions,
-    SigmoidInstanceSegmentationPrediction, SigmoidTopKDetectionOptions,
+    SigmoidInstanceSegmentationPrediction, SigmoidTopKDetectionOptions, WeightedNmsScore,
 };
 mod face_geometry;
 mod frame_ops;
