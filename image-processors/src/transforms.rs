@@ -94,6 +94,7 @@ pub use detection::{
 mod face_geometry;
 mod frame_ops;
 mod raster_drawing;
+mod triangle_mesh;
 pub use face_geometry::{
     estimate_similarity, estimate_similarity_lmeds, invert_affine, remap_bilinear_f32,
     remap_bilinear_u8, remap_nearest_u8, warp_affine_f32, warp_affine_f64, warp_affine_rgb,
@@ -109,6 +110,7 @@ pub use frame_ops::{
 pub use raster_drawing::{
     draw_line_rgb, ellipse_polygon, fill_circle_rgb, fill_convex_polygon_rgb,
 };
+pub use triangle_mesh::{MeshIntersectionError, RayHit, TriangleMesh};
 mod auxiliary;
 mod canny;
 mod spatial_filters;
