@@ -41,6 +41,60 @@ fn geometry(len: usize, size: ImageSize, channels: usize) -> Result<(), SpatialF
     Ok(())
 }
 
+/// Square minimum filtering of interleaved byte channels with replicated borders.
+///
+/// This preserves Pillow's `MinFilter` byte values, including at image edges.
+/// Each channel is filtered independently; pass one channel to erode an alpha
+/// matte without changing its RGB image. A kernel size of one is the identity.
+///
+/// # Errors
+/// Returns an error for inconsistent storage, empty or overflowing geometry,
+/// or a kernel size that is zero or even.
+pub fn minimum_filter_u8(
+    values: &[u8],
+    size: ImageSize,
+    channels: usize,
+    kernel_size: usize,
+) -> Result<Vec<u8>, SpatialFilterError> {
+    geometry(values.len(), size, channels)?;
+    if kernel_size == 0 || kernel_size.is_multiple_of(2) {
+        return Err(SpatialFilterError::Kernel);
+    }
+    let radius = kernel_size / 2;
+    let mut horizontal = vec![0; values.len()];
+    for y in 0..size.height {
+        for x in 0..size.width {
+            // Repeating an edge value cannot change a minimum, so clipping
+            // the window is exactly equivalent to replicating the border.
+            let start = x.saturating_sub(radius);
+            let end = x.saturating_add(radius).min(size.width - 1);
+            for channel in 0..channels {
+                let mut minimum = u8::MAX;
+                for source_x in start..=end {
+                    minimum = minimum.min(values[(y * size.width + source_x) * channels + channel]);
+                }
+                horizontal[(y * size.width + x) * channels + channel] = minimum;
+            }
+        }
+    }
+    let mut output = vec![0; values.len()];
+    for y in 0..size.height {
+        let start = y.saturating_sub(radius);
+        let end = y.saturating_add(radius).min(size.height - 1);
+        for x in 0..size.width {
+            for channel in 0..channels {
+                let mut minimum = u8::MAX;
+                for source_y in start..=end {
+                    minimum =
+                        minimum.min(horizontal[(source_y * size.width + x) * channels + channel]);
+                }
+                output[(y * size.width + x) * channels + channel] = minimum;
+            }
+        }
+    }
+    Ok(output)
+}
+
 fn reflect101(mut index: isize, length: usize) -> usize {
     if length == 1 {
         return 0;
