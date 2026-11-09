@@ -183,7 +183,7 @@ impl U2NetImageProcessor {
             .checked_mul(4)
             .ok_or(TransformError::ImageSizeOverflow)?;
         let mut rgba = Vec::with_capacity(output_len);
-        for (pixel, &alpha) in rgb.data().chunks_exact(3).zip(mask.data()) {
+        for (pixel, &alpha) in rgb.data().as_chunks::<3>().0.iter().zip(mask.data()) {
             rgba.extend_from_slice(pixel);
             rgba.push(alpha);
         }
