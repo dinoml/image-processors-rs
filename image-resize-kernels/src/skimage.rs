@@ -1,6 +1,6 @@
 //! FP64 order-one scikit-image resize with zero grid-constant boundaries.
 
-use super::{ImageSize, ResizeError, image_len, usize_to_u32, validate_image_data};
+use super::{image_len, usize_to_u32, validate_image_data, ImageSize, ResizeError};
 
 /// Resizes interleaved FP64 pixels using scikit-image's default order-one constant mode.
 ///

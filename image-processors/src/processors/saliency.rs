@@ -10,9 +10,9 @@ use crate::image::ImageProcessorError;
 use crate::media::{ImageFrame, PixelFormat};
 use crate::tensor::{Layout, Tensor, TensorData};
 use crate::transforms::{
-    ImageSize, ResizeDecision, ResizeFilter, ResizeMode, TransformError, binarize_mask,
-    convert_frame_pixel_format, resize_f32_image_bilinear, resize_f64_skimage_bilinear_constant,
-    resize_frame_with_decision,
+    binarize_mask, convert_frame_pixel_format, resize_f32_image_bilinear,
+    resize_f64_skimage_bilinear_constant, resize_frame_with_decision, ImageSize, ResizeDecision,
+    ResizeFilter, ResizeMode, TransformError,
 };
 
 /// U²-Net image preprocessing at a caller-configured network resolution.
@@ -104,7 +104,10 @@ impl U2NetImageProcessor {
         if images.is_empty() {
             return Err(ImageProcessorError::EmptyBatch);
         }
-        let count = self.size.height.checked_mul(self.size.width)
+        let count = self
+            .size
+            .height
+            .checked_mul(self.size.width)
             .and_then(|value| value.checked_mul(3))
             .and_then(|value| value.checked_mul(images.len()))
             .ok_or(TransformError::ImageSizeOverflow)?;
@@ -115,8 +118,11 @@ impl U2NetImageProcessor {
             };
             values.extend(pixels);
         }
-        Ok(Tensor::new(TensorData::F32(values),
-            vec![images.len(), 3, self.size.height, self.size.width], Layout::NCHW)?)
+        Ok(Tensor::new(
+            TensorData::F32(values),
+            vec![images.len(), 3, self.size.height, self.size.width],
+            Layout::NCHW,
+        )?)
     }
 
     /// Restore one fused sigmoid head to the decoded source image.
