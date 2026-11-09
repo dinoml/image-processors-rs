@@ -50,8 +50,9 @@ pub use image::{
 };
 #[doc(inline)]
 pub use media::{
-    decode_image_bytes, decode_image_bytes_oriented, decode_image_bytes_with_backend,
-    decode_image_sequence_bytes, decode_image_sequence_bytes_with_backend, decode_rgb_video,
+    decode_grayscale_image_bytes, decode_image_bytes, decode_image_bytes_oriented,
+    decode_image_bytes_with_backend, decode_image_sequence_bytes,
+    decode_image_sequence_bytes_with_backend, decode_rgb_video, load_grayscale_image_from_path,
     load_image_from_path, load_image_from_path_oriented, load_image_from_path_with_backend,
     load_image_sequence_from_path, load_image_sequence_from_path_with_backend,
     load_image_sequence_from_url, load_image_sequence_from_url_with_mode,

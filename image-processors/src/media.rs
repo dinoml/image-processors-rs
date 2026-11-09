@@ -20,6 +20,9 @@ use ::image::{AnimationDecoder, DynamicImage, ImageDecoder, ImageFormat};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+mod grayscale;
+pub use grayscale::{decode_grayscale_image_bytes, load_grayscale_image_from_path};
+
 use crate::tensor::{ImageLayout, TensorDataView, TensorError, TensorView};
 mod stream;
 pub use stream::{decode_rgb_video, transcode_rgb_video, MediaStreamError, VideoStreamOptions};
