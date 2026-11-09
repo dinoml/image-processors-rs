@@ -16,10 +16,15 @@ mod color;
 mod document;
 pub(crate) use document::document_thumbnail;
 pub use document::{crop_document_margin, DocumentThumbnailMode, MarginCropMode};
+mod restoration_degradation;
 mod restoration_pixels;
 pub use color::{
     grayscale_opencv, matlab_rgb_to_ycbcr_f32, matlab_ycbcr_to_rgb_f32,
     rgb_planar_f32_to_grayscale_opencv,
+};
+pub use restoration_degradation::{
+    add_numpy_legacy_gaussian_noise_planes, convolve_wrap_f32_planes, prepare_srmd_f32_planes,
+    DegradationError, SrmdDegradationOptions,
 };
 pub use restoration_pixels::{
     finish_grayscale_u8, finish_restoration_pixels, finish_signed_restoration_rgb,
