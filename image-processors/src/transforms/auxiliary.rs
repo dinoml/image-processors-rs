@@ -186,8 +186,10 @@ pub fn standard_lineart(
     let blurred = gaussian_blur_f32(&values, size(&image), 3, sigma, None)
         .map_err(|error| invalid(error.to_string()))?;
     let intensity = blurred
-        .chunks_exact(3)
-        .zip(values.chunks_exact(3))
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .zip(values.as_chunks::<3>().0.iter())
         .map(|(g, x)| {
             (g[0] - x[0])
                 .min(g[1] - x[1])
@@ -227,7 +229,9 @@ pub fn scribble_binary(
     let (image, content) = auxiliary_resize_pad(image, resolution, OpenCvInterpolation::Area)?;
     let pixels = image
         .data()
-        .chunks_exact(3)
+        .as_chunks::<3>()
+        .0
+        .iter()
         .flat_map(|p| {
             [if *p.iter().min().unwrap_or(&255) < 127 {
                 0
@@ -258,8 +262,10 @@ pub fn scribble_xdog(
     let second = gaussian_blur_f32(&values, size(&image), 3, 5.0, None)
         .map_err(|e| invalid(e.to_string()))?;
     let pixels = first
-        .chunks_exact(3)
-        .zip(second.chunks_exact(3))
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .zip(second.as_chunks::<3>().0.iter())
         .flat_map(|(a, b)| {
             let dog =
                 (255.0 - (b[0] - a[0]).min(b[1] - a[1]).min(b[2] - a[2])).clamp(0.0, 255.0) as u8;
@@ -457,7 +463,7 @@ pub fn fast_guided_filter_rgb(
     let radius = (radius as f64 / scale) as usize;
     let mean = box_mean(&guide, small, 3, radius);
     let mut products = Vec::with_capacity(guide.len() * 2);
-    for p in guide.chunks_exact(3) {
+    for p in guide.as_chunks::<3>().0.iter() {
         products.extend_from_slice(&[
             p[0] * p[0],
             p[0] * p[1],
@@ -469,7 +475,12 @@ pub fn fast_guided_filter_rgb(
     }
     let moments = box_mean(&products, small, 6, radius);
     let mut inverse = Vec::with_capacity(products.len());
-    for (m, v) in mean.chunks_exact(3).zip(moments.chunks_exact(6)) {
+    for (m, v) in mean
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .zip(moments.as_chunks::<6>().0.iter())
+    {
         let rr = v[0] - m[0] * m[0] + epsilon as f32;
         let rg = v[1] - m[0] * m[1];
         let rb = v[2] - m[0] * m[2];
@@ -490,12 +501,16 @@ pub fn fast_guided_filter_rgb(
     let mut output = vec![0.0; values.len()];
     for channel in 0..3 {
         let plane = guide
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .map(|v| v[channel])
             .collect::<Vec<_>>();
         let pmean = box_mean(&plane, small, 1, radius);
         let cross = guide
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .zip(&plane)
             .flat_map(|(v, &p)| [v[0] * p, v[1] * p, v[2] * p])
             .collect::<Vec<_>>();
@@ -525,8 +540,10 @@ pub fn fast_guided_filter_rgb(
         let coefficients =
             resize_f32_opencv(&coefficients, small, 4, source, OpenCvInterpolation::Linear)?;
         for (index, (a, p)) in coefficients
-            .chunks_exact(4)
-            .zip(values.chunks_exact(3))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(values.as_chunks::<3>().0.iter())
             .enumerate()
         {
             output[index * 3 + channel] = a[0] * p[0] + a[1] * p[1] + a[2] * p[2] + a[3];
@@ -570,7 +587,9 @@ pub fn tile_preprocess_guided(
         size(&blurred),
         blurred
             .data()
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .flat_map(|p| [p[2], p[1], p[0]])
             .collect(),
     )?;
@@ -580,7 +599,9 @@ pub fn tile_preprocess_guided(
         size(&resized),
         resized
             .data()
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .flat_map(|p| [p[2], p[1], p[0]])
             .collect(),
     )
@@ -706,7 +727,9 @@ pub fn scribble_edges(image: &ImageFrame) -> Result<ImageFrame, TransformError> 
     for channel in 0..3 {
         let values = image
             .data()
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .map(|v| f32::from(v[channel]))
             .collect::<Vec<_>>();
         let blurred = gaussian_blur_f32(&values, size(&image), 1, 3.0, None)
