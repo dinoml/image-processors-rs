@@ -18,6 +18,7 @@ pub(crate) use document::document_thumbnail;
 pub use document::{crop_document_margin, DocumentThumbnailMode, MarginCropMode};
 mod restoration_degradation;
 mod restoration_pixels;
+mod srmd_conditioning;
 pub use color::{
     grayscale_opencv, matlab_rgb_to_ycbcr_f32, matlab_ycbcr_to_rgb_f32,
     rgb_planar_f32_to_grayscale_opencv,
@@ -33,6 +34,7 @@ pub use restoration_pixels::{
     restoration_to_rgb, PreparedRestorationPixels, RestorationComposite, RestorationImage,
     RestorationImageView, RestorationPixelFormat, RestorationPixels,
 };
+pub use srmd_conditioning::{srmd_gaussian_kernel, SrmdConditioningError, SrmdPcaProjection};
 mod planar_tiles;
 pub use planar_tiles::{
     crop_planar_f32, reflect_pad_planar_f32, DihedralTransform, HaloTile, HaloTilePlan, PlanarMean,
