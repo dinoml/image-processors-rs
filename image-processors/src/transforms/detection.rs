@@ -1359,6 +1359,124 @@ pub fn detection_box_iou(
     }
 }
 
+/// A detection with a confidence and ordered two-dimensional landmarks.
+///
+/// Boxes and keypoints must use the same coordinate system. Normalized canvas
+/// coordinates and absolute image coordinates are both supported.
+#[derive(Clone, Debug, PartialEq)]
+pub struct KeypointDetection {
+    /// Corner-format bounding box.
+    pub bbox: DetectionBoundingBox,
+    /// Finite, nonnegative confidence used as the coordinate weight.
+    pub score: f32,
+    /// Ordered landmarks; every detection in a call has the same landmark count.
+    pub keypoints: Vec<ImagePoint>,
+}
+
+/// Merge overlapping boxes and landmarks with MediaPipe's weighted NMS policy.
+///
+/// Candidates are visited by descending confidence, with input order resolving
+/// ties. Each group contains remaining boxes whose IoU with the original leading
+/// box strictly exceeds `iou_threshold`. Box corners and all keypoints are
+/// confidence-weighted in FP32; the leading detection's score is preserved.
+/// Merged coordinates do not affect subsequent group membership.
+///
+/// Matches `WeightedNonMaxSuppression` in MediaPipe's
+/// `mediapipe/calculators/util/non_max_suppression_calculator.cc`, including its
+/// no-progress guard: if no candidate overlaps the leading box, emit that box
+/// unchanged and stop. This can occur for zero-area boxes or a threshold of one.
+///
+/// # Errors
+///
+/// Rejects thresholds outside `[0,1]`, unequal keypoint counts, nonfinite
+/// coordinates or scores, negative box extents or scores, zero total group
+/// confidence, and nonfinite FP32 accumulation or averaging results.
+pub fn weighted_keypoint_non_max_suppression(
+    detections: &[KeypointDetection],
+    iou_threshold: f32,
+) -> Result<Vec<KeypointDetection>, TransformError> {
+    validate_iou_threshold(iou_threshold)?;
+    let keypoint_count = detections
+        .first()
+        .map_or(0, |detection| detection.keypoints.len());
+    for detection in detections {
+        validate_detection_box_extents(detection.bbox)?;
+        validate_score_value(detection.score)?;
+        if detection.score < 0.0 {
+            return Err(TransformError::InvalidScoreValue(detection.score));
+        }
+        validate_len(detection.keypoints.len(), keypoint_count)?;
+        for point in &detection.keypoints {
+            validate_point_values([point.x, point.y])?;
+        }
+    }
+
+    let mut order: Vec<usize> = (0..detections.len()).collect();
+    order.sort_by(|&left, &right| {
+        if detections[left].score == detections[right].score {
+            return left.cmp(&right);
+        }
+        detections[right]
+            .score
+            .total_cmp(&detections[left].score)
+            .then_with(|| left.cmp(&right))
+    });
+    let mut remaining = Vec::with_capacity(order.len());
+    let mut output = Vec::new();
+    while let Some(&leading_index) = order.first() {
+        let leading = &detections[leading_index];
+        let mut corners = [0.0f32; 4];
+        let mut keypoints = vec![ImagePoint { x: 0.0, y: 0.0 }; keypoint_count];
+        let mut total_score = 0.0f32;
+        let mut group_size = 0;
+        remaining.clear();
+        for &index in &order {
+            let candidate = &detections[index];
+            if detection_box_iou(candidate.bbox, leading.bbox)? > iou_threshold {
+                group_size += 1;
+                total_score += candidate.score;
+                corners[0] += candidate.bbox.x_min * candidate.score;
+                corners[1] += candidate.bbox.y_min * candidate.score;
+                corners[2] += (candidate.bbox.x_min + candidate.bbox.width()) * candidate.score;
+                corners[3] += (candidate.bbox.y_min + candidate.bbox.height()) * candidate.score;
+                for (sum, point) in keypoints.iter_mut().zip(&candidate.keypoints) {
+                    sum.x += point.x * candidate.score;
+                    sum.y += point.y * candidate.score;
+                }
+            } else {
+                remaining.push(index);
+            }
+        }
+        if group_size == 0 {
+            output.push(leading.clone());
+            break;
+        }
+        validate_score_value(total_score)?;
+        if total_score <= 0.0 {
+            return Err(TransformError::InvalidScoreValue(total_score));
+        }
+        let bbox = DetectionBoundingBox::new(
+            corners[0] / total_score,
+            corners[1] / total_score,
+            corners[2] / total_score,
+            corners[3] / total_score,
+        )?;
+        validate_detection_box_extents(bbox)?;
+        for point in &mut keypoints {
+            point.x /= total_score;
+            point.y /= total_score;
+            validate_point_values([point.x, point.y])?;
+        }
+        output.push(KeypointDetection {
+            bbox,
+            score: leading.score,
+            keypoints,
+        });
+        std::mem::swap(&mut order, &mut remaining);
+    }
+    Ok(output)
+}
+
 /// Applies class-agnostic non-maximum suppression to boxes and scores.
 ///
 /// Returned values are the kept input indices in descending score order.
