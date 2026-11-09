@@ -31,11 +31,12 @@ pub use crate::transforms::{
     post_process_oneformer_instance_segmentation, post_process_panoptic_segmentation,
     post_process_semantic_segmentation, post_process_sigmoid_best_object_detection,
     post_process_sigmoid_top_k_object_detection, resize_padded_mask_logits, scale_detection_box,
-    scale_image_point, BinaryRleMask, CropGenerationOptions, DetectionBoundingBox,
-    DetectionCenterBox, FilteredMask, GeneratedMaskPrediction, ImagePoint, ImageSize,
-    LayeredCropBox, MaskFilterOptions, ObjectDetectionPrediction, OneFormerInstanceOptions,
-    OneFormerTask, SegmentationPostProcessOptions, SegmentationPostProcessPrediction,
-    SegmentationSegmentInfo, SemanticSegmentationPrediction, TransformError,
+    scale_image_point, weighted_keypoint_non_max_suppression, BinaryRleMask, CropGenerationOptions,
+    DetectionBoundingBox, DetectionCenterBox, FilteredMask, GeneratedMaskPrediction, ImagePoint,
+    ImageSize, KeypointDetection, LayeredCropBox, MaskFilterOptions, ObjectDetectionPrediction,
+    OneFormerInstanceOptions, OneFormerTask, SegmentationPostProcessOptions,
+    SegmentationPostProcessPrediction, SegmentationSegmentInfo, SemanticSegmentationPrediction,
+    TransformError,
 };
 
 mod multiclass;
