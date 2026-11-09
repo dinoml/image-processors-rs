@@ -157,4 +157,10 @@ pub enum ImageProcessorPrecision {
     /// before resizing. Normalization remains after resize; no byte quantization
     /// occurs between those stages.
     Float32RescaleBeforeResize,
+    /// Composite RGBA over RGB before resize, retaining fractional FP32 pixels.
+    /// Gray and RGB pixels are promoted without changing their values.
+    Float32CompositeAlpha {
+        /// RGB background in the source byte-value scale.
+        background: [u8; 3],
+    },
 }

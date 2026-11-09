@@ -326,37 +326,54 @@ impl ImageProcessor {
         options: ImageProcessorOptions,
         precision: ImageProcessorPrecision,
     ) -> Result<Tensor, ImageProcessorError> {
-        let (rescale_divisor, rescale_before_resize) = match precision {
+        let (rescale_divisor, rescale_before_resize, alpha_background) = match precision {
             ImageProcessorPrecision::Byte => {
                 return self.preprocess_image_batch_with_options(
                     std::slice::from_ref(image),
                     options,
                     TensorLeadingAxis::Batch,
-                )
+                );
             }
-            ImageProcessorPrecision::Float32 { rescale_divisor } => (rescale_divisor, false),
-            ImageProcessorPrecision::Float32RescaleBeforeResize => (None, true),
+            ImageProcessorPrecision::Float32 { rescale_divisor } => (rescale_divisor, false, None),
+            ImageProcessorPrecision::Float32RescaleBeforeResize => (None, true, None),
+            ImageProcessorPrecision::Float32CompositeAlpha { background } => {
+                (None, false, Some(background))
+            }
         };
         if rescale_divisor.is_some_and(|divisor| !divisor.is_finite() || divisor <= 0.0) {
             return Err(ImageProcessorError::InvalidRescaleDivisor);
         }
         let mut frame = Cow::Borrowed(image);
-        if let Some(format) = self.config.pixel_format {
-            if frame.pixel_format() != format {
-                frame = Cow::Owned(convert_frame_pixel_format(frame.as_ref(), format)?);
+        if alpha_background.is_none() {
+            if let Some(format) = self.config.pixel_format {
+                if frame.pixel_format() != format {
+                    frame = Cow::Owned(convert_frame_pixel_format(frame.as_ref(), format)?);
+                }
             }
         }
         let source = ImageSize::new(frame.height(), frame.width())?;
-        let channels = frame.pixel_format().channels();
-        let mut values = frame
-            .data()
-            .iter()
-            .map(|value| {
-                rescale_divisor.map_or(f32::from(*value), |divisor| {
-                    (f64::from(*value) / divisor) as f32
+        let channels = if alpha_background.is_some() {
+            3
+        } else {
+            frame.pixel_format().channels()
+        };
+        let mut values = if let Some(background) = alpha_background {
+            crate::transforms::composite_alpha_to_rgb_f32(
+                frame.data(),
+                frame.pixel_format(),
+                background,
+            )?
+        } else {
+            frame
+                .data()
+                .iter()
+                .map(|value| {
+                    rescale_divisor.map_or(f32::from(*value), |divisor| {
+                        (f64::from(*value) / divisor) as f32
+                    })
                 })
-            })
-            .collect::<Vec<_>>();
+                .collect::<Vec<_>>()
+        };
         if rescale_before_resize && self.config.do_rescale {
             for value in &mut values {
                 *value *= self.config.rescale_factor;
@@ -585,6 +602,95 @@ impl ImageProcessor {
     /// preprocessing fails, or processed clip shapes are incompatible.
     pub fn preprocess_videos(&self, videos: &[VideoClip]) -> Result<Tensor, ImageProcessorError> {
         self.preprocess_videos_with_options(videos, ImageProcessorOptions::default())
+    }
+
+    /// Preprocess videos with opt-in RGB alpha compositing before resize.
+    ///
+    /// Clips with any nonopaque RGBA pixel use fractional FP32 compositing and
+    /// floating resize for every frame. Matching clip shapes share that promotion,
+    /// as when tensor processors stack a resize group. Entirely opaque groups
+    /// retain the byte conversion and resize path. Requires RGB pixel conversion.
+    /// Rescaling, normalization and output layout use the configured stages;
+    /// other preprocessing entrypoints are unchanged.
+    ///
+    /// # Errors
+    /// Reports empty clips/batches, unsupported floating resize profiles/modes,
+    /// invalid geometry, tensor conversion or incompatible output clip shapes.
+    pub fn preprocess_videos_compositing_alpha(
+        &self,
+        videos: &[VideoClip],
+        background: [u8; 3],
+    ) -> Result<Tensor, ImageProcessorError> {
+        if videos.is_empty() || videos.iter().any(VideoClip::is_empty) {
+            return Err(ImageProcessorError::EmptyBatch);
+        }
+        if self.config.pixel_format != Some(PixelFormat::Rgb8) {
+            return Err(ImageProcessorError::UnsupportedProcessorOption {
+                field: "alpha compositing requires RGB output",
+            });
+        }
+        let mut floating_groups = std::collections::BTreeSet::new();
+        for video in videos {
+            if video.frames().iter().any(|frame| {
+                frame.image().pixel_format() == PixelFormat::Rgba8
+                    && frame
+                        .image()
+                        .data()
+                        .as_chunks::<4>()
+                        .0
+                        .iter()
+                        .any(|pixel| pixel[3] < 255)
+            }) {
+                let first = video
+                    .frames()
+                    .first()
+                    .ok_or(ImageProcessorError::EmptyBatch)?
+                    .image();
+                floating_groups.insert((
+                    video.len(),
+                    first.channels(),
+                    first.height(),
+                    first.width(),
+                ));
+            }
+        }
+        let mut frame_config = self.config.clone();
+        frame_config.output_layout = self.config.output_video_layout().tensor_layout();
+        let frame_processor = Self::new(frame_config)?;
+        let tensors = videos
+            .iter()
+            .map(|video| {
+                if video.is_empty() {
+                    return Err(ImageProcessorError::EmptyBatch);
+                }
+                let first = video
+                    .frames()
+                    .first()
+                    .ok_or(ImageProcessorError::EmptyBatch)?
+                    .image();
+                if !floating_groups.contains(&(
+                    video.len(),
+                    first.channels(),
+                    first.height(),
+                    first.width(),
+                )) {
+                    return self.preprocess_video(video);
+                }
+                let frames = video
+                    .frames()
+                    .iter()
+                    .map(|frame| {
+                        frame_processor.preprocess_image_with_precision(
+                            frame.image(),
+                            ImageProcessorOptions::default(),
+                            ImageProcessorPrecision::Float32CompositeAlpha { background },
+                        )
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                stack_tensors(frames, TensorLeadingAxis::Frames)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        stack_frame_tensors_as_video_batch(tensors)
     }
 
     /// Preprocesses decoded video clips as typed processor output.
