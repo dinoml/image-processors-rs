@@ -1394,6 +1394,42 @@ impl Tensor {
         Ok(self.with_data(TensorData::F32(values)))
     }
 
+    /// Subtracts channel means in `F32`, then multiplies by `F64` reciprocals.
+    ///
+    /// Returns `F32` storage, preserving the rounded subtraction before the
+    /// reciprocal multiplication. The reciprocal is computed from each `F32`
+    /// standard deviation promoted to `F64`; multiplication is performed in
+    /// `F64` and rounded back to `F32`. This is the staged arithmetic used by
+    /// OpenMMLab's mmcv `imnormalize_` on floating image inputs, without a native
+    /// OpenCV dependency. It deliberately differs from an affine transform and
+    /// from `normalize_channels`, which divides in `F32`.
+    ///
+    /// Each statistics slice may contain one scalar or one value per channel.
+    /// Shape, layout and leading-axis metadata are preserved.
+    ///
+    /// # Errors
+    /// Returns an error for empty, non-finite or mismatched statistics, or
+    /// nonpositive standard deviations.
+    pub fn normalize_channels_with_f64_reciprocal(
+        &self,
+        mean: &[f32],
+        std: &[f32],
+    ) -> Result<Self, TensorError> {
+        let channels = self.channels();
+        validate_channel_stats("mean", mean, channels)?;
+        validate_channel_stats("std", std, channels)?;
+        validate_positive_channel_std(std)?;
+        let reciprocals: Vec<f64> = std.iter().map(|value| 1.0 / f64::from(*value)).collect();
+        let channel_axis = self.layout.channel_axis();
+        let shape = &self.shape;
+        Ok(self.with_data(self.data.map_indexed_to(|index, value| {
+            let channel = axis_coordinate(index, shape, channel_axis);
+            let centered = value - channel_stat(mean, channel);
+            let reciprocal = reciprocals[if reciprocals.len() == 1 { 0 } else { channel }];
+            (f64::from(centered) * reciprocal) as f32
+        })))
+    }
+
     /// Maps values from `[0, 1]` to `[-1, 1]`.
     pub fn normalize(&self) -> Self {
         self.with_data(self.data.map_to(|value| 2.0 * value - 1.0))
