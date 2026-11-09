@@ -1328,6 +1328,72 @@ impl Tensor {
         })))
     }
 
+    /// Divide by the tensor maximum, then normalize channels with FP64 arithmetic.
+    ///
+    /// The divisor is `max(maximum_value, epsilon)` over this entire tensor,
+    /// including all leading axes. Call separately for each image when image-wise
+    /// scaling is required. Statistics may be scalar or contain one value per
+    /// channel. Values are decoded as FP32, promoted to FP64 for division,
+    /// subtraction and standard-deviation division, then rounded once to FP32.
+    /// The shape, layout and leading-axis metadata are retained.
+    ///
+    /// # Errors
+    /// Returns an error for nonfinite input values or statistics, nonpositive
+    /// standard deviations or epsilon, or statistics with incompatible lengths.
+    pub fn normalize_channels_by_maximum(
+        &self,
+        mean: &[f64],
+        std: &[f64],
+        epsilon: f64,
+    ) -> Result<Self, TensorError> {
+        if !epsilon.is_finite() || epsilon <= 0.0 {
+            return Err(TensorError::InvalidMaximumNormalization(
+                "epsilon must be finite and positive",
+            ));
+        }
+        let channels = self.channels();
+        for (field, statistics) in [("mean", mean), ("std", std)] {
+            if statistics.is_empty() {
+                return Err(TensorError::EmptyChannelStats { field });
+            }
+            if statistics.len() != 1 && statistics.len() != channels {
+                return Err(TensorError::InvalidChannelStats {
+                    field,
+                    channels,
+                    actual: statistics.len(),
+                });
+            }
+            if statistics.iter().any(|value| !value.is_finite()) {
+                return Err(TensorError::InvalidMaximumNormalization(
+                    "channel statistics must be finite",
+                ));
+            }
+        }
+        if std.iter().any(|value| *value <= 0.0) {
+            return Err(TensorError::InvalidMaximumNormalization(
+                "channel standard deviations must be positive",
+            ));
+        }
+        let mut values = Vec::<f32>::from(&self.data);
+        let mut maximum = epsilon;
+        for &value in &values {
+            if !value.is_finite() {
+                return Err(TensorError::InvalidMaximumNormalization(
+                    "input values must be finite",
+                ));
+            }
+            maximum = maximum.max(f64::from(value));
+        }
+        let channel_axis = self.layout.channel_axis();
+        for (index, value) in values.iter_mut().enumerate() {
+            let channel = axis_coordinate(index, &self.shape, channel_axis);
+            let mean = mean[if mean.len() == 1 { 0 } else { channel }];
+            let std = std[if std.len() == 1 { 0 } else { channel }];
+            *value = ((f64::from(*value) / maximum - mean) / std) as f32;
+        }
+        Ok(self.with_data(TensorData::F32(values)))
+    }
+
     /// Maps values from `[0, 1]` to `[-1, 1]`.
     pub fn normalize(&self) -> Self {
         self.with_data(self.data.map_to(|value| 2.0 * value - 1.0))
@@ -1806,6 +1872,9 @@ fn packed_byte_len(elements: usize) -> usize {
 /// Errors returned by tensor construction and layout conversion.
 #[derive(Debug, Error, PartialEq)]
 pub enum TensorError {
+    /// Invalid input or statistics for FP64 maximum-based channel normalization.
+    #[error("invalid maximum normalization: {0}")]
+    InvalidMaximumNormalization(&'static str),
     /// Tensor rank did not match the layout.
     #[error("invalid tensor rank: expected {expected}, got {actual}")]
     InvalidRank {
