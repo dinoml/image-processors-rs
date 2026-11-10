@@ -280,6 +280,7 @@ impl ProcessorRecipe {
                         }
                         RecipeResizeTarget::MaxHeightWidth { .. }
                         | RecipeResizeTarget::ShortestEdge { .. }
+                        | RecipeResizeTarget::ShortestEdgeRoundTiesEven { .. }
                         | RecipeResizeTarget::ShortestEdgeRoundDown { .. }
                         | RecipeResizeTarget::LongestEdge { .. } => {
                             return Err(RecipeError::UnsupportedGenericStage {
