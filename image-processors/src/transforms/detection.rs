@@ -725,6 +725,82 @@ pub enum DetectionBoxScaling {
     ConvertThenScale,
 }
 
+/// Tensor arithmetic and threshold policy for background-excluding softmax detections.
+#[derive(Clone, Copy, Debug)]
+pub struct SoftmaxDetectionOptions {
+    /// Keep scores strictly above this threshold, compared in tensor precision.
+    pub score_threshold: f32,
+    /// Precision of the model outputs and stored softmax probabilities.
+    /// Softmax accumulation remains FP32 for half-precision model outputs.
+    pub precision: DType,
+    /// Ordering of center-box conversion and target-size scaling.
+    pub box_scaling: DetectionBoxScaling,
+}
+
+/// Restore softmax detections with explicit tensor precision and box arithmetic order.
+///
+/// Logits have shape `[num_queries, num_labels_with_background]`. The final
+/// class participates in softmax normalization but is excluded before selecting
+/// the best foreground class. Probabilities are rounded to `precision` before
+/// selection, preserving the first label when stored probabilities tie.
+/// Existing callers of [`post_process_object_detection`] retain their behavior.
+///
+/// # Errors
+/// Reports unsupported precision, invalid geometry, class counts, thresholds,
+/// logits, or mismatched buffer lengths.
+pub fn post_process_object_detection_with_options(
+    logits: &[f32],
+    pred_boxes: &[DetectionCenterBox],
+    num_labels_with_background: usize,
+    target_size: ImageSize,
+    options: SoftmaxDetectionOptions,
+) -> Result<Vec<ObjectDetectionPrediction>, TransformError> {
+    validate_detection_precision(options.precision)?;
+    if num_labels_with_background < 2 {
+        return Err(TransformError::InvalidClassCount(
+            num_labels_with_background,
+        ));
+    }
+    validate_detection_postprocess_inputs(
+        logits,
+        pred_boxes,
+        num_labels_with_background,
+        target_size,
+        options.score_threshold,
+    )?;
+    let threshold = round_detection_value(options.score_threshold, options.precision);
+    let mut predictions = Vec::new();
+    for (query_logits, bbox) in logits
+        .chunks_exact(num_labels_with_background)
+        .zip(pred_boxes.iter().copied())
+    {
+        let probabilities = foreground_softmax(query_logits, num_labels_with_background - 1)?;
+        let mut best_label = 0usize;
+        let mut best_score = f32::NEG_INFINITY;
+        for (label, probability) in probabilities.into_iter().enumerate() {
+            let probability = round_detection_value(probability, options.precision);
+            if probability > best_score {
+                best_score = probability;
+                best_label = label;
+            }
+        }
+        if best_score > threshold {
+            predictions.push(ObjectDetectionPrediction {
+                score: best_score,
+                class_label: i64::try_from(best_label)
+                    .map_err(|_| TransformError::ImageSizeOverflow)?,
+                bbox: restore_detection_box(
+                    bbox,
+                    target_size,
+                    options.precision,
+                    options.box_scaling,
+                )?,
+            });
+        }
+    }
+    Ok(predictions)
+}
+
 /// Score selection and tensor arithmetic for flattened query/class ranking.
 #[derive(Clone, Copy, Debug)]
 pub struct SigmoidTopKDetectionOptions {
@@ -749,10 +825,6 @@ pub struct SigmoidTopKDetectionOptions {
 /// # Errors
 /// Reports invalid dimensions, logits, boxes, thresholds, unsupported precision,
 /// or nonfinite geometry after rounding.
-#[allow(
-    clippy::cast_precision_loss,
-    reason = "Image dimensions participate in upstream FP32 tensor arithmetic"
-)]
 pub fn post_process_sigmoid_top_k_object_detection_with_options(
     logits: &[f32],
     pred_boxes: &[DetectionCenterBox],
@@ -771,9 +843,6 @@ pub fn post_process_sigmoid_top_k_object_detection_with_options(
 
     let rounded = |value| round_detection_value(value, options.precision);
     let ranked = rank_sigmoid_query_classes(logits, options.top_k, options.precision)?;
-    let width = rounded(target_size.width as f32);
-    let height = rounded(target_size.height as f32);
-
     let mut predictions = Vec::with_capacity(ranked.len());
     for (score, flat_index) in ranked {
         if score <= rounded(options.score_threshold) {
@@ -781,31 +850,11 @@ pub fn post_process_sigmoid_top_k_object_detection_with_options(
         }
         let query_index = flat_index / num_labels;
         let class_label = flat_index % num_labels;
-        let bbox = pred_boxes[query_index];
-        let (center_x, center_y, half_width, half_height, scale_x, scale_y) =
-            match options.box_scaling {
-                DetectionBoxScaling::ScaleCenterThenConvert => (
-                    rounded(bbox.center_x * width),
-                    rounded(bbox.center_y * height),
-                    rounded(rounded(bbox.width * width) * 0.5),
-                    rounded(rounded(bbox.height * height) * 0.5),
-                    1.0,
-                    1.0,
-                ),
-                DetectionBoxScaling::ConvertThenScale => (
-                    bbox.center_x,
-                    bbox.center_y,
-                    rounded(bbox.width * 0.5),
-                    rounded(bbox.height * 0.5),
-                    width,
-                    height,
-                ),
-            };
-        let bbox = DetectionBoundingBox::new(
-            rounded(rounded(center_x - half_width) * scale_x),
-            rounded(rounded(center_y - half_height) * scale_y),
-            rounded(rounded(center_x + half_width) * scale_x),
-            rounded(rounded(center_y + half_height) * scale_y),
+        let bbox = restore_detection_box(
+            pred_boxes[query_index],
+            target_size,
+            options.precision,
+            options.box_scaling,
         )?;
         predictions.push(ObjectDetectionPrediction {
             score,
@@ -815,6 +864,45 @@ pub fn post_process_sigmoid_top_k_object_detection_with_options(
         });
     }
     Ok(predictions)
+}
+
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "Image dimensions participate in upstream FP32 tensor arithmetic"
+)]
+fn restore_detection_box(
+    bbox: DetectionCenterBox,
+    target_size: ImageSize,
+    precision: DType,
+    box_scaling: DetectionBoxScaling,
+) -> Result<DetectionBoundingBox, TransformError> {
+    let rounded = |value| round_detection_value(value, precision);
+    let width = rounded(target_size.width as f32);
+    let height = rounded(target_size.height as f32);
+    let (center_x, center_y, half_width, half_height, scale_x, scale_y) = match box_scaling {
+        DetectionBoxScaling::ScaleCenterThenConvert => (
+            rounded(bbox.center_x * width),
+            rounded(bbox.center_y * height),
+            rounded(rounded(bbox.width * width) * 0.5),
+            rounded(rounded(bbox.height * height) * 0.5),
+            1.0,
+            1.0,
+        ),
+        DetectionBoxScaling::ConvertThenScale => (
+            bbox.center_x,
+            bbox.center_y,
+            rounded(bbox.width * 0.5),
+            rounded(bbox.height * 0.5),
+            width,
+            height,
+        ),
+    };
+    DetectionBoundingBox::new(
+        rounded(rounded(center_x - half_width) * scale_x),
+        rounded(rounded(center_y - half_height) * scale_y),
+        rounded(rounded(center_x + half_width) * scale_x),
+        rounded(rounded(center_y + half_height) * scale_y),
+    )
 }
 
 /// Restore sigmoid-ranked query masks with RF-DETR's instance composition policy.
