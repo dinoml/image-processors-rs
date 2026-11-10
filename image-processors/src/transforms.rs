@@ -72,6 +72,7 @@ pub fn resize_f64_skimage_bilinear_constant(
 }
 
 mod detection;
+// The same output representation serves softmax- and sigmoid-ranked queries.
 pub(crate) use detection::post_process_oneformer_panoptic_segmentation;
 pub use detection::{
     detection_box_iou, non_max_suppression, non_max_suppression_by_class,
@@ -91,6 +92,11 @@ pub use detection::{
     SigmoidInstanceSegmentationMasks, SigmoidInstanceSegmentationOptions,
     SigmoidInstanceSegmentationPrediction, SigmoidTopKDetectionOptions, SoftmaxDetectionOptions,
     WeightedNmsScore,
+};
+pub use detection::{
+    SigmoidInstanceSegmentationFormat as InstanceSegmentationFormat,
+    SigmoidInstanceSegmentationMasks as InstanceSegmentationMasks,
+    SigmoidInstanceSegmentationPrediction as InstanceSegmentationPrediction,
 };
 mod face_geometry;
 mod frame_ops;
@@ -171,9 +177,9 @@ pub use masks::{
     box_near_crop_edge, filter_generated_masks, generate_layered_crop_boxes, mask_stability_score,
     normalized_point_grid, pad_crop_mask, post_process_binary_mask, post_process_generated_masks,
     remove_small_mask_regions, resize_padded_mask_logits, resize_padded_mask_logits_with_dtype,
-    scale_image_point, BinaryRleMask, BinaryStartLengthRleMask, CropGenerationOptions,
-    FilteredMask, GeneratedMaskPrediction, ImagePoint, LayeredCropBox, MaskFilterOptions,
-    MaskRegionMode,
+    scale_image_point, segment_map_to_start_length_rle, BinaryRleMask, BinaryStartLengthRleMask,
+    CropGenerationOptions, FilteredMask, GeneratedMaskPrediction, ImagePoint, LayeredCropBox,
+    MaskFilterOptions, MaskRegionMode,
 };
 pub use patch_grid::{
     aspect_ratio_tile_frames, flatten_hwc_patches, patch_grid_batch_plan, patch_grid_image_patches,
@@ -1727,7 +1733,10 @@ pub(crate) fn transformers_shortest_edge_resize_size(
 }
 
 /// Transformers max-height/max-width geometry also enlarges small inputs.
-pub(crate) fn max_height_width_resize_size(
+///
+/// # Errors
+/// Reports invalid dimensions or a scaled dimension outside the supported range.
+pub fn max_height_width_resize_size(
     source: ImageSize,
     maximum: ImageSize,
 ) -> Result<ImageSize, TransformError> {

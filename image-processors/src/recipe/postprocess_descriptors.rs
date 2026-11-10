@@ -211,6 +211,10 @@ pub struct RecipeSegmentationPostprocess {
     /// Family-specific query-mask execution strategy.
     #[serde(default)]
     pub strategy: RecipeSegmentationStrategy,
+    /// Instance mask representation for MaskFormer and Mask2Former. Other
+    /// strategies and tasks currently require the default indexed segment map.
+    #[serde(default)]
+    pub instance_format: crate::transforms::InstanceSegmentationFormat,
 }
 
 impl RecipeSegmentationPostprocess {
@@ -231,6 +235,7 @@ impl RecipeSegmentationPostprocess {
             options: RecipeSegmentationPostprocessOptions::default(),
             label_ids_to_fuse: Vec::new(),
             strategy: RecipeSegmentationStrategy::default(),
+            instance_format: crate::transforms::InstanceSegmentationFormat::default(),
         }
     }
 

@@ -556,6 +556,31 @@ pub fn binary_mask_to_start_length_rle(
     Ok(BinaryStartLengthRleMask { size, runs })
 }
 
+/// Encode sorted unique segment-map ids, including background, as row-major RLE.
+///
+/// # Errors
+/// Reports invalid dimensions, storage lengths or arithmetic overflow.
+pub fn segment_map_to_start_length_rle(
+    segmentation: &[i64],
+    size: ImageSize,
+) -> Result<Vec<BinaryStartLengthRleMask>, TransformError> {
+    validate_size(size)?;
+    validate_len(segmentation.len(), checked_pixels(size)?)?;
+    segmentation
+        .iter()
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .map(|id| {
+            let binary = segmentation
+                .iter()
+                .map(|&value| value == id)
+                .collect::<Vec<_>>();
+            binary_mask_to_start_length_rle(&binary, size)
+        })
+        .collect()
+}
+
 /// Decodes an uncompressed column-major RLE mask into row-major binary pixels.
 ///
 /// # Errors

@@ -3,9 +3,10 @@ use std::collections::HashMap;
 use crate::tensor::{round_float_values_to_dtype, DType};
 use crate::transforms::{
     post_process_semantic_segmentation, resize_f32_image_bilinear,
-    resize_f32_image_torchvision_bilinear, ImageSize, SegmentationPostProcessOptions,
-    SegmentationPostProcessPrediction, SegmentationSegmentInfo, SemanticSegmentationPrediction,
-    TransformError,
+    resize_f32_image_torchvision_bilinear, segment_map_to_start_length_rle, ImageSize,
+    InstanceSegmentationFormat, InstanceSegmentationMasks, InstanceSegmentationPrediction,
+    SegmentationPostProcessOptions, SegmentationPostProcessPrediction, SegmentationSegmentInfo,
+    SemanticSegmentationPrediction, TransformError,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -254,6 +255,7 @@ pub(super) fn post_process_maskformer_instance(
     num_labels_with_background: usize,
     mask_size: ImageSize,
     options: SegmentationPostProcessOptions,
+    mut binary_maps: Option<&mut Vec<Vec<bool>>>,
 ) -> Result<SegmentationPostProcessPrediction, TransformError> {
     validate_options(options)?;
     validate_query_mask_inputs(
@@ -324,6 +326,9 @@ pub(super) fn post_process_maskformer_instance(
                 *pixel = id;
             }
         }
+        if let Some(maps) = binary_maps.as_mut() {
+            maps.push(output_mask.iter().map(|&value| value != 0).collect());
+        }
         segments.push(SegmentationSegmentInfo {
             id,
             label_id: candidate.label_id,
@@ -336,6 +341,48 @@ pub(super) fn post_process_maskformer_instance(
         size: output_size,
         segmentation,
         segments,
+    })
+}
+
+pub(super) fn post_process_maskformer_instance_with_format(
+    class_logits: &[f32],
+    mask_logits: &[f32],
+    num_queries: usize,
+    num_labels_with_background: usize,
+    mask_size: ImageSize,
+    options: SegmentationPostProcessOptions,
+    format: InstanceSegmentationFormat,
+) -> Result<InstanceSegmentationPrediction, TransformError> {
+    let mut binary_maps = Vec::new();
+    let prediction = post_process_maskformer_instance(
+        class_logits,
+        mask_logits,
+        num_queries,
+        num_labels_with_background,
+        mask_size,
+        options,
+        (format == InstanceSegmentationFormat::BinaryMaps).then_some(&mut binary_maps),
+    )?;
+    let segmentation = match format {
+        InstanceSegmentationFormat::SegmentMap => {
+            InstanceSegmentationMasks::SegmentMap(prediction.segmentation)
+        }
+        InstanceSegmentationFormat::BinaryMaps if !binary_maps.is_empty() => {
+            InstanceSegmentationMasks::BinaryMaps(binary_maps)
+        }
+        InstanceSegmentationFormat::BinaryMaps => {
+            InstanceSegmentationMasks::SegmentMap(prediction.segmentation)
+        }
+        InstanceSegmentationFormat::CocoRle => {
+            // Upstream encodes sorted unique map ids, including background.
+            let rle = segment_map_to_start_length_rle(&prediction.segmentation, prediction.size)?;
+            InstanceSegmentationMasks::CocoRle(rle)
+        }
+    };
+    Ok(InstanceSegmentationPrediction {
+        size: prediction.size,
+        segmentation,
+        segments: prediction.segments,
     })
 }
 

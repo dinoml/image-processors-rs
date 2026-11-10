@@ -339,15 +339,16 @@ pub struct SegmentationPostProcessPrediction {
     pub segments: Vec<SegmentationSegmentInfo>,
 }
 
-/// Output representation for sigmoid-ranked instance masks.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+/// Output representation for query/class-ranked instance masks.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SigmoidInstanceSegmentationFormat {
     /// A row-major segment-id map, with -1 for unpainted pixels.
     #[default]
     SegmentMap,
     /// Independent binary masks, retaining overlap between instances.
     BinaryMaps,
-    /// RF-DETR's `return_coco_annotation`: row-major one-based start/length RLE
+    /// Transformers' `return_coco_annotation`: row-major one-based start/length RLE
     /// for each distinct segment-map id in sorted order, including background.
     CocoRle,
 }
@@ -391,15 +392,17 @@ pub enum SigmoidInstanceSegmentationMasks {
     CocoRle(Vec<BinaryStartLengthRleMask>),
 }
 
-/// One image's sigmoid-ranked instance predictions.
+/// One image's query/class-ranked instance predictions.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SigmoidInstanceSegmentationPrediction {
     /// Spatial dimensions shared by all masks.
     pub size: ImageSize,
     /// Selected mask representation. If score filtering removes every candidate,
     /// RF-DETR returns an all-minus-one SegmentMap regardless of output_format.
+    /// MaskFormer and Mask2Former retain that map for empty BinaryMaps requests,
+    /// but still encode its background for CocoRle requests.
     pub segmentation: SigmoidInstanceSegmentationMasks,
-    /// Retained ids start at 1; scores are rounded to six decimal places.
+    /// Retained ids follow the source family; scores are rounded to six decimals.
     pub segments: Vec<SegmentationSegmentInfo>,
 }
 
@@ -1011,17 +1014,7 @@ pub fn post_process_sigmoid_top_k_instance_segmentation(
             SigmoidInstanceSegmentationMasks::BinaryMaps(binary_maps)
         }
         SigmoidInstanceSegmentationFormat::CocoRle => {
-            let ids = segmentation.iter().copied().collect::<BTreeSet<_>>();
-            let rle = ids
-                .into_iter()
-                .map(|id| {
-                    let binary = segmentation
-                        .iter()
-                        .map(|value| *value == id)
-                        .collect::<Vec<_>>();
-                    binary_mask_to_start_length_rle(&binary, size)
-                })
-                .collect::<Result<Vec<_>, _>>()?;
+            let rle = segment_map_to_start_length_rle(&segmentation, size)?;
             SigmoidInstanceSegmentationMasks::CocoRle(rle)
         }
     };
