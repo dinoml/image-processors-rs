@@ -1212,7 +1212,7 @@ impl TaskVisionImageProcessor {
         let transformed = boxes
             .iter()
             .copied()
-            .map(|bbox| vitpose_affine_frame(&image, bbox, target_size))
+            .map(|bbox| vitpose_affine_frame(&image, bbox, target_size, 200.0))
             .collect::<Result<Vec<_>, _>>()?;
         let tensor = self.tensor_processor.preprocess_images(&transformed)?;
         Ok(ProcessorOutput::from_pixel_values(tensor))
@@ -1652,26 +1652,53 @@ fn restore_integer_keypoints(
         .collect()
 }
 
-fn vitpose_affine_frame(
-    image: &ImageFrame,
-    bbox: TaskVisionPoseBox,
+pub(super) fn vitpose_box_geometry(
+    bbox: [f64; 4],
     target_size: ImageSize,
-) -> Result<ImageFrame, ImageProcessorError> {
+    normalize_factor: f64,
+) -> ([f32; 2], [f32; 2]) {
     let aspect_ratio = target_size.width as f64 / target_size.height as f64;
-    let mut box_width = f64::from(bbox.width);
-    let mut box_height = f64::from(bbox.height);
-    let center_x = (f64::from(bbox.top_left_x) + box_width * 0.5) as f32;
-    let center_y = (f64::from(bbox.top_left_y) + box_height * 0.5) as f32;
+    let mut box_width = bbox[2];
+    let mut box_height = bbox[3];
+    let center = [
+        (bbox[0] + box_width * 0.5) as f32,
+        (bbox[1] + box_height * 0.5) as f32,
+    ];
     if box_width > aspect_ratio * box_height {
         box_height = box_width / aspect_ratio;
     } else if box_width < aspect_ratio * box_height {
         box_width = box_height * aspect_ratio;
     }
+    (
+        center,
+        [
+            (box_width / normalize_factor) as f32 * 1.25,
+            (box_height / normalize_factor) as f32 * 1.25,
+        ],
+    )
+}
+
+pub(super) fn vitpose_affine_frame(
+    image: &ImageFrame,
+    bbox: TaskVisionPoseBox,
+    target_size: ImageSize,
+    normalize_factor: f64,
+) -> Result<ImageFrame, ImageProcessorError> {
+    let ([center_x, center_y], scale) = vitpose_box_geometry(
+        [
+            f64::from(bbox.top_left_x),
+            f64::from(bbox.top_left_y),
+            f64::from(bbox.width),
+            f64::from(bbox.height),
+        ],
+        target_size,
+        normalize_factor,
+    );
 
     // Transformers stores scale as float32, applies its 1.25 padding factor,
     // builds a float32 push matrix, and then inverts it in float64.
-    let scale_width = ((box_width / 200.0) as f32 * 1.25) * 200.0;
-    let scale_height = ((box_height / 200.0) as f32 * 1.25) * 200.0;
+    let scale_width = scale[0] * 200.0;
+    let scale_height = scale[1] * 200.0;
     let push_x = ((target_size.width - 1) as f64 / f64::from(scale_width)) as f32;
     let push_y = ((target_size.height - 1) as f64 / f64::from(scale_height)) as f32;
     let push_offset_x =

@@ -462,35 +462,14 @@ impl Sapiens2PoseProcessor {
                 } else {
                     (-1, -1)
                 };
-                // Replicate padding permits the -1 sentinel and border derivatives.
-                let at = |dy: isize, dx: isize| {
-                    // The upstream flattened padded tensor lets a -1 sentinel's
-                    // negative neighbor wrap into the preceding padded row.
-                    let padded_width = width + 2;
-                    let padded_plane = (height + 2) * padded_width;
-                    let index = ((person * channels + channel) * padded_plane) as isize
-                        + (x + 1)
-                        + (y + 1) * padded_width as isize
-                        + dx
-                        + dy * padded_width as isize;
-                    let padded_len = boxes.len() * channels * padded_plane;
-                    let index = index.rem_euclid(padded_len as isize) as usize;
-                    let plane = index / padded_plane;
-                    let within = index % padded_plane;
-                    let row = (within / padded_width).saturating_sub(1).min(height - 1);
-                    let column = (within % padded_width).saturating_sub(1).min(width - 1);
-                    blurred[(plane * height + row) * width + column]
-                };
-                let c = at(0, 0);
-                let gx = 0.5 * (at(0, 1) - at(0, -1));
-                let gy = 0.5 * (at(1, 0) - at(-1, 0));
-                let xx = at(0, 1) - 2.0 * c + at(0, -1) + f32::EPSILON;
-                let yy = at(1, 0) - 2.0 * c + at(-1, 0) + f32::EPSILON;
-                let xy = 0.5
-                    * (at(1, 1) - at(0, 1) - at(1, 0) + c + c - at(0, -1) - at(-1, 0) + at(-1, -1));
-                let determinant = xx * yy - xy * xy;
-                let px = x as f32 - (yy * gx - xy * gy) / determinant;
-                let py = y as f32 - (-xy * gx + xx * gy) / determinant;
+                let [px, py] = super::pose::dark_refine_keypoint(
+                    &blurred,
+                    [boxes.len(), channels, height, width],
+                    person,
+                    channel,
+                    [x, y],
+                    super::pose::HessianPrecision::Float32,
+                );
                 result.keypoints.push([
                     (px / (width - 1) as f32 * scale[0] + center[0] - 0.5 * scale[0])
                         * output_scale[0],

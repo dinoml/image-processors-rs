@@ -15,7 +15,7 @@ mod pillow_reduce;
 mod planar;
 mod sampling;
 mod torch_area;
-pub use gaussian::gaussian_blur_zero_f32_planes;
+pub use gaussian::{gaussian_blur_reflect_f32_planes, gaussian_blur_zero_f32_planes};
 pub use kair::downsample_f32_kair_bicubic_planes;
 pub use opencv::{resize_f32_opencv, resize_f64_opencv, resize_u16_lanczos4};
 pub use opencv::{

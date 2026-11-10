@@ -1,6 +1,99 @@
-//! FP32 Gaussian filtering with zero border values.
+//! Gaussian filtering with explicit accumulation and border policies.
 
 use crate::{ImageSize, ResizeError};
+
+/// Separable Gaussian filtering with SciPy's half-sample symmetric boundary.
+///
+/// The height axis runs before width. Weights and sums use FP64, with FP32
+/// rounding after each axis, matching `scipy.ndimage.gaussian_filter` on FP32
+/// planes. `kernel=1` is an identity filter.
+///
+/// # Errors
+/// Reports invalid geometry, buffer length, kernel, sigma or size overflow.
+pub fn gaussian_blur_reflect_f32_planes(
+    values: &[f32],
+    size: ImageSize,
+    planes: usize,
+    kernel: usize,
+    sigma: f64,
+) -> Result<Vec<f32>, ResizeError> {
+    ImageSize::new(size.height, size.width)?;
+    if kernel == 0
+        || kernel.is_multiple_of(2)
+        || kernel > isize::MAX as usize
+        || !sigma.is_finite()
+        || sigma <= 0.0
+    {
+        return Err(ResizeError::InvalidScaleFactor(sigma as f32));
+    }
+    let pixels = size
+        .height
+        .checked_mul(size.width)
+        .ok_or(ResizeError::ImageSizeOverflow)?;
+    let length = pixels
+        .checked_mul(planes)
+        .ok_or(ResizeError::ImageSizeOverflow)?;
+    if values.len() != length {
+        return Err(ResizeError::InvalidBufferLength {
+            expected: length,
+            actual: values.len(),
+        });
+    }
+    if planes == 0 {
+        return Ok(Vec::new());
+    }
+    let radius = kernel / 2;
+    let mut weights = (0..=radius)
+        .map(|distance| (-0.5 / (sigma * sigma) * (distance as f64).powi(2)).exp())
+        .collect::<Vec<_>>();
+    let sum = weights[0] + 2.0 * weights[1..].iter().sum::<f64>();
+    for weight in &mut weights {
+        *weight /= sum;
+    }
+    let reflect = |index: i128, extent: usize| {
+        let extent = extent as i128;
+        let index = index.rem_euclid(2 * extent);
+        if index < extent {
+            index as usize
+        } else {
+            (2 * extent - 1 - index) as usize
+        }
+    };
+    let mut intermediate = vec![0.0; length];
+    let mut output = vec![0.0; length];
+    for plane in 0..planes {
+        let offset = plane * pixels;
+        for y in 0..size.height {
+            for x in 0..size.width {
+                let mut value = f64::from(values[offset + y * size.width + x]) * weights[0];
+                // SciPy's symmetric correlate1d visits the outer pair first.
+                for distance in (1..=radius).rev() {
+                    let above = reflect(y as i128 - distance as i128, size.height);
+                    let below = reflect(y as i128 + distance as i128, size.height);
+                    value += (f64::from(values[offset + above * size.width + x])
+                        + f64::from(values[offset + below * size.width + x]))
+                        * weights[distance];
+                }
+                intermediate[offset + y * size.width + x] = value as f32;
+            }
+        }
+        for y in 0..size.height {
+            for x in 0..size.width {
+                let row = offset + y * size.width;
+                let mut value = f64::from(intermediate[row + x]) * weights[0];
+                for distance in (1..=radius).rev() {
+                    let left = reflect(x as i128 - distance as i128, size.width);
+                    let right = reflect(x as i128 + distance as i128, size.width);
+                    value += (f64::from(intermediate[row + left])
+                        + f64::from(intermediate[row + right]))
+                        * weights[distance];
+                }
+                output[row + x] = value as f32;
+            }
+        }
+    }
+    Ok(output)
+}
 
 /// Blur independent planar channels with a normalized Gaussian outer product.
 ///
