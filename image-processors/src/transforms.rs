@@ -77,10 +77,10 @@ pub use detection::{
     detection_box_iou, non_max_suppression, non_max_suppression_by_class,
     non_max_suppression_inclusive, normalize_detection_annotation,
     pad_normalized_detection_annotation, post_process_instance_segmentation,
-    post_process_object_detection, post_process_oneformer_instance_segmentation,
-    post_process_panoptic_segmentation, post_process_semantic_segmentation,
-    post_process_sigmoid_best_object_detection, post_process_sigmoid_top_k_instance_segmentation,
-    post_process_sigmoid_top_k_object_detection,
+    post_process_object_detection, post_process_object_detection_with_options,
+    post_process_oneformer_instance_segmentation, post_process_panoptic_segmentation,
+    post_process_semantic_segmentation, post_process_sigmoid_best_object_detection,
+    post_process_sigmoid_top_k_instance_segmentation, post_process_sigmoid_top_k_object_detection,
     post_process_sigmoid_top_k_object_detection_with_options, prepare_coco_detection_annotation,
     resize_detection_annotation, scale_detection_box, weighted_keypoint_non_max_suppression,
     weighted_keypoint_non_max_suppression_with_score, CocoObjectAnnotation, DetectionAnnotation,
@@ -89,7 +89,8 @@ pub use detection::{
     OneFormerTask, SegmentationPostProcessOptions, SegmentationPostProcessPrediction,
     SegmentationSegmentInfo, SemanticSegmentationPrediction, SigmoidInstanceSegmentationFormat,
     SigmoidInstanceSegmentationMasks, SigmoidInstanceSegmentationOptions,
-    SigmoidInstanceSegmentationPrediction, SigmoidTopKDetectionOptions, WeightedNmsScore,
+    SigmoidInstanceSegmentationPrediction, SigmoidTopKDetectionOptions, SoftmaxDetectionOptions,
+    WeightedNmsScore,
 };
 mod face_geometry;
 mod frame_ops;
