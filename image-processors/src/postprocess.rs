@@ -35,8 +35,9 @@ pub use crate::transforms::{
     resize_padded_mask_logits, resize_padded_mask_logits_with_dtype, scale_detection_box,
     scale_image_point, weighted_keypoint_non_max_suppression, BinaryRleMask, CropGenerationOptions,
     DetectionBoundingBox, DetectionCenterBox, FilteredMask, GeneratedMaskPrediction, ImagePoint,
-    ImageSize, KeypointDetection, LayeredCropBox, MaskFilterOptions, MaskRegionMode,
-    ObjectDetectionPrediction, OneFormerInstanceOptions, OneFormerTask,
+    ImageSize, InstanceSegmentationFormat, InstanceSegmentationMasks,
+    InstanceSegmentationPrediction, KeypointDetection, LayeredCropBox, MaskFilterOptions,
+    MaskRegionMode, ObjectDetectionPrediction, OneFormerInstanceOptions, OneFormerTask,
     SegmentationPostProcessOptions, SegmentationPostProcessPrediction, SegmentationSegmentInfo,
     SemanticSegmentationPrediction, SoftmaxDetectionOptions, TransformError,
 };
@@ -371,6 +372,17 @@ fn execute_segmentation_descriptor(
     preprocessing_output: &ProcessorOutput,
     context: RecipePostprocessContext<'_>,
 ) -> Result<RecipePostprocessOutput, RecipePostprocessError> {
+    if descriptor.instance_format != InstanceSegmentationFormat::SegmentMap
+        && (descriptor.task != RecipeSegmentationTask::Instance
+            || !matches!(
+                descriptor.strategy,
+                RecipeSegmentationStrategy::MaskFormer | RecipeSegmentationStrategy::Mask2Former
+            ))
+    {
+        return Err(RecipePostprocessError::UnsupportedDescriptor {
+            task: "query_mask_instance_format",
+        });
+    }
     let class_tensor = tensor_by_output_name(model_outputs, &descriptor.class_logits_output)?;
     let mask_tensor = tensor_by_output_name(model_outputs, &descriptor.mask_logits_output)?;
     let (batch, inferred_queries, inferred_labels) =
@@ -505,12 +517,20 @@ fn execute_segmentation_descriptor(
                             RecipeSegmentationStrategy::Eomt { size } => size,
                             _ => mask_size,
                         };
-                        let resized_masks = query_mask::resize_mask_planes_bilinear(
-                            sample_masks,
-                            num_queries,
-                            mask_size,
-                            intermediate_size,
-                        )?;
+                        let resize_dtype =
+                            if descriptor.strategy == RecipeSegmentationStrategy::Mask2Former {
+                                mask_tensor.dtype()
+                            } else {
+                                crate::tensor::DType::F32
+                            };
+                        let resized_masks =
+                            query_mask::resize_mask_planes_bilinear_preserving_dtype(
+                                sample_masks,
+                                num_queries,
+                                mask_size,
+                                intermediate_size,
+                                resize_dtype,
+                            )?;
                         crate::transforms::post_process_semantic_segmentation(
                             sample_classes,
                             &resized_masks,
@@ -541,6 +561,45 @@ fn execute_segmentation_descriptor(
             })
         }
         RecipeSegmentationTask::Instance => {
+            if descriptor.instance_format != InstanceSegmentationFormat::SegmentMap {
+                let mut predictions = Vec::with_capacity(batch);
+                for sample_index in 0..batch {
+                    let class_start = checked_mul(sample_index, class_logits_per_sample)?;
+                    let mask_start = checked_mul(sample_index, mask_logits_per_sample)?;
+                    let sample_classes =
+                        &class_logits[class_start..class_start + class_logits_per_sample];
+                    let sample_masks =
+                        &mask_logits[mask_start..mask_start + mask_logits_per_sample];
+                    let restored;
+                    let (sample_masks, size) =
+                        if descriptor.strategy == RecipeSegmentationStrategy::Mask2Former {
+                            let size = ImageSize::new(384, 384)?;
+                            restored = query_mask::resize_mask_planes_bilinear_preserving_dtype(
+                                sample_masks,
+                                num_queries,
+                                mask_size,
+                                size,
+                                mask_tensor.dtype(),
+                            )?;
+                            (restored.as_slice(), size)
+                        } else {
+                            (sample_masks, mask_size)
+                        };
+                    predictions.push(query_mask::post_process_maskformer_instance_with_format(
+                        sample_classes,
+                        sample_masks,
+                        num_queries,
+                        num_labels_with_background,
+                        size,
+                        segmentation_options(descriptor, target_sizes, sample_index),
+                        descriptor.instance_format,
+                    )?);
+                }
+                return Ok(RecipePostprocessOutput::FormattedInstanceSegmentation {
+                    descriptor_index,
+                    predictions,
+                });
+            }
             let mut predictions = Vec::with_capacity(batch);
             for sample_index in 0..batch {
                 let class_start = checked_mul(sample_index, class_logits_per_sample)?;
@@ -568,16 +627,19 @@ fn execute_segmentation_descriptor(
                             num_labels_with_background,
                             mask_size,
                             options,
+                            None,
                         )?
                     }
                     RecipeSegmentationStrategy::Mask2Former => {
                         let intermediate_size = ImageSize::new(384, 384)?;
-                        let resized_masks = query_mask::resize_mask_planes_bilinear(
-                            sample_masks,
-                            num_queries,
-                            mask_size,
-                            intermediate_size,
-                        )?;
+                        let resized_masks =
+                            query_mask::resize_mask_planes_bilinear_preserving_dtype(
+                                sample_masks,
+                                num_queries,
+                                mask_size,
+                                intermediate_size,
+                                mask_tensor.dtype(),
+                            )?;
                         query_mask::post_process_maskformer_instance(
                             sample_classes,
                             &resized_masks,
@@ -585,6 +647,7 @@ fn execute_segmentation_descriptor(
                             num_labels_with_background,
                             intermediate_size,
                             options,
+                            None,
                         )?
                     }
                     RecipeSegmentationStrategy::Videomt => {
@@ -694,12 +757,14 @@ fn execute_segmentation_descriptor(
                     }
                     RecipeSegmentationStrategy::Mask2Former => {
                         let intermediate_size = ImageSize::new(384, 384)?;
-                        let resized_masks = query_mask::resize_mask_planes_bilinear(
-                            sample_masks,
-                            num_queries,
-                            mask_size,
-                            intermediate_size,
-                        )?;
+                        let resized_masks =
+                            query_mask::resize_mask_planes_bilinear_preserving_dtype(
+                                sample_masks,
+                                num_queries,
+                                mask_size,
+                                intermediate_size,
+                                mask_tensor.dtype(),
+                            )?;
                         crate::transforms::post_process_panoptic_segmentation(
                             sample_classes,
                             &resized_masks,

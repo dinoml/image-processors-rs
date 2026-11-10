@@ -410,6 +410,13 @@ pub enum RecipePostprocessOutput {
         /// Restored instance segmentation maps for each batch sample.
         predictions: Vec<SegmentationPostProcessPrediction>,
     },
+    /// Instance predictions with explicitly selected binary maps or COCO RLE.
+    FormattedInstanceSegmentation {
+        /// Index of the producing recipe postprocessing descriptor.
+        descriptor_index: usize,
+        /// Source-family ids, scores and masks for every batch sample.
+        predictions: Vec<InstanceSegmentationPrediction>,
+    },
     /// Panoptic segmentation predictions grouped by input image.
     PanopticSegmentation {
         /// Index of the descriptor in [`ProcessorRecipe::postprocess`].
@@ -483,6 +490,9 @@ impl RecipePostprocessOutput {
                 descriptor_index, ..
             }
             | Self::InstanceSegmentation {
+                descriptor_index, ..
+            }
+            | Self::FormattedInstanceSegmentation {
                 descriptor_index, ..
             }
             | Self::PanopticSegmentation {

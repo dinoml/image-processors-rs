@@ -862,6 +862,7 @@ pub struct TaskVisionImageProcessor {
 pub struct TaskVisionSegmentationRequest {
     task: RecipeSegmentationTask,
     label_ids_to_fuse: Vec<i64>,
+    instance_format: crate::transforms::InstanceSegmentationFormat,
 }
 
 impl TaskVisionSegmentationRequest {
@@ -870,6 +871,7 @@ impl TaskVisionSegmentationRequest {
         Self {
             task,
             label_ids_to_fuse: Vec::new(),
+            instance_format: crate::transforms::InstanceSegmentationFormat::default(),
         }
     }
 
@@ -878,12 +880,27 @@ impl TaskVisionSegmentationRequest {
         Self {
             task: RecipeSegmentationTask::Panoptic,
             label_ids_to_fuse: label_ids_to_fuse.into_iter().collect(),
+            instance_format: crate::transforms::InstanceSegmentationFormat::default(),
         }
     }
 
     /// Returns the requested segmentation interpretation.
     pub fn task(&self) -> RecipeSegmentationTask {
         self.task
+    }
+
+    /// Select independent binary masks or COCO RLE for instance segmentation.
+    pub fn with_instance_format(
+        mut self,
+        format: crate::transforms::InstanceSegmentationFormat,
+    ) -> Self {
+        self.instance_format = format;
+        self
+    }
+
+    /// Return the selected instance mask representation.
+    pub fn instance_format(&self) -> crate::transforms::InstanceSegmentationFormat {
+        self.instance_format
     }
 
     /// Returns dataset label ids whose panoptic instances share one segment id.
@@ -1423,8 +1440,8 @@ impl TaskVisionImageProcessor {
     /// stuff-class fusion is supplied by
     /// [`TaskVisionSegmentationRequest::panoptic`], because it belongs to the
     /// model's dataset metadata rather than image preprocessing. This API
-    /// returns indexed maps; COCO RLE and per-instance binary-map output modes
-    /// are not exposed.
+    /// defaults to indexed maps. MaskFormer and Mask2Former also expose COCO RLE
+    /// and overlapping binary maps through `with_instance_format`.
     ///
     /// # Errors
     ///
@@ -1456,6 +1473,7 @@ impl TaskVisionImageProcessor {
             .map(|descriptor| match descriptor {
                 ProcessorRecipePostprocess::Segmentation(mut segmentation) => {
                     segmentation.task = request.task;
+                    segmentation.instance_format = request.instance_format;
                     segmentation.label_ids_to_fuse =
                         if request.task == RecipeSegmentationTask::Panoptic {
                             request.label_ids_to_fuse.clone()
