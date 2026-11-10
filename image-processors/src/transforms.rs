@@ -148,7 +148,8 @@ pub(crate) use frame_ops::{
 };
 pub use spatial_filters::{
     dilate_f32, dilate_rect_f64, gaussian_blur_f32, gaussian_blur_f64, gaussian_blur_tensor_f32,
-    gaussian_blur_u8, minimum_filter_u8, sobel_xy_f32, sobel_xy_f64, SpatialFilterError,
+    gaussian_blur_u8, gaussian_filter_reflect_f64, minimum_filter_u8, sobel_xy_f32, sobel_xy_f64,
+    SpatialFilterError,
 };
 mod layout_plans;
 use layout_plans::compare_ratios_less;

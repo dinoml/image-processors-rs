@@ -106,6 +106,89 @@ fn reflect101(mut index: isize, length: usize) -> usize {
     index as usize
 }
 
+/// SciPy-style Gaussian filtering with half-sample-symmetric (`reflect`) borders.
+///
+/// Samples are interleaved; channels are filtered independently. `sigma` is in
+/// height/width order. Each axis uses radius `floor(truncate * sigma + 0.5)`;
+/// coefficients, accumulation and the intermediate image remain FP64. As in
+/// `scipy.ndimage.gaussian_filter`, the vertical pass precedes the horizontal
+/// pass and an axis with sigma at most 1e-15 is left unchanged. Reflection
+/// repeats the edge sample, including for singleton axes and large kernels.
+/// Existing reflect-101 filters retain their behavior.
+///
+/// # Errors
+/// Rejects inconsistent geometry, nonfinite samples, negative/nonfinite sigma,
+/// negative/nonfinite truncation, or support that cannot be represented.
+pub fn gaussian_filter_reflect_f64(
+    values: &[f64],
+    size: ImageSize,
+    channels: usize,
+    sigma: [f64; 2],
+    truncate: f64,
+) -> Result<Vec<f64>, SpatialFilterError> {
+    geometry(values.len(), size, channels)?;
+    if values.iter().any(|value| !value.is_finite()) {
+        return Err(SpatialFilterError::NonFinite);
+    }
+    if sigma.iter().any(|value| !value.is_finite() || *value < 0.0) {
+        return Err(SpatialFilterError::Sigma);
+    }
+    if !truncate.is_finite() || truncate < 0.0 {
+        return Err(SpatialFilterError::Kernel);
+    }
+    let mut output = values.to_vec();
+    for (axis, sigma) in sigma.into_iter().enumerate() {
+        if sigma <= 1e-15 {
+            continue;
+        }
+        let radius = (truncate * sigma + 0.5).floor();
+        if !radius.is_finite() || radius > f64::from(i32::MAX / 2) {
+            return Err(SpatialFilterError::Kernel);
+        }
+        let radius = radius as usize;
+        let weights = coefficients(sigma, radius * 2 + 1)?;
+        let input = output;
+        output = vec![0.0; input.len()];
+        let extent = if axis == 0 { size.height } else { size.width };
+        let step = if axis == 0 {
+            size.width * channels
+        } else {
+            channels
+        };
+        // i128 arithmetic prevents overflow when reflecting long supports.
+        let period = 2 * extent as i128;
+        for y in 0..size.height {
+            for x in 0..size.width {
+                let position = if axis == 0 { y } else { x };
+                let origin = (y * size.width + x) * channels;
+                for channel in 0..channels {
+                    let mut sum = input[origin + channel] * weights[radius];
+                    // ndimage's symmetric kernel evaluates the outer pairs first.
+                    for distance in (1..=radius).rev() {
+                        let mut samples = [0.0; 2];
+                        for (sample, offset) in samples
+                            .iter_mut()
+                            .zip([-(distance as i128), distance as i128])
+                        {
+                            let folded = (position as i128 + offset).rem_euclid(period);
+                            let reflected = if folded < extent as i128 {
+                                folded
+                            } else {
+                                period - 1 - folded
+                            } as usize;
+                            let index = origin - position * step + reflected * step + channel;
+                            *sample = input[index];
+                        }
+                        sum += (samples[0] + samples[1]) * weights[radius - distance];
+                    }
+                    output[origin + channel] = sum;
+                }
+            }
+        }
+    }
+    Ok(output)
+}
+
 fn coefficients(sigma: f64, side: usize) -> Result<Vec<f64>, SpatialFilterError> {
     if !sigma.is_finite() || sigma <= 0.0 {
         return Err(SpatialFilterError::Sigma);
