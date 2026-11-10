@@ -658,9 +658,7 @@ impl EncoderGeometry {
                     filter,
                     parity,
                 }),
-                ProcessorRecipeStage::Crop {
-                    crop: RecipeCropStage::CenterTiesEven { size: crop_size },
-                },
+                crop(crop_size),
             ],
             Self::ScaledShortestEdgeThenCenterCrop {
                 shortest_edge,
@@ -1421,7 +1419,7 @@ fn prepare_encoder_geometry(
                 },
             )?;
             let resized = resize_frame_with_decision(image, size, decision, ResizeMode::Default)?;
-            center_crop_with_padding_rounding(&resized, crop_size, true, false)
+            center_crop_with_padding(&resized, crop_size, pil_padding)
         }
     }
 }
