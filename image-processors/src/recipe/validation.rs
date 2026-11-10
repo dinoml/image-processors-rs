@@ -649,6 +649,17 @@ fn validate_resize_stage(index: usize, resize: RecipeResizeStage) -> Result<(), 
                 shortest_edge_resize_size(PROBE_SIZE, shortest_edge, longest_edge),
             )?;
         }
+        RecipeResizeTarget::ShortestEdgeRoundTiesEven {
+            shortest_edge,
+            multiple,
+        } => {
+            let target = if shortest_edge == 0 || multiple == 0 {
+                Err(TransformError::InvalidScaleFactor(0))
+            } else {
+                Ok(PROBE_SIZE)
+            };
+            validate_transform(index, resize.target.kind(), target)?;
+        }
         RecipeResizeTarget::ShortestEdgeRoundDown {
             shortest_edge,
             longest_edge,

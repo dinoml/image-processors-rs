@@ -560,6 +560,13 @@ pub enum RecipeResizeTarget {
         #[serde(default)]
         longest_edge: Option<usize>,
     },
+    /// Round scaled dimensions to nearest-even, then align upward before one resample.
+    ShortestEdgeRoundTiesEven {
+        /// Target size for the shorter image edge.
+        shortest_edge: usize,
+        /// Positive alignment divisor for both final dimensions.
+        multiple: usize,
+    },
     /// Preserve the capped aspect scale, then round both axes down before one resample.
     ShortestEdgeRoundDown {
         /// Target size for the shorter image edge.
@@ -585,6 +592,7 @@ impl RecipeResizeTarget {
             Self::Dynamic => "resize_dynamic",
             Self::SmartResize { .. } => "resize_smart",
             Self::ShortestEdge { .. } => "resize_shortest_edge",
+            Self::ShortestEdgeRoundTiesEven { .. } => "resize_shortest_edge_round_ties_even",
             Self::ShortestEdgeRoundDown { .. } => "resize_shortest_edge_round_down",
             Self::LongestEdge { .. } => "resize_longest_edge",
         }

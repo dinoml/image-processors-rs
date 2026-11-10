@@ -635,11 +635,6 @@ impl EncoderGeometry {
             Self::ShortestEdgeThenCenterCrop {
                 shortest_edge,
                 crop_size,
-            }
-            | Self::PaddleShortestEdgeThenCenterCrop {
-                shortest_edge,
-                crop_size,
-                ..
             } => vec![
                 resize(RecipeResizeStage::shortest_edge(
                     shortest_edge,
@@ -647,6 +642,22 @@ impl EncoderGeometry {
                     filter,
                     parity,
                 )),
+                crop(crop_size),
+            ],
+            Self::PaddleShortestEdgeThenCenterCrop {
+                shortest_edge,
+                size_divisor,
+                crop_size,
+            } => vec![
+                resize(RecipeResizeStage {
+                    target: RecipeResizeTarget::ShortestEdgeRoundTiesEven {
+                        shortest_edge,
+                        multiple: size_divisor,
+                    },
+                    mode: ResizeMode::Default,
+                    filter,
+                    parity,
+                }),
                 crop(crop_size),
             ],
             Self::ScaledShortestEdgeThenCenterCrop {
@@ -1400,24 +1411,14 @@ fn prepare_encoder_geometry(
             size_divisor,
             crop_size,
         } => {
-            if size_divisor == 0 {
-                return Err(PresetProcessorError::InvalidSizeDivisor);
-            }
-            let scale = shortest_edge as f64 / image.height().min(image.width()) as f64;
-            let height = align_up(
-                (image.height() as f64 * scale).round() as usize,
-                size_divisor,
+            let size = resolve_encoder_resize(
+                ImageSize::new(image.height(), image.width())?,
+                RecipeResizeTarget::ShortestEdgeRoundTiesEven {
+                    shortest_edge,
+                    multiple: size_divisor,
+                },
             )?;
-            let width = align_up(
-                (image.width() as f64 * scale).round() as usize,
-                size_divisor,
-            )?;
-            let resized = resize_frame_with_decision(
-                image,
-                ImageSize::new(height, width)?,
-                decision,
-                ResizeMode::Default,
-            )?;
+            let resized = resize_frame_with_decision(image, size, decision, ResizeMode::Default)?;
             center_crop_with_padding(&resized, crop_size, pil_padding)
         }
     }
@@ -1508,6 +1509,28 @@ fn resolve_encoder_resize(
             shortest_edge,
             longest_edge,
         } => transformers_shortest_edge_resize_size(source, shortest_edge, longest_edge)?,
+        RecipeResizeTarget::ShortestEdgeRoundTiesEven {
+            shortest_edge,
+            multiple,
+        } => {
+            if multiple == 0 {
+                return Err(PresetProcessorError::InvalidSizeDivisor);
+            }
+            if shortest_edge == 0 {
+                return Err(TransformError::InvalidScaleFactor(0).into());
+            }
+            let scale = shortest_edge as f64 / source.height.min(source.width) as f64;
+            ImageSize::new(
+                align_up(
+                    (source.height as f64 * scale).round_ties_even() as usize,
+                    multiple,
+                )?,
+                align_up(
+                    (source.width as f64 * scale).round_ties_even() as usize,
+                    multiple,
+                )?,
+            )?
+        }
         RecipeResizeTarget::LongestEdge { longest_edge } => {
             longest_edge_resize_size(source, longest_edge)?
         }
