@@ -1,5 +1,7 @@
 //! Image transform and geometry helpers.
 
+pub mod geometry_texture;
+
 use std::collections::{HashMap, HashSet};
 
 pub use image_resize_kernels::OpenCvInterpolation;
