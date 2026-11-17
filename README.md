@@ -140,7 +140,8 @@ image-processors = { git = "https://github.com/dinoml/image-processors-rs", feat
     buckets, shortest/longest-edge resize, area resize, cover crop, multiple
     rounding, center/absolute crop, constant and edge/reflect canvas pad,
     bottom/right pad-to-multiple with crop-back metadata, overlay, mask
-    composite, pixel-format-preserving fill/canvas resize, RGB
+    composite (including per-pixel or per-channel floating opacity with explicit
+    arithmetic precision), pixel-format-preserving fill/canvas resize, RGB
     fit/fill, horizontal RGB concatenation, frame sampling for decoded
     sequences or clips, temporal repeat-last padding for incomplete video
     groups, frame-count plus spatial video bucket selection, patch-grid

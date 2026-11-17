@@ -1596,6 +1596,9 @@ pub enum MaskCompositePrecision {
 
 /// Composite byte frames with explicit floating arithmetic and final truncation.
 ///
+/// Alpha may contain one value per pixel or one value per pixel channel. The
+/// latter retains independently interpolated RGB opacity masks during paste-back.
+///
 /// Existing FP32 compositing retains its operation order. The mixed-precision
 /// option preserves NumPy's promotion for `float32_alpha * uint8_foreground +
 /// (1 - float32_alpha) * float64_background`, without quantizing alpha first.
@@ -1616,17 +1619,29 @@ pub fn composite_mask_f32_frame_with_precision(
         foreground.pixel_format(),
         background.pixel_format(),
     )?;
-    validate_len(alpha.len(), checked_pixels(size)?)?;
+    let pixels = checked_pixels(size)?;
+    let per_channel = alpha.len() == foreground.data().len();
+    if alpha.len() != pixels && !per_channel {
+        return Err(TransformError::InvalidBufferLength {
+            expected: pixels,
+            actual: alpha.len(),
+        });
+    }
     let channels = foreground.channels();
     let mut output = Vec::with_capacity(foreground.data().len());
-    for ((front, back), &opacity) in foreground
+    for (pixel, (front, back)) in foreground
         .data()
         .chunks_exact(channels)
         .zip(background.data().chunks_exact(channels))
-        .zip(alpha)
+        .enumerate()
     {
-        validate_mask_value(opacity)?;
         for channel in 0..channels {
+            let opacity = alpha[if per_channel {
+                pixel * channels + channel
+            } else {
+                pixel
+            }];
+            validate_mask_value(opacity)?;
             let front_value = opacity * f32::from(front[channel]);
             let complement = 1.0_f32 - opacity;
             output.push(match precision {
