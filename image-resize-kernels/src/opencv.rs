@@ -308,13 +308,14 @@ pub enum OpenCvInterpolation {
     Lanczos4,
 }
 
-pub(super) fn enlargement_filter(filter: ResizeFilter) -> OpenCvInterpolation {
-    match filter {
+pub(super) fn enlargement_filter(filter: ResizeFilter) -> Result<OpenCvInterpolation, ResizeError> {
+    Ok(match filter {
+        ResizeFilter::Box => return Err(ResizeError::UnsupportedBoxProfile),
         ResizeFilter::Nearest => OpenCvInterpolation::Nearest,
         ResizeFilter::Bilinear => OpenCvInterpolation::Linear,
         ResizeFilter::Bicubic => OpenCvInterpolation::Cubic,
         ResizeFilter::Lanczos => OpenCvInterpolation::Lanczos4,
-    }
+    })
 }
 
 /// Resize with INTER_AREA when neither axis grows; otherwise use `enlargement`.

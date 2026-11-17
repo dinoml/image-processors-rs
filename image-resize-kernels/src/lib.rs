@@ -109,6 +109,10 @@ impl ResizeCrop {
 pub enum ResizeFilter {
     /// Nearest-neighbor filtering.
     Nearest,
+    /// Pillow-profile BOX filtering, with support (-0.5, 0.5].
+    /// Byte images retain Pillow's per-pass fixed-point rounding; floating
+    /// images accumulate in double precision and store each pass as float32.
+    Box,
     /// Bilinear filtering.
     Bilinear,
     /// Bicubic filtering.
@@ -269,7 +273,7 @@ pub fn resize_u8(
             source,
             channels,
             target,
-            opencv::enlargement_filter(filter),
+            opencv::enlargement_filter(filter)?,
         ),
         ResizeProfile::OpenCvLinear => {
             resize_u8_opencv_linear(values, source, channels, target, filter)
@@ -404,6 +408,9 @@ pub fn resize_f32_torchvision(
 /// Resize interleaved FP32 values using an explicit existing resize profile.
 ///
 /// `Torchvision` retains the existing antialiased floating-point path.
+/// `Pillow` supports BOX with double-precision accumulation and float32 storage
+/// after each separable pass, matching Pillow's mode F. Channels are independent;
+/// this kernel does not premultiply or unpremultiply alpha.
 /// `OpenCvLinear` uses the byte profile's coordinate and border rules with
 /// unquantized FP32 coefficients and FP32 separable interpolation. It performs
 /// no byte conversion, coefficient quantization or antialiasing.
@@ -427,6 +434,9 @@ pub fn resize_f32(
         return Err(ResizeError::NonFiniteValue { index });
     }
     match profile {
+        ResizeProfile::Pillow if filter == ResizeFilter::Box => {
+            resize_f32_pillow_box(values, source, channels, target)
+        }
         ResizeProfile::Torchvision => resize_f32_torchvision_interleaved_with_alignment(
             values, source, channels, target, filter, false,
         ),
@@ -564,7 +574,7 @@ pub fn resize_u8_owned(
             source,
             channels,
             target,
-            opencv::enlargement_filter(filter),
+            opencv::enlargement_filter(filter)?,
         ),
         ResizeProfile::OpenCvLinear => {
             resize_u8_opencv_linear(&values, source, channels, target, filter)
@@ -953,7 +963,7 @@ fn resize_fast_image(
     let mut destination =
         fast_image_resize::images::Image::new(target_width, target_height, pixel_type);
     let options = fast_image_resize::ResizeOptions::new()
-        .resize_alg(fast_resize_algorithm(filter))
+        .resize_alg(fast_resize_algorithm(filter)?)
         .use_alpha(false);
     let mut resizer = fast_image_resize::Resizer::new();
     resizer
@@ -992,7 +1002,7 @@ fn resize_u8_opencv_scale_dependent_crop(
         source,
         channels,
         crop.resized,
-        opencv::enlargement_filter(filter),
+        opencv::enlargement_filter(filter)?,
     )?;
     crop_image_data(
         &resized,
@@ -1412,6 +1422,9 @@ fn resize_u8_torchvision(
     filter: ResizeFilter,
     antialias: bool,
 ) -> Result<Vec<u8>, ResizeError> {
+    if filter == ResizeFilter::Box {
+        return Err(ResizeError::UnsupportedBoxProfile);
+    }
     if !antialias {
         return resize_u8_torchvision_no_antialias(values, source, channels, target, filter);
     }
@@ -1463,6 +1476,9 @@ fn resize_f32_torchvision_interleaved_with_alignment(
     filter: ResizeFilter,
     align_corners: bool,
 ) -> Result<Vec<f32>, ResizeError> {
+    if filter == ResizeFilter::Box {
+        return Err(ResizeError::UnsupportedBoxProfile);
+    }
     if source == target {
         return Ok(values.to_vec());
     }
@@ -1751,9 +1767,10 @@ fn resize_u8_pillow(
 ) -> Result<Vec<u8>, ResizeError> {
     match filter {
         ResizeFilter::Nearest => resize_u8_nearest(values, source, channels, target),
-        ResizeFilter::Bilinear | ResizeFilter::Bicubic | ResizeFilter::Lanczos => {
-            resize_u8_pillow_fixed(values, source, channels, target, filter)
-        }
+        ResizeFilter::Box
+        | ResizeFilter::Bilinear
+        | ResizeFilter::Bicubic
+        | ResizeFilter::Lanczos => resize_u8_pillow_fixed(values, source, channels, target, filter),
     }
 }
 
@@ -1766,7 +1783,10 @@ fn resize_u8_pillow_crop(
 ) -> Result<Vec<u8>, ResizeError> {
     match filter {
         ResizeFilter::Nearest => resize_u8_nearest_crop(values, source, channels, crop),
-        ResizeFilter::Bilinear | ResizeFilter::Bicubic | ResizeFilter::Lanczos => {
+        ResizeFilter::Box
+        | ResizeFilter::Bilinear
+        | ResizeFilter::Bicubic
+        | ResizeFilter::Lanczos => {
             let resized = resize_u8_pillow_fixed(values, source, channels, crop.resized, filter)?;
             crop_image_data(
                 &resized,
@@ -1790,7 +1810,10 @@ fn resize_u8_pillow_crop_with_workspace(
 ) -> Result<Vec<u8>, ResizeError> {
     match filter {
         ResizeFilter::Nearest => resize_u8_nearest_crop(values, source, channels, crop),
-        ResizeFilter::Bilinear | ResizeFilter::Bicubic | ResizeFilter::Lanczos => {
+        ResizeFilter::Box
+        | ResizeFilter::Bilinear
+        | ResizeFilter::Bicubic
+        | ResizeFilter::Lanczos => {
             let resized = resize_u8_pillow_fixed_with_workspace(
                 values,
                 source,
@@ -2191,14 +2214,94 @@ fn pillow_clip_u8(value: i64) -> u8 {
     (value >> PILLOW_PRECISION_BITS).clamp(0, 255) as u8
 }
 
+fn resize_f32_pillow_box(
+    values: &[f32],
+    source: ImageSize,
+    channels: usize,
+    target: ImageSize,
+) -> Result<Vec<f32>, ResizeError> {
+    if source == target {
+        return Ok(values.to_vec());
+    }
+    let horizontal = pillow_coefficients(
+        source.width,
+        target.width,
+        0,
+        target.width,
+        ResizeFilter::Box,
+        source.width as f64,
+        0.0_f64,
+        |weight| weight,
+    )?;
+    let vertical = pillow_coefficients(
+        source.height,
+        target.height,
+        0,
+        target.height,
+        ResizeFilter::Box,
+        source.height as f64,
+        0.0_f64,
+        |weight| weight,
+    )?;
+    // Pillow stores each pass in an F image. Coefficients and accumulation are
+    // double precision; horizontal results round to float32 before vertical use.
+    let intermediate = if source.width == target.width {
+        values.to_vec()
+    } else {
+        let mut pixels = vec![
+            0.0_f32;
+            image_len(
+                ImageSize {
+                    height: source.height,
+                    width: target.width
+                },
+                channels
+            )?
+        ];
+        for (y, row) in pixels.chunks_exact_mut(target.width * channels).enumerate() {
+            for x in 0..target.width {
+                let start = horizontal.start(x);
+                for channel in 0..channels {
+                    let mut sum = 0.0_f64;
+                    for (offset, &weight) in horizontal.weights(x).iter().enumerate() {
+                        sum += f64::from(
+                            values[(y * source.width + start + offset) * channels + channel],
+                        ) * weight;
+                    }
+                    row[x * channels + channel] = sum as f32;
+                }
+            }
+        }
+        pixels
+    };
+    if source.height == target.height {
+        return Ok(intermediate);
+    }
+    let row_len = target.width * channels;
+    let mut output = vec![0.0_f32; image_len(target, channels)?];
+    for (y, row) in output.chunks_exact_mut(row_len).enumerate() {
+        let start = vertical.start(y);
+        for (column, pixel) in row.iter_mut().enumerate() {
+            let mut sum = 0.0_f64;
+            for (offset, &weight) in vertical.weights(y).iter().enumerate() {
+                sum += f64::from(intermediate[(start + offset) * row_len + column]) * weight;
+            }
+            *pixel = sum as f32;
+        }
+    }
+    Ok(output)
+}
+
 #[derive(Clone, Debug)]
-struct PillowFixedCoefficients {
+struct PillowCoefficients<T> {
     starts: Vec<usize>,
     lengths: Vec<usize>,
-    weights: Vec<i32>,
+    weights: Vec<T>,
     window: usize,
     full_extent: bool,
 }
+
+type PillowFixedCoefficients = PillowCoefficients<i32>;
 
 impl PillowFixedCoefficients {
     fn new(input: usize, output: usize, filter: ResizeFilter) -> Result<Self, ResizeError> {
@@ -2230,88 +2333,115 @@ impl PillowFixedCoefficients {
         filter: ResizeFilter,
         extent: f64,
     ) -> Result<Self, ResizeError> {
-        if input == 0 || output == 0 {
-            return Err(ResizeError::InvalidSize {
-                height: input,
-                width: output,
-            });
-        }
-        if output_start
-            .checked_add(output_len)
-            .is_none_or(|end| end > output)
-        {
-            return Err(ResizeError::CropWindowOutOfBounds {
-                resized_height: 1,
-                resized_width: output,
-                origin_x: output_start,
-                origin_y: 0,
-                target_height: 1,
-                target_width: output_len,
-            });
-        }
-
-        let scale = extent / output as f64;
-        let filter_scale = scale.max(1.0);
-        let support = filter_support(filter) * filter_scale;
-        let window = (support.ceil() as usize)
-            .checked_mul(2)
-            .and_then(|value| value.checked_add(1))
-            .ok_or(ResizeError::ImageSizeOverflow)?;
-        let coefficient_count = output_len
-            .checked_mul(window)
-            .ok_or(ResizeError::ImageSizeOverflow)?;
-        let mut starts = Vec::with_capacity(output_len);
-        let mut lengths = Vec::with_capacity(output_len);
-        let mut weights = vec![0_i32; coefficient_count];
-        let mut normalized = Vec::with_capacity(window);
-
-        for local_output in 0..output_len {
-            let out = output_start + local_output;
-            let center = (out as f64 + 0.5) * scale;
-            let mut start = (center - support + 0.5).trunc() as isize;
-            let mut end = (center + support + 0.5).trunc() as isize;
-            start = start.clamp(0, input as isize);
-            end = end.clamp(0, input as isize);
-            let start = start as usize;
-            let length = (end as usize).saturating_sub(start);
-            starts.push(start);
-            lengths.push(length);
-
-            let offset = local_output * window;
-            normalized.clear();
-            let mut sum = 0.0_f64;
-            for index in 0..length {
-                let x = (start + index) as f64;
-                let weight = pillow_filter_weight(filter, (x - center + 0.5) / filter_scale);
-                normalized.push(weight);
-                sum += weight;
-            }
-            if sum != 0.0 {
-                for (index, &weight) in normalized.iter().enumerate() {
-                    let scaled = weight / sum * ((1_u64 << PILLOW_PRECISION_BITS) as f64);
-                    weights[offset + index] = if scaled < 0.0 {
-                        (scaled - 0.5) as i32
-                    } else {
-                        (scaled + 0.5) as i32
-                    };
+        pillow_coefficients(
+            input,
+            output,
+            output_start,
+            output_len,
+            filter,
+            extent,
+            0_i32,
+            |weight| {
+                let scaled = weight * ((1_u64 << PILLOW_PRECISION_BITS) as f64);
+                if scaled < 0.0 {
+                    (scaled - 0.5) as i32
+                } else {
+                    (scaled + 0.5) as i32
                 }
-            }
-        }
+            },
+        )
+    }
+}
 
-        Ok(Self {
-            starts,
-            lengths,
-            weights,
-            window,
-            full_extent: extent == input as f64,
-        })
+#[allow(clippy::too_many_arguments)]
+fn pillow_coefficients<T: Clone>(
+    input: usize,
+    output: usize,
+    output_start: usize,
+    output_len: usize,
+    filter: ResizeFilter,
+    extent: f64,
+    zero: T,
+    convert: impl Fn(f64) -> T,
+) -> Result<PillowCoefficients<T>, ResizeError> {
+    if input == 0 || output == 0 {
+        return Err(ResizeError::InvalidSize {
+            height: input,
+            width: output,
+        });
+    }
+    if output_start
+        .checked_add(output_len)
+        .is_none_or(|end| end > output)
+    {
+        return Err(ResizeError::CropWindowOutOfBounds {
+            resized_height: 1,
+            resized_width: output,
+            origin_x: output_start,
+            origin_y: 0,
+            target_height: 1,
+            target_width: output_len,
+        });
     }
 
+    let scale = extent / output as f64;
+    let filter_scale = scale.max(1.0);
+    let support = filter_support(filter) * filter_scale;
+    let window = (support.ceil() as usize)
+        .checked_mul(2)
+        .and_then(|value| value.checked_add(1))
+        .ok_or(ResizeError::ImageSizeOverflow)?;
+    let coefficient_count = output_len
+        .checked_mul(window)
+        .ok_or(ResizeError::ImageSizeOverflow)?;
+    let mut starts = Vec::with_capacity(output_len);
+    let mut lengths = Vec::with_capacity(output_len);
+    let mut weights = vec![zero; coefficient_count];
+    let mut normalized = Vec::with_capacity(window);
+
+    for local_output in 0..output_len {
+        let out = output_start + local_output;
+        let center = (out as f64 + 0.5) * scale;
+        let mut start = (center - support + 0.5).trunc() as isize;
+        let mut end = (center + support + 0.5).trunc() as isize;
+        start = start.clamp(0, input as isize);
+        end = end.clamp(0, input as isize);
+        let start = start as usize;
+        let length = (end as usize).saturating_sub(start);
+        starts.push(start);
+        lengths.push(length);
+
+        let offset = local_output * window;
+        normalized.clear();
+        let mut sum = 0.0_f64;
+        for index in 0..length {
+            let x = (start + index) as f64;
+            let weight = pillow_filter_weight(filter, (x - center + 0.5) / filter_scale);
+            normalized.push(weight);
+            sum += weight;
+        }
+        if sum != 0.0 {
+            for (index, &weight) in normalized.iter().enumerate() {
+                weights[offset + index] = convert(weight / sum);
+            }
+        }
+    }
+
+    Ok(PillowCoefficients {
+        starts,
+        lengths,
+        weights,
+        window,
+        full_extent: extent == input as f64,
+    })
+}
+
+impl<T> PillowCoefficients<T> {
     fn start(&self, output: usize) -> usize {
         self.starts[output]
     }
 
-    fn weights(&self, output: usize) -> &[i32] {
+    fn weights(&self, output: usize) -> &[T] {
         let start = output * self.window;
         &self.weights[start..start + self.lengths[output]]
     }
@@ -2329,8 +2459,13 @@ impl PillowFixedCoefficients {
 }
 
 fn pillow_filter_weight(filter: ResizeFilter, x: f64) -> f64 {
-    let x = x.abs();
+    let x = if filter == ResizeFilter::Box {
+        x
+    } else {
+        x.abs()
+    };
     match filter {
+        ResizeFilter::Box => f64::from(x > -0.5 && x <= 0.5),
         ResizeFilter::Nearest => f64::from(x < 0.5),
         ResizeFilter::Bilinear => {
             if x < 1.0 {
@@ -2737,7 +2872,7 @@ fn crop_image_data(
 
 fn filter_support(filter: ResizeFilter) -> f64 {
     match filter {
-        ResizeFilter::Nearest => 0.5,
+        ResizeFilter::Nearest | ResizeFilter::Box => 0.5,
         ResizeFilter::Bilinear => 1.0,
         ResizeFilter::Bicubic => 2.0,
         ResizeFilter::Lanczos => 3.0,
@@ -2745,8 +2880,19 @@ fn filter_support(filter: ResizeFilter) -> f64 {
 }
 
 fn filter_weight(filter: ResizeFilter, x: f32) -> f32 {
-    let x = x.abs();
+    let x = if filter == ResizeFilter::Box {
+        x
+    } else {
+        x.abs()
+    };
     match filter {
+        ResizeFilter::Box => {
+            if x > -0.5 && x <= 0.5 {
+                1.0
+            } else {
+                0.0
+            }
+        }
         ResizeFilter::Nearest => {
             if x < 0.5 {
                 1.0
@@ -2796,8 +2942,11 @@ fn fast_resize_pixel_type(channels: usize) -> Result<fast_image_resize::PixelTyp
     }
 }
 
-fn fast_resize_algorithm(filter: ResizeFilter) -> fast_image_resize::ResizeAlg {
-    match filter {
+fn fast_resize_algorithm(
+    filter: ResizeFilter,
+) -> Result<fast_image_resize::ResizeAlg, ResizeError> {
+    Ok(match filter {
+        ResizeFilter::Box => return Err(ResizeError::UnsupportedBoxProfile),
         ResizeFilter::Nearest => fast_image_resize::ResizeAlg::Nearest,
         ResizeFilter::Bilinear => {
             fast_image_resize::ResizeAlg::Convolution(fast_image_resize::FilterType::Bilinear)
@@ -2808,7 +2957,7 @@ fn fast_resize_algorithm(filter: ResizeFilter) -> fast_image_resize::ResizeAlg {
         ResizeFilter::Lanczos => {
             fast_image_resize::ResizeAlg::Convolution(fast_image_resize::FilterType::Lanczos3)
         }
-    }
+    })
 }
 
 fn validate_image_data(actual: usize, size: ImageSize, channels: usize) -> Result<(), ResizeError> {
@@ -2930,6 +3079,9 @@ pub enum ResizeError {
     /// A resize profile has no floating-point implementation.
     #[error("resize profile {0:?} does not support FP32 input")]
     UnsupportedFloatProfile(ResizeProfile),
+    /// BOX parity is provided by the Pillow profile only.
+    #[error("BOX filtering requires the Pillow resize profile")]
+    UnsupportedBoxProfile,
     /// An input floating-point value was not finite.
     #[error("input value at index {index} must be finite")]
     NonFiniteValue {
