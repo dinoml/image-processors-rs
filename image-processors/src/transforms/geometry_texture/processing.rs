@@ -703,7 +703,7 @@ pub fn remesh_narrow_band_dc(
                 } else {
                     choices[1]
                 };
-                for t in split.chunks_exact(3) {
+                for t in split.as_chunks::<3>().0 {
                     let mut f = [0; 3];
                     for j in 0..3 {
                         f[j] = u32::try_from(q[t[j]])
@@ -1122,7 +1122,9 @@ fn parameterize(surface: &TriangleSurface, faces: &[usize]) -> Option<Chart> {
         }
     }
     let mut uv = x
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|p| [p[0] as f32, p[1] as f32])
         .collect::<Vec<_>>();
     if uv.iter().flatten().any(|v| !v.is_finite()) {

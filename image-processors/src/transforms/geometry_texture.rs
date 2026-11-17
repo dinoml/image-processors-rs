@@ -271,7 +271,9 @@ pub fn flexible_dual_grid_to_mesh(
                 };
                 faces.extend(
                     split
-                        .chunks_exact(3)
+                        .as_chunks::<3>()
+                        .0
+                        .iter()
                         .map(|triangle| [quad[triangle[0]], quad[triangle[1]], quad[triangle[2]]]),
                 );
             }
