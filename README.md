@@ -147,10 +147,6 @@ image-processors = { git = "https://github.com/dinoml/image-processors-rs", feat
     groups, frame-count plus spatial video bucket selection, patch-grid
     extraction, split-image frames, aspect-ratio crop expansion, tiled-canvas
     geometry, and document/OCR thumbnail geometry
-  - portable `transforms::geometry_texture` APIs for sparse dual-grid mesh
-    extraction and voxelization, topology cleanup, QEM simplification,
-    narrow-band remeshing, normal-cone/conformal UV charts, sparse PBR texture
-    baking, seam filling, and self-contained GLB export
   - patch-stage helpers for image and temporal `image_grid_thw` metadata plus
     patch flattening execution backed by the shared repeat-last temporal plan
     for Qwen and non-Qwen patch-grid profiles

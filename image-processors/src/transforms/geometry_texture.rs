@@ -788,7 +788,7 @@ pub struct TexturedSurface {
     pub surface: TriangleSurface,
     /// UVs, one for every surface vertex.
     pub uvs: Vec<[f32; 2]>,
-    /// Unit, area-weighted vertex normals.
+    /// Vertex normals retained through seam expansion under the selected normal policy.
     pub normals: Vec<[f32; 3]>,
     /// Square image side length.
     pub texture_size: usize,
@@ -798,6 +798,106 @@ pub struct TexturedSurface {
     pub metallic_roughness: Vec<u8>,
     /// Preserve both sides for open standard exports; remeshed exports are closed.
     pub double_sided: bool,
+}
+
+/// Source of vertex normals before UV seam expansion.
+#[derive(Clone, Copy, Debug)]
+pub enum NormalSource<'a> {
+    /// FP32 area-weighted normals, matching CuMesh generated-mesh export.
+    AreaWeighted,
+    /// FP64 corner-angle-weighted normals, matching Trimesh existing-mesh texturing.
+    CornerAngleWeighted,
+    /// Retain the caller's normals, one per original surface vertex.
+    Supplied(&'a [[f32; 3]]),
+}
+
+/// Compute or retain normals in the original surface's vertex order.
+///
+/// Corner angles follow Trimesh: two clamped acos evaluations and the remaining
+/// angle pi-a-b; triangles with an angle below its 1e-8 merge tolerance contribute
+/// zero. Accumulation and normalization use FP64 before final FP32 storage.
+/// # Errors
+/// Reports invalid surface buffers or mismatched/nonfinite supplied normals.
+pub fn vertex_normals(
+    surface: &TriangleSurface,
+    source: NormalSource<'_>,
+) -> Result<Vec<[f32; 3]>, GeometryError> {
+    surface.validate()?;
+    if let NormalSource::Supplied(normals) = source {
+        if normals.len() != surface.vertices.len()
+            || normals.iter().flatten().any(|v| !v.is_finite())
+        {
+            return Err(GeometryError::Invalid("supplied vertex normals"));
+        }
+        return Ok(normals.to_vec());
+    }
+    if matches!(source, NormalSource::AreaWeighted) {
+        let mut normals = vec![[0.0; 3]; surface.vertices.len()];
+        for face in &surface.faces {
+            let p = face.map(|index| surface.vertices[index as usize]);
+            let normal = cross(sub(p[1], p[0]), sub(p[2], p[0]));
+            for &index in face {
+                for axis in 0..3 {
+                    normals[index as usize][axis] += normal[axis];
+                }
+            }
+        }
+        for normal in &mut normals {
+            *normal = normalized(*normal);
+        }
+        return Ok(normals);
+    }
+    let unit = |v: [f64; 3]| {
+        let norm = v.iter().map(|x| x * x).sum::<f64>().sqrt();
+        if norm > 1e-13 {
+            v.map(|x| x / norm)
+        } else {
+            [0.0; 3]
+        }
+    };
+    let mut normals = vec![[0.0_f64; 3]; surface.vertices.len()];
+    for face in &surface.faces {
+        let p = face.map(|i| surface.vertices[i as usize].map(f64::from));
+        let a: [f64; 3] = std::array::from_fn(|i| p[1][i] - p[0][i]);
+        let b: [f64; 3] = std::array::from_fn(|i| p[2][i] - p[0][i]);
+        let c: [f64; 3] = std::array::from_fn(|i| p[2][i] - p[1][i]);
+        let normal = unit([
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0],
+        ]);
+        if normal.iter().map(|v| v * v).sum::<f64>() <= 0.5 {
+            continue;
+        }
+        let (u, v, w) = (unit(a), unit(b), unit(c));
+        let first = u
+            .iter()
+            .zip(v)
+            .map(|(u, v)| u * v)
+            .sum::<f64>()
+            .clamp(-1.0, 1.0)
+            .acos();
+        let second = u
+            .iter()
+            .zip(w)
+            .map(|(u, w)| -u * w)
+            .sum::<f64>()
+            .clamp(-1.0, 1.0)
+            .acos();
+        let angles = [first, second, std::f64::consts::PI - first - second];
+        if angles.iter().any(|&a| a < 1e-8) {
+            continue;
+        }
+        for corner in 0..3 {
+            for axis in 0..3 {
+                normals[face[corner] as usize][axis] += normal[axis] * angles[corner];
+            }
+        }
+    }
+    Ok(normals
+        .into_iter()
+        .map(|n| unit(n).map(|v| v as f32))
+        .collect())
 }
 
 /// Bake sparse PBR attributes to a conformal chart atlas, or supplied UVs.
@@ -828,7 +928,28 @@ pub fn bake_pbr_texture_with_charts(
     texture_size: usize,
     charts: &ChartOptions,
 ) -> Result<TexturedSurface, GeometryError> {
-    bake_pbr_texture_impl(surface, uvs, volume, texture_size, charts, None)
+    bake_pbr_texture_with_normals(
+        surface,
+        uvs,
+        volume,
+        texture_size,
+        charts,
+        NormalSource::AreaWeighted,
+    )
+}
+
+/// Bake with supplied or computed normals retained through UV seam expansion.
+/// # Errors
+/// Reports invalid geometry, normals, sparse buffers, chart controls or texture capacity.
+pub fn bake_pbr_texture_with_normals(
+    surface: &TriangleSurface,
+    uvs: Option<&[[f32; 2]]>,
+    volume: &SparsePbrVolume<'_>,
+    texture_size: usize,
+    charts: &ChartOptions,
+    normals: NormalSource<'_>,
+) -> Result<TexturedSurface, GeometryError> {
+    bake_pbr_texture_impl(surface, uvs, volume, texture_size, charts, None, normals)
 }
 
 /// Unwrap and bake after projecting texel positions onto a reference surface.
@@ -842,7 +963,15 @@ pub fn bake_pbr_texture_projected(
     charts: &ChartOptions,
 ) -> Result<TexturedSurface, GeometryError> {
     let bvh = processing::SurfaceBvh::new(projection_surface)?;
-    bake_pbr_texture_impl(surface, None, volume, texture_size, charts, Some(&bvh))
+    bake_pbr_texture_impl(
+        surface,
+        None,
+        volume,
+        texture_size,
+        charts,
+        Some(&bvh),
+        NormalSource::AreaWeighted,
+    )
 }
 
 fn bake_pbr_texture_impl(
@@ -852,13 +981,19 @@ fn bake_pbr_texture_impl(
     texture_size: usize,
     charts: &ChartOptions,
     projection: Option<&processing::SurfaceBvh<'_>>,
+    normal_source: NormalSource<'_>,
 ) -> Result<TexturedSurface, GeometryError> {
     surface.validate()?;
+    // Existing-mesh normals precede chart cleanup, as in postprocess_mesh.
+    let retained_normals = if matches!(normal_source, NormalSource::AreaWeighted) {
+        None
+    } else {
+        Some(vertex_normals(surface, normal_source)?)
+    };
     let mut cleaned;
     let surface = if uvs.is_none() {
         cleaned = surface.clone();
         processing::remove_degenerate(&mut cleaned);
-        processing::compact(&mut cleaned)?;
         &cleaned
     } else {
         surface
@@ -880,19 +1015,10 @@ fn bake_pbr_texture_impl(
     pixels
         .checked_mul(4)
         .ok_or(GeometryError::Invalid("texture byte capacity"))?;
-    let mut normals = vec![[0.0; 3]; surface.vertices.len()];
-    for face in &surface.faces {
-        let p = face.map(|index| surface.vertices[index as usize]);
-        let normal = cross(sub(p[1], p[0]), sub(p[2], p[0]));
-        for &index in face {
-            for axis in 0..3 {
-                normals[index as usize][axis] += normal[axis];
-            }
-        }
-    }
-    for normal in &mut normals {
-        *normal = normalized(*normal);
-    }
+    let normals = match retained_normals {
+        Some(normals) => normals,
+        None => vertex_normals(surface, NormalSource::AreaWeighted)?,
+    };
     let (output, uv, output_normals) = if let Some(uvs) = uvs {
         if uvs.len() != surface.vertices.len()
             || uvs.iter().flatten().any(|value| !value.is_finite())

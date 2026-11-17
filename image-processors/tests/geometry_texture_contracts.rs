@@ -1,7 +1,8 @@
 use image_processors::transforms::geometry_texture::{
-    bake_pbr_texture, cleanup_mesh, dual_grid_subdivision, flexible_dual_grid_to_mesh,
-    mesh_to_flexible_dual_grid, remesh_narrow_band_dc, simplify_mesh, unify_face_orientations,
-    FlexibleDualGrid, RemeshOptions, SparsePbrVolume, TriangleSurface,
+    bake_pbr_texture, bake_pbr_texture_with_normals, cleanup_mesh, dual_grid_subdivision,
+    flexible_dual_grid_to_mesh, mesh_to_flexible_dual_grid, remesh_narrow_band_dc, simplify_mesh,
+    unify_face_orientations, vertex_normals, ChartOptions, FlexibleDualGrid, NormalSource,
+    RemeshOptions, SparsePbrVolume, TriangleSurface,
 };
 
 fn quad_grid() -> FlexibleDualGrid {
@@ -243,4 +244,80 @@ fn conformal_chart_baking_produces_finite_packed_uvs() {
         .flatten()
         .all(|v| v.is_finite() && (0.0..=1.0).contains(v)));
     assert_eq!(baked.base_color.len(), 32 * 32 * 4);
+}
+
+fn unequal_triangles() -> TriangleSurface {
+    TriangleSurface {
+        vertices: vec![[0.0; 3], [0.4, 0.0, 0.0], [0.0, 0.2, 0.0], [0.0, 0.0, 0.05]],
+        faces: vec![[0, 1, 2], [0, 3, 1]],
+    }
+}
+
+#[test]
+fn existing_mesh_angle_normals_differ_from_generated_area_normals() {
+    let surface = unequal_triangles();
+    let angle = vertex_normals(&surface, NormalSource::CornerAngleWeighted)
+        .expect("nondegenerate right angles");
+    let area =
+        vertex_normals(&surface, NormalSource::AreaWeighted).expect("nondegenerate triangle areas");
+    let diagonal = std::f32::consts::FRAC_1_SQRT_2;
+    assert!((angle[0][1] - diagonal).abs() < 1e-6);
+    assert!((angle[0][2] - diagonal).abs() < 1e-6);
+    assert!((area[0][1] - 0.25 / 1.0625_f32.sqrt()).abs() < 1e-6);
+    assert!((area[0][2] - 1.0 / 1.0625_f32.sqrt()).abs() < 1e-6);
+}
+
+#[test]
+fn supplied_normals_survive_chart_expansion_and_unused_vertex_cleanup() {
+    let mut surface = unequal_triangles();
+    surface.vertices.insert(0, [0.49; 3]);
+    for face in &mut surface.faces {
+        for index in face {
+            *index += 1;
+        }
+    }
+    let normals = [
+        [0.0, -1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [-1.0, 0.0, 0.0],
+    ];
+    let coordinates = (0..2)
+        .flat_map(|x| (0..2).flat_map(move |y| (0..2).map(move |z| [x, y, z])))
+        .collect::<Vec<_>>();
+    let attributes = vec![[0.5; 6]; 8];
+    let volume = SparsePbrVolume {
+        coordinates: &coordinates,
+        attributes: &attributes,
+        resolution: 2,
+    };
+    let baked = bake_pbr_texture_with_normals(
+        &surface,
+        None,
+        &volume,
+        32,
+        &ChartOptions::default(),
+        NormalSource::Supplied(&normals),
+    )
+    .expect("supplied original-index normals survive UV seam expansion");
+    assert_eq!(baked.surface.faces.len(), 2);
+    for (position, normal) in baked.surface.vertices.iter().zip(&baked.normals) {
+        let original = surface
+            .vertices
+            .iter()
+            .position(|p| p == position)
+            .expect("UV expansion retains original vertex positions");
+        assert_ne!(original, 0, "unreferenced vertex is not part of the chart");
+        assert_eq!(*normal, normals[original]);
+    }
+}
+
+#[test]
+fn invalid_supplied_normal_buffers_are_rejected() {
+    let surface = unequal_triangles();
+    assert!(vertex_normals(&surface, NormalSource::Supplied(&[])).is_err());
+    let mut normals = [[0.0, 0.0, 1.0]; 4];
+    normals[2][1] = f32::NAN;
+    assert!(vertex_normals(&surface, NormalSource::Supplied(&normals)).is_err());
 }
