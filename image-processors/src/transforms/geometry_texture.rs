@@ -6,6 +6,7 @@ use std::io::Cursor;
 
 use thiserror::Error;
 
+pub mod multiview;
 mod processing;
 pub use processing::{
     cleanup_mesh, remesh_narrow_band_dc, simplify_mesh, unify_face_orientations, ChartOptions,
@@ -15,6 +16,9 @@ pub use processing::{
 /// Geometry and texture contract failures.
 #[derive(Debug, Error)]
 pub enum GeometryError {
+    /// A caller-owned learned completion operation failed.
+    #[error("texture completion failed: {0}")]
+    Completion(String),
     /// Invalid dimensions, indices or attribute buffers.
     #[error("invalid geometry: {0}")]
     Invalid(&'static str),
