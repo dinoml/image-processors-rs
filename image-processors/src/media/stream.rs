@@ -32,6 +32,36 @@ impl Default for VideoStreamOptions {
     }
 }
 
+/// Filters applied by FFmpeg before RGB frames are delivered to the caller.
+/// The default retains source dimensions and cadence, independently of the
+/// metadata-only FPS override in [`VideoStreamOptions`].
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RgbVideoFilter {
+    /// Output width and height. Uses FFmpeg's default `scale` filter settings.
+    pub size: Option<(usize, usize)>,
+    /// Actual frame-rate conversion with FFmpeg's `fps` filter, before scaling.
+    pub fps: Option<f64>,
+}
+
+impl RgbVideoFilter {
+    fn expression(self) -> Result<Option<String>, MediaStreamError> {
+        let mut filters = Vec::new();
+        if let Some(fps) = self.fps {
+            if !fps.is_finite() || fps <= 0.0 {
+                return Err(invalid("RGB filter frame rate must be finite and positive"));
+            }
+            filters.push(format!("fps=fps={fps}"));
+        }
+        if let Some((width, height)) = self.size {
+            if width == 0 || height == 0 {
+                return Err(invalid("RGB filter dimensions must be positive"));
+            }
+            filters.push(format!("scale={width}:{height}"));
+        }
+        Ok((!filters.is_empty()).then(|| filters.join(",")))
+    }
+}
+
 /// Frame-stream setup, media contract or child-process failure.
 #[derive(Debug, thiserror::Error)]
 pub enum MediaStreamError {
@@ -300,7 +330,26 @@ pub fn decode_rgb_video(
     sampling: FrameSampling,
     options: &VideoStreamOptions,
 ) -> Result<VideoClip, MediaStreamError> {
+    decode_rgb_video_filtered(source, sampling, options, RgbVideoFilter::default())
+}
+
+/// Decode RGB video with FFmpeg frame-rate conversion and/or resizing.
+/// Filters run before `sampling`, so frame indices address the filtered stream.
+/// The resulting FPS is the filter rate when specified, otherwise the existing
+/// source/metadata rate. Without an explicit output size, autorotation remains
+/// disabled so storage matches the probed geometry. Uses external tools without
+/// native FFmpeg bindings.
+///
+/// # Errors
+/// Reports invalid filters, sampling, sources, tools or truncated RGB storage.
+pub fn decode_rgb_video_filtered(
+    source: &MediaSource,
+    sampling: FrameSampling,
+    options: &VideoStreamOptions,
+    filter: RgbVideoFilter,
+) -> Result<VideoClip, MediaStreamError> {
     sampling.validate()?;
+    let expression = filter.expression()?;
     let input: OsString = match &source.location {
         MediaLocation::Path(path) => path.as_os_str().to_owned(),
         MediaLocation::Url(url) if url.starts_with("https://") || url.starts_with("http://") => {
@@ -319,12 +368,31 @@ pub fn decode_rgb_video(
         length,
         fps,
     } = probe_rgb_video(&input, options)?;
+    let (width, height, length) = if let Some((width, height)) = filter.size {
+        let length = width
+            .checked_mul(height)
+            .and_then(|value| value.checked_mul(3))
+            .ok_or_else(|| invalid("filtered RGB frame size overflow"))?;
+        (width, height, length)
+    } else {
+        (width, height, length)
+    };
+    let fps = filter.fps.unwrap_or(fps);
+    let mut command = tool_command(&options.ffmpeg);
+    command.args(["-v", "error"]);
+    // Preserve the existing decoder's no-autorotate behavior. A requested filter
+    // follows the ordinary FFmpeg input/filter contract used by source pipelines.
+    if filter.size.is_none() {
+        command.arg("-noautorotate");
+    }
+    command.arg("-i").arg(&input).args(["-map", "0:v:0"]);
+    if let Some(expression) = expression {
+        command.arg("-vf").arg(expression);
+    }
     let mut decoder = Process::new(
-        tool_command(&options.ffmpeg)
-            .args(["-v", "error", "-noautorotate", "-i"])
-            .arg(&input)
+        command
             .args([
-                "-map", "0:v:0", "-vsync", "0", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1",
+                "-vsync", "0", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1",
             ])
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -370,4 +438,133 @@ pub fn decode_rgb_video(
     }
     // On a fulfilled frame limit, Process::drop stops only our decoder.
     Ok(VideoClip::new(frames, Some(fps))?)
+}
+
+/// Decode one image using FFmpeg's `scale` filter and RGB24 output.
+/// Encoded bytes, paths and HTTP(S) URLs use FFmpeg's `image2pipe` demuxer.
+/// No intermediate files or native bindings are used.
+///
+/// # Errors
+/// Reports unsupported sources, invalid dimensions, failed tools or short output.
+pub fn decode_rgb_image(
+    source: &MediaSource,
+    size: (usize, usize),
+    options: &VideoStreamOptions,
+) -> Result<ImageFrame, MediaStreamError> {
+    let mut command = tool_command(&options.ffmpeg);
+    command.args(["-v", "error"]);
+    let bytes = match &source.location {
+        MediaLocation::Path(path) => {
+            command.args(["-f", "image2pipe", "-i"]).arg(path);
+            None
+        }
+        MediaLocation::Url(url) if url.starts_with("http://") || url.starts_with("https://") => {
+            command.args(["-f", "image2pipe", "-i"]).arg(url);
+            None
+        }
+        MediaLocation::Bytes(bytes) => {
+            command.args(["-f", "image2pipe", "-i", "pipe:0"]);
+            Some(bytes.as_slice())
+        }
+        MediaLocation::Url(_) => {
+            return Err(invalid("external image decoding requires an HTTP(S) URL"))
+        }
+    };
+    single_rgb_frame(command, bytes, size)
+}
+
+/// Resize a decoded frame using the same FFmpeg `scale` filter as encoded media.
+/// Pixel conversion and resizing both run in the existing external-tool owner.
+///
+/// # Errors
+/// Reports invalid dimensions, failed tools, broken pipes or short RGB output.
+pub fn scale_rgb_frame(
+    frame: &ImageFrame,
+    size: (usize, usize),
+    options: &VideoStreamOptions,
+) -> Result<ImageFrame, MediaStreamError> {
+    let format = match frame.pixel_format() {
+        PixelFormat::Rgb8 => "rgb24",
+        PixelFormat::Rgba8 => "rgba",
+        PixelFormat::Luma8 => "gray",
+    };
+    let mut command = tool_command(&options.ffmpeg);
+    command
+        .args(["-v", "error", "-f", "rawvideo", "-pix_fmt", format, "-s"])
+        .arg(format!("{}x{}", frame.width(), frame.height()))
+        .args(["-i", "pipe:0"]);
+    Ok(single_rgb_frame(command, Some(frame.data()), size)?.with_timing(frame.timing()))
+}
+
+fn single_rgb_frame(
+    mut command: Command,
+    input: Option<&[u8]>,
+    size: (usize, usize),
+) -> Result<ImageFrame, MediaStreamError> {
+    let (width, height) = size;
+    let expression = RgbVideoFilter {
+        size: Some(size),
+        fps: None,
+    }
+    .expression()?
+    .ok_or_else(|| invalid("missing RGB scale filter"))?;
+    let length = width
+        .checked_mul(height)
+        .and_then(|value| value.checked_mul(3))
+        .ok_or_else(|| invalid("RGB frame size overflow"))?;
+    let mut decoder = Process::new(
+        command
+            .arg("-vf")
+            .arg(expression)
+            .args([
+                "-vframes", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1",
+            ])
+            .stdin(if input.is_some() {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            })
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()?,
+    );
+    let mut reader = decoder
+        .child
+        .stdout
+        .take()
+        .ok_or_else(|| invalid("missing RGB output pipe"))?;
+    let stdin = decoder.child.stdin.take();
+    let mut bytes = vec![0; length];
+    std::thread::scope(|scope| -> Result<(), MediaStreamError> {
+        // Writing and reading concurrently avoids pipe-capacity deadlocks for
+        // large encoded images or decoded raw frames. Only this child is owned.
+        let writer = stdin
+            .zip(input)
+            .map(|(mut stdin, input)| scope.spawn(move || stdin.write_all(input)));
+        let read = read_rgb_frame(&mut reader, &mut bytes);
+        drop(reader);
+        let written = writer
+            .map(|writer| {
+                writer
+                    .join()
+                    .map_err(|_| invalid("RGB pipe writer panicked"))
+            })
+            .transpose()?;
+        let status = decoder.wait()?;
+        if !status.success() {
+            return Err(invalid(format!("FFmpeg image decoding failed: {status}")));
+        }
+        if !read? {
+            return Err(invalid("FFmpeg produced no RGB frame"));
+        }
+        if let Some(Err(error)) = written {
+            // A successful first-frame decoder may close its encoded input
+            // before trailing animation frames or metadata have been written.
+            if error.kind() != std::io::ErrorKind::BrokenPipe {
+                return Err(error.into());
+            }
+        }
+        Ok(())
+    })?;
+    Ok(ImageFrame::new(width, height, PixelFormat::Rgb8, bytes)?)
 }
