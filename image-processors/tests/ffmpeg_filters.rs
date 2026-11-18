@@ -39,13 +39,17 @@ fn reference() -> Reference {
 }
 
 fn hidden_command(executable: impl AsRef<std::ffi::OsStr>) -> Command {
-    let mut command = Command::new(executable);
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
+        let mut command = Command::new(executable);
         command.creation_flags(0x0800_0000);
+        command
     }
-    command
+    #[cfg(not(windows))]
+    {
+        Command::new(executable)
+    }
 }
 
 fn tools() -> Option<VideoStreamOptions> {
