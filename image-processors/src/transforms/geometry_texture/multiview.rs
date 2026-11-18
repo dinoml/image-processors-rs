@@ -242,14 +242,7 @@ impl ViewGeometry {
 }
 
 fn barycentric(p: [f32; 2], triangle: [[f32; 2]; 3]) -> Option<[f32; 3]> {
-    let [a, b, c] = triangle;
-    let determinant = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1]);
-    if determinant.abs() <= f32::EPSILON {
-        return None;
-    }
-    let first = ((b[1] - c[1]) * (p[0] - c[0]) + (c[0] - b[0]) * (p[1] - c[1])) / determinant;
-    let second = ((c[1] - a[1]) * (p[0] - c[0]) + (a[0] - c[0]) * (p[1] - c[1])) / determinant;
-    let weights = [first, second, 1.0 - first - second];
+    let weights = super::barycentric_with_minimum_area(p, triangle, f32::EPSILON)?;
     weights.iter().all(|&v| v >= 0.0).then_some(weights)
 }
 
@@ -992,4 +985,29 @@ pub fn finish_texture(
         })
         .collect();
     Ok(())
+}
+
+#[cfg(test)]
+mod coverage_tests {
+    #[test]
+    fn central_weights_retain_bake_and_multiview_policies() {
+        let triangle = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]];
+        assert_eq!(
+            super::barycentric([0.25, 0.25], triangle),
+            Some([0.5, 0.25, 0.25])
+        );
+        assert!(super::super::barycentric([-0.01, 0.25], triangle).is_some());
+        assert!(super::barycentric([-0.01, 0.25], triangle).is_none());
+        for area in [f32::EPSILON * 0.5, f32::EPSILON, f32::EPSILON * 2.0] {
+            let triangle = [[0.0, 0.0], [area, 0.0], [0.0, 1.0]];
+            let point = [area * 0.25, 0.25];
+            assert!(super::super::barycentric(point, triangle).is_some());
+            assert_eq!(
+                super::barycentric(point, triangle).is_some(),
+                area > f32::EPSILON
+            );
+        }
+        assert!(super::super::barycentric([0.0, 0.0], [[0.0; 2]; 3]).is_none());
+        assert!(super::barycentric([0.0, 0.0], [[0.0; 2]; 3]).is_none());
+    }
 }
