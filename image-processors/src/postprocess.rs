@@ -1969,12 +1969,50 @@ fn image_frame_from_chw_unit_values(
     image_frame_from_chw_unit_values_with_rounding(values, size, channels, false)
 }
 
-#[allow(missing_docs)]
+/// Rounding used after clamping unit-range floating pixels and scaling by 255.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum FloatByteRounding {
+    /// Round to nearest, with halfway values rounded away from zero.
+    #[default]
+    Nearest,
+    /// Round to nearest, with halfway values rounded to the even byte.
+    NearestEven,
+    /// Discard the fractional part, matching floating-to-byte tensor casts.
+    Truncate,
+}
+
+/// Restore a CHW unit-range image with the existing nearest rounding policies.
+///
+/// # Errors
+/// Returns an error for incompatible extents, unsupported channels or invalid frame storage.
 pub fn image_frame_from_chw_unit_values_with_rounding(
     values: &[f32],
     size: ImageSize,
     channels: usize,
     ties_even: bool,
+) -> Result<ImageFrame, TensorPostprocessError> {
+    image_frame_from_chw_unit_values_with_rounding_mode(
+        values,
+        size,
+        channels,
+        if ties_even {
+            FloatByteRounding::NearestEven
+        } else {
+            FloatByteRounding::Nearest
+        },
+    )
+}
+
+/// Restore a CHW unit-range image with an explicit float-to-byte rounding mode.
+/// Layout assembly, clipping and channel validation share the standard image path.
+///
+/// # Errors
+/// Returns an error for incompatible extents, unsupported channels or invalid frame storage.
+pub fn image_frame_from_chw_unit_values_with_rounding_mode(
+    values: &[f32],
+    size: ImageSize,
+    channels: usize,
+    rounding: FloatByteRounding,
 ) -> Result<ImageFrame, TensorPostprocessError> {
     let pixels = checked_transform_pixels(size)?;
     let expected = checked_dense_value_count(size, channels)?;
@@ -1984,10 +2022,12 @@ pub fn image_frame_from_chw_unit_values_with_rounding(
     for pixel_index in 0..pixels {
         for channel in 0..channels {
             let value = values[channel * pixels + pixel_index];
-            data.push(if ties_even {
-                (value.clamp(0.0, 1.0) * 255.0).round_ties_even() as u8
-            } else {
-                unit_f32_to_u8(value)
+            data.push(match rounding {
+                FloatByteRounding::Nearest => unit_f32_to_u8(value),
+                FloatByteRounding::NearestEven => {
+                    (value.clamp(0.0, 1.0) * 255.0).round_ties_even() as u8
+                }
+                FloatByteRounding::Truncate => (value.clamp(0.0, 1.0) * 255.0) as u8,
             });
         }
     }
