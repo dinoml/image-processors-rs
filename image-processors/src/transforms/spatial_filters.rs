@@ -106,6 +106,95 @@ fn reflect101(mut index: isize, length: usize) -> usize {
     index as usize
 }
 
+/// Bilateral filtering of interleaved RGB bytes with reflect-101 borders.
+///
+/// Uses circular spatial support, the sum of absolute RGB differences for the
+/// range lookup, FP32 weights and accumulation, and nearest-even byte rounding.
+/// A nonpositive diameter selects radius `round(1.5 * sigma_space)`, with a
+/// minimum radius of one. Repeated filtering rounds to bytes after every pass.
+/// This is the byte-valued, three-channel bilateral contract used by Cosmos
+/// Transfer1 visibility controls; no native image-processing library is linked.
+///
+/// # Errors
+/// Rejects inconsistent geometry, nonfinite/nonpositive sigmas, or a support
+/// radius that cannot be represented safely.
+pub fn bilateral_filter_rgb_u8(
+    values: &[u8],
+    size: ImageSize,
+    diameter: i32,
+    sigma_color: f64,
+    sigma_space: f64,
+    iterations: usize,
+) -> Result<Vec<u8>, SpatialFilterError> {
+    geometry(values.len(), size, 3)?;
+    if !sigma_color.is_finite()
+        || !sigma_space.is_finite()
+        || sigma_color <= 0.0
+        || sigma_space <= 0.0
+    {
+        return Err(SpatialFilterError::Sigma);
+    }
+    let radius = if diameter > 0 {
+        f64::from(diameter / 2)
+    } else {
+        (sigma_space * 1.5).round_ties_even()
+    }
+    .max(1.0);
+    if radius > f64::from(i32::MAX / 2) {
+        return Err(SpatialFilterError::Kernel);
+    }
+    let radius = radius as isize;
+    let range_scale = -0.5 / (sigma_color * sigma_color);
+    let space_scale = -0.5 / (sigma_space * sigma_space);
+    let range = (0..=765)
+        .map(|difference| (f64::from(difference * difference) * range_scale).exp() as f32)
+        .collect::<Vec<_>>();
+    let mut support = Vec::new();
+    for dy in -radius..=radius {
+        for dx in -radius..=radius {
+            let squared = dx * dx + dy * dy;
+            if squared <= radius * radius {
+                support.push((dy, dx, ((squared as f64) * space_scale).exp() as f32));
+            }
+        }
+    }
+    let mut current = values.to_vec();
+    let mut next = vec![0; values.len()];
+    for _ in 0..iterations {
+        for y in 0..size.height {
+            for x in 0..size.width {
+                let center = (y * size.width + x) * 3;
+                let mut sum = [0.0_f32; 3];
+                let mut weight_sum = 0.0_f32;
+                for &(dy, dx, spatial_weight) in &support {
+                    let sy = reflect101(y as isize + dy, size.height);
+                    let sx = reflect101(x as isize + dx, size.width);
+                    let source = (sy * size.width + sx) * 3;
+                    let difference = (0..3)
+                        .map(|channel| {
+                            usize::from(
+                                current[source + channel].abs_diff(current[center + channel]),
+                            )
+                        })
+                        .sum::<usize>();
+                    let weight = spatial_weight * range[difference];
+                    weight_sum += weight;
+                    for channel in 0..3 {
+                        sum[channel] += f32::from(current[source + channel]) * weight;
+                    }
+                }
+                for channel in 0..3 {
+                    next[center + channel] = (sum[channel] / weight_sum)
+                        .round_ties_even()
+                        .clamp(0.0, 255.0) as u8;
+                }
+            }
+        }
+        std::mem::swap(&mut current, &mut next);
+    }
+    Ok(current)
+}
+
 /// SciPy-style Gaussian filtering with half-sample-symmetric (`reflect`) borders.
 ///
 /// Samples are interleaved; channels are filtered independently. `sigma` is in
