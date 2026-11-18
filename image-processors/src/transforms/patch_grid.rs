@@ -457,16 +457,64 @@ pub fn patch_grid_image_patches_with_decision(
     patch_size: usize,
     resize_decision: ResizeDecision,
 ) -> Result<PatchGridFrames, TransformError> {
+    patch_grid_frames(
+        frame,
+        possible_resolutions,
+        base_size,
+        patch_size,
+        resize_decision,
+        None,
+    )
+}
+
+/// Extract a padded global view and row-major local tiles with Pillow pad geometry.
+/// Existing patch-grid extraction retains its original resize and zero-fill policy.
+///
+/// # Errors
+/// Reports invalid geometry, fill, resampling, or crop failures.
+pub fn pillow_patch_grid_image_patches(
+    frame: &ImageFrame,
+    possible_resolutions: &[ImageSize],
+    base_size: ImageSize,
+    patch_size: usize,
+    resize_decision: ResizeDecision,
+    fill: &[u8],
+) -> Result<PatchGridFrames, TransformError> {
+    patch_grid_frames(
+        frame,
+        possible_resolutions,
+        base_size,
+        patch_size,
+        resize_decision,
+        Some(fill),
+    )
+}
+
+fn patch_grid_frames(
+    frame: &ImageFrame,
+    possible_resolutions: &[ImageSize],
+    base_size: ImageSize,
+    patch_size: usize,
+    resize_decision: ResizeDecision,
+    pillow_fill: Option<&[u8]>,
+) -> Result<PatchGridFrames, TransformError> {
     let original_size = frame_size(frame);
-    let plan = patch_grid_plan(original_size, possible_resolutions, patch_size)?;
-    let base = resize_frame_with_decision(frame, base_size, resize_decision, ResizeMode::Default)?;
+    let mut plan = patch_grid_plan(original_size, possible_resolutions, patch_size)?;
+    let base = if let Some(fill) = pillow_fill {
+        let geometry = pillow_pad_plan(original_size, plan.selected_size)?;
+        plan.resized_size = geometry.resized_size;
+        plan.padding = geometry.padding;
+        pillow_pad_frame(frame, base_size, fill, resize_decision)?
+    } else {
+        resize_frame_with_decision(frame, base_size, resize_decision, ResizeMode::Default)?
+    };
     let resized = resize_frame_with_decision(
         frame,
         plan.resized_size,
         resize_decision,
         ResizeMode::Default,
     )?;
-    let padded = pad_frame(&resized, plan.padding, &[0])?;
+    let padded = pad_frame(&resized, plan.padding, pillow_fill.unwrap_or(&[0]))?;
     let mut frames = Vec::with_capacity(plan.image_patch_count()?);
     frames.push(base);
 

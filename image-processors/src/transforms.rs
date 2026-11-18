@@ -139,15 +139,15 @@ pub use frame_ops::{
     halve_frame_box, multiple_of_resize_plan, overlay_frame, pad_frame,
     pad_frame_symmetric_to_next_multiple, pad_frame_to_multiple_with_canvas_fill,
     pad_frame_with_canvas_fill, pad_image_sequence_frames_with_canvas_fill, pad_to_multiple_plan,
-    pad_video_clip_frames_with_canvas_fill, padded_image_size, repeat_last_frame_batch_to_multiple,
-    repeat_last_image_sequence_to_multiple, repeat_last_video_clip_to_multiple,
-    resize_center_crop_frame, resize_center_crop_frame_with_decision, resize_center_crop_plan,
-    resize_f32, resize_fill_plan, resize_frame, resize_frame_box, resize_frame_opencv,
-    resize_frame_opencv_linear_with_scale, resize_frame_opencv_scale_dependent,
-    resize_frame_to_area_limit, resize_frame_to_bottom_right_padded_frame,
-    resize_frame_to_fill_frame, resize_frame_with_decision, resize_rgb_to_fill_frame,
-    rgb_planar_f32_to_grayscale, temporal_repeat_last_plan, unpad_frame_to_size,
-    validate_padding_fill, MaskCompositePrecision,
+    pad_video_clip_frames_with_canvas_fill, padded_image_size, pillow_pad_frame, pillow_pad_plan,
+    repeat_last_frame_batch_to_multiple, repeat_last_image_sequence_to_multiple,
+    repeat_last_video_clip_to_multiple, resize_center_crop_frame,
+    resize_center_crop_frame_with_decision, resize_center_crop_plan, resize_f32, resize_fill_plan,
+    resize_frame, resize_frame_box, resize_frame_opencv, resize_frame_opencv_linear_with_scale,
+    resize_frame_opencv_scale_dependent, resize_frame_to_area_limit,
+    resize_frame_to_bottom_right_padded_frame, resize_frame_to_fill_frame,
+    resize_frame_with_decision, resize_rgb_to_fill_frame, rgb_planar_f32_to_grayscale,
+    temporal_repeat_last_plan, unpad_frame_to_size, validate_padding_fill, MaskCompositePrecision,
 };
 use frame_ops::{crop_image_data, frame_size, new_frame};
 pub(crate) use frame_ops::{
@@ -186,7 +186,8 @@ pub use masks::{
 pub use patch_grid::{
     aspect_ratio_tile_frames, flatten_hwc_patches, patch_grid_batch_plan, patch_grid_image_patches,
     patch_grid_image_patches_with_decision, patch_grid_output_size, patch_grid_plan,
-    select_patch_grid_resolution, PatchGridBatchPlan, PatchGridFrames, PatchGridPlan,
+    pillow_patch_grid_image_patches, select_patch_grid_resolution, PatchGridBatchPlan,
+    PatchGridFrames, PatchGridPlan,
 };
 pub use patch_grid::{aspect_ratio_tile_grid, covering_area_tile_grid};
 mod tiled_canvas;
