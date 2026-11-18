@@ -275,16 +275,17 @@ fn affine_solve3(matrix: [[f64; 3]; 3], rhs: [f64; 3]) -> Result<[f64; 3], FaceG
         if divisor == 0.0 {
             return Err(FaceGeometryError::Singular);
         }
-        for j in column..4 {
-            augmented[column][j] /= divisor;
+        for value in &mut augmented[column][column..] {
+            *value /= divisor;
         }
-        for row in 0..3 {
+        let pivot_values = augmented[column];
+        for (row, values) in augmented.iter_mut().enumerate() {
             if row == column {
                 continue;
             }
-            let factor = augmented[row][column];
-            for j in column..4 {
-                augmented[row][j] -= factor * augmented[column][j];
+            let factor = values[column];
+            for (value, &pivot_value) in values[column..].iter_mut().zip(&pivot_values[column..]) {
+                *value -= factor * pivot_value;
             }
         }
     }
