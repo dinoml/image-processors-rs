@@ -1167,6 +1167,67 @@ pub fn resize_fill_plan(
     })
 }
 
+/// Builds Pillow `ImageOps.pad` geometry with nearest-even size and offset rounding.
+///
+/// # Errors
+/// Reports invalid dimensions or a rounded empty contained image.
+pub fn pillow_pad_plan(
+    source_size: ImageSize,
+    target_size: ImageSize,
+) -> Result<ResizeFillPlan, TransformError> {
+    validate_size(source_size)?;
+    validate_size(target_size)?;
+    let source_ratio = source_size.width as f64 / source_size.height as f64;
+    let target_ratio = target_size.width as f64 / target_size.height as f64;
+    let resized_size = if source_ratio > target_ratio {
+        ImageSize::new(
+            (source_size.height as f64 / source_size.width as f64 * target_size.width as f64)
+                .round_ties_even() as usize,
+            target_size.width,
+        )?
+    } else if source_ratio < target_ratio {
+        ImageSize::new(
+            target_size.height,
+            (source_size.width as f64 / source_size.height as f64 * target_size.height as f64)
+                .round_ties_even() as usize,
+        )?
+    } else {
+        target_size
+    };
+    let horizontal = target_size
+        .width
+        .checked_sub(resized_size.width)
+        .ok_or(TransformError::ImageSizeOverflow)?;
+    let vertical = target_size
+        .height
+        .checked_sub(resized_size.height)
+        .ok_or(TransformError::ImageSizeOverflow)?;
+    let left = (horizontal as f64 * 0.5).round_ties_even() as usize;
+    let top = (vertical as f64 * 0.5).round_ties_even() as usize;
+    Ok(ResizeFillPlan {
+        source_size,
+        target_size,
+        resized_size,
+        padding: Padding::new(top, horizontal - left, vertical - top, left),
+    })
+}
+
+/// Resize and center-pad a decoded frame using Pillow geometry and byte resampling.
+///
+/// # Errors
+/// Reports invalid geometry, pixel fill, or resize failures.
+pub fn pillow_pad_frame(
+    frame: &ImageFrame,
+    target: ImageSize,
+    fill: &[u8],
+    decision: ResizeDecision,
+) -> Result<ImageFrame, TransformError> {
+    let plan = pillow_pad_plan(frame_size(frame), target)?;
+    let resized =
+        resize_frame_with_decision(frame, plan.resized_size, decision, ResizeMode::Default)?;
+    pad_frame(&resized, plan.padding, fill)
+}
+
 /// Builds a fit-inside resize plan with only bottom/right padding.
 ///
 /// The source is resized only when it does not fit inside `target_size`. When
