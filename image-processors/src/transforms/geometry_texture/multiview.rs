@@ -362,12 +362,25 @@ pub fn atlas(
     size: usize,
     charts: &ChartOptions,
 ) -> Result<Atlas, GeometryError> {
+    atlas_with_normals(surface, uvs, size, charts, NormalSource::AreaWeighted)
+}
+
+/// Chart a mesh while retaining selected vertex normals through UV seam expansion.
+/// # Errors
+/// Rejects invalid geometry, supplied normals, UV storage or charting failures.
+pub fn atlas_with_normals(
+    surface: &TriangleSurface,
+    uvs: Option<&[[f32; 2]]>,
+    size: usize,
+    charts: &ChartOptions,
+    normal_source: NormalSource<'_>,
+) -> Result<Atlas, GeometryError> {
     surface.validate()?;
     let count = size
         .checked_mul(size)
         .filter(|&n| n >= 4)
         .ok_or(GeometryError::Invalid("atlas size"))?;
-    let source_normals = vertex_normals(surface, NormalSource::AreaWeighted)?;
+    let source_normals = vertex_normals(surface, normal_source)?;
     let (surface, uvs, normals) = if let Some(uvs) = uvs {
         if uvs.len() != surface.vertices.len() || uvs.iter().flatten().any(|v| !v.is_finite()) {
             return Err(GeometryError::Invalid("UV coordinates"));
@@ -445,21 +458,72 @@ pub fn atlas(
 
 /// Bilinear zero-padded sampling with align_corners=false pixel coordinates.
 pub fn sample<const N: usize>(image: &[[f32; N]], size: usize, x: f32, y: f32) -> [f32; N] {
+    sample_filtered(image, size, x, y, false, false)
+}
+
+/// Bilinearly sample a repeating UV texture at pixel-center coordinates.
+/// Invalid coordinates or storage return zero, as in [`sample`].
+pub fn sample_repeat<const N: usize>(image: &[[f32; N]], size: usize, x: f32, y: f32) -> [f32; N] {
+    sample_filtered(image, size, x, y, true, false)
+}
+
+/// Sample the nearest texel with repeating UV boundaries for source score maps.
+/// Invalid coordinates or storage return zero, as in [`sample`].
+pub fn sample_repeat_nearest<const N: usize>(
+    image: &[[f32; N]],
+    size: usize,
+    x: f32,
+    y: f32,
+) -> [f32; N] {
+    sample_filtered(image, size, x, y, true, true)
+}
+
+fn sample_filtered<const N: usize>(
+    image: &[[f32; N]],
+    size: usize,
+    x: f32,
+    y: f32,
+    repeat: bool,
+    nearest: bool,
+) -> [f32; N] {
     let mut result = [0.0; N];
-    if !x.is_finite() || !y.is_finite() || image.len() != size.saturating_mul(size) {
+    if size == 0 || !x.is_finite() || !y.is_finite() || size.checked_mul(size) != Some(image.len())
+    {
         return result;
+    }
+    let side = size as f32;
+    let (x, y) = if repeat {
+        (x.rem_euclid(side), y.rem_euclid(side))
+    } else {
+        if x < -1.0 || y < -1.0 || x >= side || y >= side {
+            return result;
+        }
+        (x, y)
+    };
+    if nearest {
+        let ix = ((x + 0.5).floor() as usize) % size;
+        let iy = ((y + 0.5).floor() as usize) % size;
+        return image[iy * size + ix];
     }
     let (x0, y0) = (x.floor() as isize, y.floor() as isize);
     let (dx, dy) = (x - x.floor(), y - y.floor());
     for (oy, wy) in [(0, 1.0 - dy), (1, dy)] {
         for (ox, wx) in [(0, 1.0 - dx), (1, dx)] {
-            let (ix, iy) = (x0 + ox, y0 + oy);
-            if ix < 0 || iy < 0 || ix >= size as isize || iy >= size as isize {
-                continue;
-            }
+            let (ix, iy) = if repeat {
+                (
+                    (x0 + ox).rem_euclid(size as isize),
+                    (y0 + oy).rem_euclid(size as isize),
+                )
+            } else {
+                let (ix, iy) = (x0 + ox, y0 + oy);
+                if ix < 0 || iy < 0 || ix >= size as isize || iy >= size as isize {
+                    continue;
+                }
+                (ix, iy)
+            };
             let pixel = image[iy as usize * size + ix as usize];
-            for c in 0..N {
-                result[c] += pixel[c] * wx * wy;
+            for (value, &channel) in result.iter_mut().zip(&pixel) {
+                *value += channel * wx * wy;
             }
         }
     }
@@ -751,8 +815,8 @@ pub fn complete_views(
     let atlas_size = atlas.texture.texture_size;
     let mut scores = known
         .iter()
-        .map(|&v| if v { 1.0 } else { 0.0 })
-        .collect::<Vec<f32>>();
+        .map(|&v| [if v { 1.0 } else { 0.0 }])
+        .collect::<Vec<_>>();
     let mut previous_score = 1.0;
     for round in 0..options.max_rounds {
         if round >= options.min_rounds && previous_score <= options.score_threshold {
@@ -771,9 +835,7 @@ pub fn complete_views(
                 let Some(uv) = texture_coordinate(atlas, &view, pixel) else {
                     continue;
                 };
-                let x = (uv[0] + 0.5).floor().clamp(0.0, (atlas_size - 1) as f32) as usize;
-                let y = (uv[1] + 0.5).floor().clamp(0.0, (atlas_size - 1) as f32) as usize;
-                let attr = scores[y * atlas_size + x];
+                let attr = sample_repeat_nearest(&scores, atlas_size, uv[0], uv[1])[0];
                 let cosine = dot(view.normals[pixel], camera.back).clamp(0.0, 1.0);
                 if cosine > 0.1 {
                     score += if attr < 1e-3 {
@@ -805,10 +867,8 @@ pub fn complete_views(
             let Some(uv) = texture_coordinate(atlas, &view, pixel) else {
                 continue;
             };
-            image[pixel] = sample(colors, atlas_size, uv[0], uv[1]);
-            let x = (uv[0] + 0.5).floor().clamp(0.0, (atlas_size - 1) as f32) as usize;
-            let y = (uv[1] + 0.5).floor().clamp(0.0, (atlas_size - 1) as f32) as usize;
-            let score = scores[y * atlas_size + x];
+            image[pixel] = sample_repeat(colors, atlas_size, uv[0], uv[1]);
+            let score = sample_repeat_nearest(&scores, atlas_size, uv[0], uv[1])[0];
             let cosine = dot(view.normals[pixel], camera.back).clamp(0.0, 1.0);
             mask[pixel] = score < 1e-3 || cosine - score > 0.3;
         }
@@ -899,7 +959,7 @@ pub fn complete_views(
             if projection.valid[i] && sample(&mask_values, size, point[0], point[1])[0] > 0.9 {
                 colors[i] = projection.colors[i];
                 known[i] = true;
-                scores[i] = scores[i].max(projection.incidence[i]);
+                scores[i][0] = scores[i][0].max(projection.incidence[i]);
             }
         }
         pad(colors, &atlas.mask, atlas_size)?;

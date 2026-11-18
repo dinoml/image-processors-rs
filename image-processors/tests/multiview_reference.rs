@@ -198,3 +198,100 @@ fn canonical_mesh_roundtrip_and_invalid_geometry_are_explicit() {
     assert!(canonical_mesh(&[[0.; 3]; 3], &[[0, 1, 2]], true, 0.5, false).is_err());
     assert!(canonical_mesh(&vertices, &[[0, 1, 2]], true, f64::NAN, false).is_err());
 }
+
+#[test]
+fn uv_repeat_filters_match_cpu_reference_and_preserve_image_zero_padding() {
+    use image_processors::transforms::geometry_texture::multiview::{
+        sample, sample_repeat, sample_repeat_nearest,
+    };
+    let fixture = fixtures();
+    let case = &fixture["repeatSampling"];
+    let image = triples(&case["image"]);
+    let zero = triples(&case["expectedZero"]);
+    let repeat = triples(&case["expectedRepeat"]);
+    let nearest = triples(&case["expectedNearestRepeat"]);
+    let size = case["size"].as_u64().unwrap() as usize;
+    for (i, position) in case["positions"].as_array().unwrap().iter().enumerate() {
+        let (x, y) = (f(&position[0]), f(&position[1]));
+        close(&sample(&image, size, x, y), &zero[i], 4e-6);
+        close(&sample_repeat(&image, size, x, y), &repeat[i], 4e-6);
+        close(
+            &sample_repeat_nearest(&image, size, x, y),
+            &nearest[i],
+            1e-7,
+        );
+    }
+    assert_ne!(zero[0], repeat[0]);
+    assert_eq!(sample_repeat::<3>(&[], 0, 0., 0.), [0.; 3]);
+    assert_eq!(sample_repeat(&image, size, f32::NAN, 0.), [0.; 3]);
+}
+
+#[test]
+fn atlas_retains_trimesh_and_supplied_normals_through_seam_expansion() {
+    use image_processors::transforms::geometry_texture::multiview::atlas_with_normals;
+    use image_processors::transforms::geometry_texture::{
+        vertex_normals, ChartOptions, NormalSource, TriangleSurface,
+    };
+    let fixture = fixtures();
+    let case = &fixture["normalMesh"];
+    let vertices = triples(&case["vertices"]);
+    let faces = case["faces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| std::array::from_fn(|i| p[i].as_u64().unwrap() as u32))
+        .collect();
+    let surface = TriangleSurface { vertices, faces };
+    let corner = triples(&case["cornerAngleNormals"]);
+    let supplied = triples(&case["suppliedNormals"]);
+    let uvs = [[0., 0.], [1., 0.], [0., 1.], [1., 1.]];
+    let area = vertex_normals(&surface, NormalSource::AreaWeighted).unwrap();
+    assert!(area[0]
+        .iter()
+        .zip(corner[0])
+        .any(|(a, b)| (a - b).abs() > 0.05));
+    for existing_uv in [false, true] {
+        for imported in [false, true] {
+            let source = if imported {
+                NormalSource::Supplied(&supplied)
+            } else {
+                NormalSource::CornerAngleWeighted
+            };
+            let expected = if imported { &supplied } else { &corner };
+            let atlas = atlas_with_normals(
+                &surface,
+                existing_uv.then_some(uvs.as_slice()),
+                16,
+                &ChartOptions::default(),
+                source,
+            )
+            .unwrap();
+            assert_eq!(
+                atlas.texture.normals.len(),
+                atlas.texture.surface.vertices.len()
+            );
+            for (position, normal) in atlas
+                .texture
+                .surface
+                .vertices
+                .iter()
+                .zip(&atlas.texture.normals)
+            {
+                let original = surface
+                    .vertices
+                    .iter()
+                    .position(|v| v == position)
+                    .expect("charting must retain original positions");
+                close(normal, &expected[original], 2e-6);
+            }
+        }
+    }
+    assert!(atlas_with_normals(
+        &surface,
+        Some(&uvs),
+        16,
+        &ChartOptions::default(),
+        NormalSource::Supplied(&supplied[..2])
+    )
+    .is_err());
+}
