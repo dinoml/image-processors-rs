@@ -25,7 +25,10 @@ pub use grayscale::{decode_grayscale_image_bytes, load_grayscale_image_from_path
 
 use crate::tensor::{ImageLayout, TensorDataView, TensorError, TensorView};
 mod stream;
-pub use stream::{decode_rgb_video, transcode_rgb_video, MediaStreamError, VideoStreamOptions};
+pub use stream::{
+    decode_rgb_image, decode_rgb_video, decode_rgb_video_filtered, scale_rgb_frame,
+    transcode_rgb_video, MediaStreamError, RgbVideoFilter, VideoStreamOptions,
+};
 
 /// Pixel storage format for decoded image frames.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
