@@ -1,6 +1,10 @@
 //! Image transform and geometry helpers.
 
+mod affine3d;
 pub mod geometry_texture;
+pub use affine3d::{
+    estimate_affine_3d, invert_transform_3d, project_points_3d, transform_points_3d,
+};
 
 use std::collections::{HashMap, HashSet};
 
@@ -74,6 +78,7 @@ pub fn resize_f64_skimage_bilinear_constant(
 }
 
 mod detection;
+pub use detection::non_max_suppression_minimum;
 // The same output representation serves softmax- and sigmoid-ranked queries.
 pub(crate) use detection::post_process_oneformer_panoptic_segmentation;
 pub use detection::{
