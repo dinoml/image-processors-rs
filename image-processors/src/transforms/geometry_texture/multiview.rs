@@ -638,7 +638,7 @@ pub fn pad(colors: &mut [[f32; 3]], known: &[bool], size: usize) -> Result<(), G
         .collect::<Vec<_>>();
     let missing = known.iter().map(|v| !v).collect::<Vec<_>>();
     super::inpaint_telea_u8(&mut bytes, &missing, size, size, 3, 3)?;
-    for (color, bytes) in colors.iter_mut().zip(bytes.chunks_exact(3)) {
+    for (color, bytes) in colors.iter_mut().zip(bytes.as_chunks::<3>().0) {
         *color = std::array::from_fn(|c| f32::from(bytes[c]) / 255.0);
     }
     Ok(())
