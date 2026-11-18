@@ -23,6 +23,274 @@ impl std::fmt::Display for FaceGeometryError {
 }
 impl std::error::Error for FaceGeometryError {}
 
+/// Estimate a full affine map from corresponding FP32 points with RANSAC.
+///
+/// Uses the source three-point affine model, deterministic multiply-with-carry
+/// sampling, FP32 reprojection errors and adaptive iteration count. The final
+/// inlier fit retains FP64 coefficients. This is independent Rust geometry;
+/// no native computer-vision library is linked.
+/// # Errors
+/// Rejects invalid controls/points, fewer than three correspondences or a
+/// degenerate set without a noncollinear affine model.
+pub fn estimate_affine_2d_ransac(
+    from: &[[f32; 2]],
+    to: &[[f32; 2]],
+    threshold: f64,
+    confidence: f64,
+    max_iterations: usize,
+    refine_iterations: usize,
+) -> Result<([[f64; 3]; 2], Vec<bool>), FaceGeometryError> {
+    if from.len() != to.len()
+        || from.len() < 3
+        || !threshold.is_finite()
+        || threshold <= 0.0
+        || !(0.0..1.0).contains(&confidence)
+        || confidence == 0.0
+        || max_iterations == 0
+        || from
+            .iter()
+            .chain(to)
+            .flatten()
+            .any(|value| !value.is_finite())
+    {
+        return Err(FaceGeometryError::Landmarks);
+    }
+    let mut state = u64::MAX;
+    let mut best = None;
+    let mut best_mask = vec![false; from.len()];
+    let mut best_count = 0;
+    let mut limit = max_iterations;
+    let mut iteration = 0;
+    while iteration < limit {
+        let mut sample = [0; 3];
+        let mut found = false;
+        for _ in 0..10000 {
+            for index in 0..3 {
+                loop {
+                    state = u64::from(state as u32).wrapping_mul(4164903690) + (state >> 32);
+                    let value = state as u32 as usize % from.len();
+                    if !sample[..index].contains(&value) {
+                        sample[index] = value;
+                        break;
+                    }
+                }
+            }
+            if from.len() == 3 {
+                sample = [0, 1, 2];
+            }
+            let valid = |points: &[[f32; 2]]| {
+                let a = points[sample[0]];
+                let b = points[sample[1]];
+                let c = points[sample[2]];
+                let dx1 = b[0] - a[0];
+                let dy1 = b[1] - a[1];
+                let dx2 = c[0] - a[0];
+                let dy2 = c[1] - a[1];
+                (dx2 * dy1 - dy2 * dx1).abs()
+                    > f32::EPSILON * (dx1.abs() + dy1.abs() + dx2.abs() + dy2.abs())
+            };
+            if valid(from) && valid(to) {
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            break;
+        }
+        let [x1, y1] = from[sample[0]].map(f64::from);
+        let [x2, y2] = from[sample[1]].map(f64::from);
+        let [x3, y3] = from[sample[2]].map(f64::from);
+        let inverse = 1.0 / (x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2));
+        let matrix = std::array::from_fn(|axis| {
+            let a = f64::from(to[sample[0]][axis]);
+            let b = f64::from(to[sample[1]][axis]);
+            let c = f64::from(to[sample[2]][axis]);
+            [
+                inverse * (a * (y2 - y3) + b * (y3 - y1) + c * (y1 - y2)),
+                inverse * (a * (x3 - x2) + b * (x1 - x3) + c * (x2 - x1)),
+                inverse
+                    * (a * (x2 * y3 - x3 * y2) + b * (x3 * y1 - x1 * y3) + c * (x1 * y2 - x2 * y1)),
+            ]
+        });
+        let floats = matrix.map(|row| row.map(|value| value as f32));
+        let mask: Vec<bool> = from
+            .iter()
+            .zip(to)
+            .map(|(p, q)| {
+                let x = floats[0][0] * p[0] + floats[0][1] * p[1] + floats[0][2] - q[0];
+                let y = floats[1][0] * p[0] + floats[1][1] * p[1] + floats[1][2] - q[1];
+                x * x + y * y <= (threshold * threshold) as f32
+            })
+            .collect();
+        let count = mask.iter().filter(|&&inside| inside).count();
+        if count > best_count.max(2) {
+            best = Some(matrix);
+            best_mask = mask;
+            best_count = count;
+            let denominator = (1.0 - (count as f64 / from.len() as f64).powi(3)).ln();
+            if denominator == f64::NEG_INFINITY {
+                limit = 0;
+            } else if denominator.is_finite() && denominator < 0.0 {
+                limit = limit.min(
+                    ((1.0 - confidence).ln() / denominator)
+                        .round_ties_even()
+                        .max(0.0) as usize,
+                );
+            }
+        }
+        iteration += 1;
+        if from.len() == 3 {
+            break;
+        }
+    }
+    let mut matrix = best.ok_or(FaceGeometryError::Landmarks)?;
+    // Retain the source Levenberg-Marquardt iteration and damping policy,
+    // rather than replacing refinement with a single least-squares fit.
+    if best_count > 3 && refine_iterations > 0 {
+        let mut normal = [[0.0; 3]; 3];
+        for (point, &keep) in from.iter().zip(&best_mask) {
+            if !keep {
+                continue;
+            }
+            let row = [f64::from(point[0]), f64::from(point[1]), 1.0];
+            for i in 0..3 {
+                for j in 0..3 {
+                    normal[i][j] += row[i] * row[j];
+                }
+            }
+        }
+        let residual = |model: [[f64; 3]; 2]| {
+            let mut error = 0.0;
+            let mut maximum: f64 = 0.0;
+            let mut gradient = [[0.0; 3]; 2];
+            for ((point, target), &keep) in from.iter().zip(to).zip(&best_mask) {
+                if !keep {
+                    continue;
+                }
+                let row = [f64::from(point[0]), f64::from(point[1]), 1.0];
+                for axis in 0..2 {
+                    let value = model[axis][0] * row[0] + model[axis][1] * row[1] + model[axis][2]
+                        - f64::from(target[axis]);
+                    error += value * value;
+                    maximum = maximum.max(value.abs());
+                    for column in 0..3 {
+                        gradient[axis][column] += row[column] * value;
+                    }
+                }
+            }
+            (error, maximum, gradient)
+        };
+        let mut lambda = 1.0;
+        let mut lc = 0.75;
+        for _ in 0..refine_iterations {
+            let (error, _, gradient) = residual(matrix);
+            let mut damped = normal;
+            for index in 0..3 {
+                damped[index][index] += lambda * normal[index][index];
+            }
+            let delta = [
+                affine_solve3(damped, gradient[0])?,
+                affine_solve3(damped, gradient[1])?,
+            ];
+            let candidate = std::array::from_fn(|axis| {
+                std::array::from_fn(|column| matrix[axis][column] - delta[axis][column])
+            });
+            let (candidate_error, candidate_maximum, _) = residual(candidate);
+            let mut reduction = 0.0;
+            let mut dot = 0.0;
+            for axis in 0..2 {
+                for row in 0..3 {
+                    let product = (0..3)
+                        .map(|column| normal[row][column] * delta[axis][column])
+                        .sum::<f64>();
+                    reduction += delta[axis][row] * (2.0 * gradient[axis][row] - product);
+                    dot += delta[axis][row] * gradient[axis][row];
+                }
+            }
+            let ratio = (error - candidate_error)
+                / if reduction.abs() > f64::EPSILON {
+                    reduction
+                } else {
+                    1.0
+                };
+            if ratio > 0.75 {
+                lambda *= 0.5;
+                if lambda < lc {
+                    lambda = 0.0;
+                }
+            } else if ratio < 0.25 {
+                let mut nu = ((candidate_error - error)
+                    / if dot.abs() > f64::EPSILON { dot } else { 1.0 }
+                    + 2.0)
+                    .clamp(2.0, 10.0);
+                if lambda == 0.0 {
+                    let mut maximum = f64::EPSILON;
+                    for column in 0..3 {
+                        let mut unit = [0.0; 3];
+                        unit[column] = 1.0;
+                        maximum = maximum.max(affine_solve3(normal, unit)?[column].abs());
+                    }
+                    lc = 1.0 / maximum;
+                    lambda = lc;
+                    nu *= 0.5;
+                }
+                lambda *= nu;
+            }
+            if candidate_error < error {
+                matrix = candidate;
+            }
+            let delta_maximum = delta
+                .iter()
+                .flatten()
+                .map(|value| value.abs())
+                .fold(0.0, f64::max);
+            let maximum = if candidate_error < error {
+                candidate_maximum
+            } else {
+                residual(matrix).1
+            };
+            if delta_maximum < f64::from(f32::EPSILON) || maximum < f64::from(f32::EPSILON) {
+                break;
+            }
+        }
+    }
+    Ok((matrix, best_mask))
+}
+
+fn affine_solve3(matrix: [[f64; 3]; 3], rhs: [f64; 3]) -> Result<[f64; 3], FaceGeometryError> {
+    let mut augmented = [[0.0; 4]; 3];
+    for row in 0..3 {
+        augmented[row][..3].copy_from_slice(&matrix[row]);
+        augmented[row][3] = rhs[row];
+    }
+    for column in 0..3 {
+        let mut pivot = column;
+        for row in column + 1..3 {
+            if augmented[row][column].abs() > augmented[pivot][column].abs() {
+                pivot = row;
+            }
+        }
+        augmented.swap(column, pivot);
+        let divisor = augmented[column][column];
+        if divisor == 0.0 {
+            return Err(FaceGeometryError::Singular);
+        }
+        for j in column..4 {
+            augmented[column][j] /= divisor;
+        }
+        for row in 0..3 {
+            if row == column {
+                continue;
+            }
+            let factor = augmented[row][column];
+            for j in column..4 {
+                augmented[row][j] -= factor * augmented[column][j];
+            }
+        }
+    }
+    Ok(std::array::from_fn(|row| augmented[row][3]))
+}
+
 /// Fit a two-dimensional, orientation-preserving similarity transform to all pairs.
 /// The returned matrix maps source pixel coordinates to destination coordinates.
 ///
@@ -174,6 +442,155 @@ pub fn warp_affine_rgb(
     border: [u8; 3],
 ) -> Result<Vec<u8>, FaceGeometryError> {
     warp_affine_u8(values, source, target, forward, &border)
+}
+
+/// Warp interleaved FP64 pixels with scikit-image's order-one sampling.
+///
+/// `forward` maps source to destination pixel coordinates. Unlike the
+/// INTER_LINEAR APIs, inverse coordinates and bilinear weights remain FP64,
+/// without a coordinate lattice. The constant border is zero. Output clipping
+/// follows `warp(..., mode="constant", cval=0, clip=True, preserve_range=True)`:
+/// zero expands the input range only when it actually occurs in the output.
+///
+/// # Errors
+/// Rejects empty/overflowing geometry, inconsistent interleaved storage,
+/// nonfinite pixels/transforms or a singular affine transform.
+pub fn warp_affine_skimage_f64(
+    values: &[f64],
+    source: ImageSize,
+    target: ImageSize,
+    channels: usize,
+    forward: [[f64; 3]; 2],
+) -> Result<Vec<f64>, FaceGeometryError> {
+    warp_affine_skimage_inverse_f64(values, source, target, channels, invert_affine(forward)?)
+}
+
+/// Apply scikit-image order-one sampling using an explicit destination-to-source map.
+///
+/// This entrypoint retains an already computed `tform.inverse` matrix exactly;
+/// it does not invert and reconstruct it. Clipping and borders are identical to
+/// [`warp_affine_skimage_f64`].
+/// # Errors
+/// Rejects invalid geometry, pixels or a nonfinite/singular inverse map.
+pub fn warp_affine_skimage_inverse_f64(
+    values: &[f64],
+    source: ImageSize,
+    target: ImageSize,
+    channels: usize,
+    inverse: [[f64; 3]; 2],
+) -> Result<Vec<f64>, FaceGeometryError> {
+    let input_len = source
+        .width
+        .checked_mul(source.height)
+        .and_then(|n| n.checked_mul(channels));
+    let output_len = target
+        .width
+        .checked_mul(target.height)
+        .and_then(|n| n.checked_mul(channels));
+    if channels == 0
+        || [source.width, source.height, target.width, target.height].contains(&0)
+        || input_len != Some(values.len())
+        || output_len.is_none()
+        || values.iter().any(|value| !value.is_finite())
+        || inverse.iter().flatten().any(|value| !value.is_finite())
+    {
+        return Err(FaceGeometryError::Geometry);
+    }
+    invert_affine(inverse)?;
+    let [[a, b, c], [d, e, f]] = inverse;
+    let mut output = vec![0.0; output_len.ok_or(FaceGeometryError::Geometry)?];
+    for y in 0..target.height {
+        for x in 0..target.width {
+            let sx = a * x as f64 + b * y as f64 + c;
+            let sy = d * x as f64 + e * y as f64 + f;
+            if !sx.is_finite() || !sy.is_finite() {
+                return Err(FaceGeometryError::Geometry);
+            }
+            // Outside the one-pixel interpolation halo every tap is cval.
+            if sx <= -1.0 || sy <= -1.0 || sx >= source.width as f64 || sy >= source.height as f64 {
+                continue;
+            }
+            let left = sx.floor();
+            let top = sy.floor();
+            let column_fraction = sx - left;
+            let row_fraction = sy - top;
+            for channel in 0..channels {
+                let mut taps = [0.0; 4];
+                for (index, (dx, dy)) in [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)]
+                    .into_iter()
+                    .enumerate()
+                {
+                    let column = left + dx;
+                    let row = top + dy;
+                    if column >= 0.0
+                        && row >= 0.0
+                        && column < source.width as f64
+                        && row < source.height as f64
+                    {
+                        taps[index] = values
+                            [(row as usize * source.width + column as usize) * channels + channel];
+                    }
+                }
+                let upper = (1.0 - column_fraction) * taps[0] + column_fraction * taps[1];
+                let lower = (1.0 - column_fraction) * taps[2] + column_fraction * taps[3];
+                output[(y * target.width + x) * channels + channel] =
+                    (1.0 - row_fraction) * upper + row_fraction * lower;
+            }
+        }
+    }
+    let mut minimum = values.iter().copied().fold(f64::INFINITY, f64::min);
+    let mut maximum = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let output_minimum = output.iter().copied().fold(f64::INFINITY, f64::min);
+    let output_maximum = output.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    if !(minimum..=maximum).contains(&0.0) && output_minimum <= 0.0 && output_maximum >= 0.0 {
+        minimum = minimum.min(0.0);
+        maximum = maximum.max(0.0);
+    }
+    for value in &mut output {
+        *value = value.clamp(minimum, maximum);
+    }
+    Ok(output)
+}
+
+/// Apply the scikit-image affine warp to byte pixels, then truncate to bytes.
+///
+/// This preserves the order of `warp(..., preserve_range=True).astype(uint8)`;
+/// it does not round the FP64 result to the nearest integer.
+/// # Errors
+/// Reports invalid geometry, storage or transforms as in [`warp_affine_skimage_f64`].
+pub fn warp_affine_skimage_u8(
+    values: &[u8],
+    source: ImageSize,
+    target: ImageSize,
+    channels: usize,
+    forward: [[f64; 3]; 2],
+) -> Result<Vec<u8>, FaceGeometryError> {
+    let pixels: Vec<f64> = values.iter().map(|&value| f64::from(value)).collect();
+    Ok(
+        warp_affine_skimage_f64(&pixels, source, target, channels, forward)?
+            .into_iter()
+            .map(|value| value as u8)
+            .collect(),
+    )
+}
+
+/// Byte counterpart of [`warp_affine_skimage_inverse_f64`], retaining truncation.
+/// # Errors
+/// Reports invalid image storage, geometry or inverse transforms.
+pub fn warp_affine_skimage_inverse_u8(
+    values: &[u8],
+    source: ImageSize,
+    target: ImageSize,
+    channels: usize,
+    inverse: [[f64; 3]; 2],
+) -> Result<Vec<u8>, FaceGeometryError> {
+    let pixels: Vec<f64> = values.iter().map(|&value| f64::from(value)).collect();
+    Ok(
+        warp_affine_skimage_inverse_f64(&pixels, source, target, channels, inverse)?
+            .into_iter()
+            .map(|value| value as u8)
+            .collect(),
+    )
 }
 
 /// Warp interleaved byte pixels, retaining the caller's channel count.
