@@ -1620,7 +1620,7 @@ pub fn non_max_suppression(
     scores: &[f32],
     iou_threshold: f32,
 ) -> Result<Vec<usize>, TransformError> {
-    non_max_suppression_impl(boxes, scores, iou_threshold, false)
+    non_max_suppression_impl(boxes, scores, iou_threshold, false, false)
 }
 
 /// Applies class-agnostic NMS with inclusive-pixel FP32 box arithmetic.
@@ -1642,7 +1642,20 @@ pub fn non_max_suppression_inclusive(
     scores: &[f32],
     iou_threshold: f32,
 ) -> Result<Vec<usize>, TransformError> {
-    non_max_suppression_impl(boxes, scores, iou_threshold, true)
+    non_max_suppression_impl(boxes, scores, iou_threshold, true, false)
+}
+
+/// Inclusive-pixel suppression using intersection over the smaller box area.
+/// This is the Min policy used by cascaded face detectors, retaining the same
+/// FP32 arithmetic, undefined-overlap handling and stable ordering as inclusive NMS.
+/// # Errors
+/// Rejects invalid storage, nonfinite geometry and thresholds outside [0,1].
+pub fn non_max_suppression_minimum(
+    boxes: &[DetectionBoundingBox],
+    scores: &[f32],
+    threshold: f32,
+) -> Result<Vec<usize>, TransformError> {
+    non_max_suppression_impl(boxes, scores, threshold, true, true)
 }
 
 fn non_max_suppression_impl(
@@ -1650,6 +1663,7 @@ fn non_max_suppression_impl(
     scores: &[f32],
     iou_threshold: f32,
     inclusive_pixels: bool,
+    minimum_area: bool,
 ) -> Result<Vec<usize>, TransformError> {
     validate_len(scores.len(), boxes.len())?;
     validate_iou_threshold(iou_threshold)?;
@@ -1693,7 +1707,12 @@ fn non_max_suppression_impl(
                 let height =
                     (first.y_max.min(second.y_max) - first.y_min.max(second.y_min) + 1.0).max(0.0);
                 let intersection = width * height;
-                intersection / (areas[kept] + areas[candidate] - intersection)
+                intersection
+                    / if minimum_area {
+                        areas[kept].min(areas[candidate])
+                    } else {
+                        areas[kept] + areas[candidate] - intersection
+                    }
             } else {
                 detection_box_iou(boxes[candidate], boxes[kept])?
             };
