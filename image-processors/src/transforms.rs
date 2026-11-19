@@ -105,11 +105,12 @@ mod frame_ops;
 mod raster_drawing;
 mod triangle_mesh;
 pub use face_geometry::{
-    estimate_similarity, estimate_similarity_lmeds, invert_affine, remap_bilinear_f32,
-    remap_bilinear_u8, remap_nearest_u8, warp_affine_f32, warp_affine_f64, warp_affine_rgb,
-    warp_affine_u16, warp_affine_u8, warp_perspective_quad_rgb,
-    warp_perspective_quad_rgb_with_options, FaceGeometryError, PerspectiveBorder,
-    PerspectiveInterpolation, PerspectiveWarpOptions,
+    estimate_affine_2d_ransac, estimate_similarity, estimate_similarity_lmeds, invert_affine,
+    remap_bilinear_f32, remap_bilinear_u8, remap_nearest_u8, warp_affine_f32, warp_affine_f64,
+    warp_affine_rgb, warp_affine_skimage_f64, warp_affine_skimage_inverse_f64,
+    warp_affine_skimage_inverse_u8, warp_affine_skimage_u8, warp_affine_u16, warp_affine_u8,
+    warp_perspective_quad_rgb, warp_perspective_quad_rgb_with_options, FaceGeometryError,
+    PerspectiveBorder, PerspectiveInterpolation, PerspectiveWarpOptions,
 };
 pub use frame_ops::{
     convert_frame_to_pillow_luma, flip_frame_horizontal, resize_f32_area_torch, resize_f32_opencv,
@@ -155,9 +156,9 @@ pub(crate) use frame_ops::{
     resize_frame_to_f32_torchvision,
 };
 pub use spatial_filters::{
-    dilate_f32, dilate_rect_f64, gaussian_blur_f32, gaussian_blur_f64, gaussian_blur_tensor_f32,
-    gaussian_blur_u8, gaussian_filter_reflect_f64, minimum_filter_u8, sobel_xy_f32, sobel_xy_f64,
-    SpatialFilterError,
+    bilateral_filter_rgb_u8, dilate_f32, dilate_rect_f64, gaussian_blur_f32, gaussian_blur_f64,
+    gaussian_blur_tensor_f32, gaussian_blur_u8, gaussian_filter_reflect_f64, minimum_filter_u8,
+    sobel_xy_f32, sobel_xy_f64, SpatialFilterError,
 };
 mod layout_plans;
 use layout_plans::compare_ratios_less;
