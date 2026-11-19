@@ -339,6 +339,61 @@ pub fn resize_f32_bilinear_interleaved(
     target: ImageSize,
     align_corners: bool,
 ) -> Result<Vec<f32>, ResizeError> {
+    resize_f32_bilinear_impl(values, source, channels, target, align_corners, None)
+}
+
+/// Resize FP32 interleaved pixels using explicit Torch interpolation scales.
+///
+/// Output extents are floor(source * scale). Half-pixel sampling retains the
+/// reciprocal of each supplied scale (`recompute_scale_factor=false`), with
+/// border replication and no antialiasing. Returns the output size and pixels.
+///
+/// # Errors
+/// Rejects nonpositive/nonfinite scales, empty or overflowing output dimensions,
+/// invalid channel counts, storage lengths and allocation-size overflow.
+pub fn resize_f32_bilinear_interleaved_with_scale(
+    values: &[f32],
+    source: ImageSize,
+    channels: usize,
+    scale_x: f64,
+    scale_y: f64,
+) -> Result<(ImageSize, Vec<f32>), ResizeError> {
+    ImageSize::new(source.height, source.width)?;
+    for (axis, scale) in [("x", scale_x), ("y", scale_y)] {
+        if !scale.is_finite() || scale <= 0.0 {
+            return Err(ResizeError::InvalidExplicitScale { axis, scale });
+        }
+    }
+    let dimension = |input: usize, scale: f64| -> Result<usize, ResizeError> {
+        let value = (input as f64 * scale).floor();
+        if !value.is_finite() || value >= usize::MAX as f64 {
+            return Err(ResizeError::ImageSizeOverflow);
+        }
+        Ok(value as usize)
+    };
+    let target = ImageSize::new(
+        dimension(source.height, scale_y)?,
+        dimension(source.width, scale_x)?,
+    )?;
+    let pixels = resize_f32_bilinear_impl(
+        values,
+        source,
+        channels,
+        target,
+        false,
+        Some([(1.0 / scale_y) as f32, (1.0 / scale_x) as f32]),
+    )?;
+    Ok((target, pixels))
+}
+
+fn resize_f32_bilinear_impl(
+    values: &[f32],
+    source: ImageSize,
+    channels: usize,
+    target: ImageSize,
+    align_corners: bool,
+    inverse_scales: Option<[f32; 2]>,
+) -> Result<Vec<f32>, ResizeError> {
     ImageSize::new(source.height, source.width)?;
     ImageSize::new(target.height, target.width)?;
     validate_image_data(values.len(), source, channels)?;
@@ -346,7 +401,7 @@ pub fn resize_f32_bilinear_interleaved(
     if source == target {
         return Ok(values.to_vec());
     }
-    let axis = |input: usize, output: usize| {
+    let axis = |input: usize, output: usize, explicit_scale: Option<f32>| {
         let scale = if align_corners {
             if output > 1 {
                 (input - 1) as f32 / (output - 1) as f32
@@ -354,10 +409,13 @@ pub fn resize_f32_bilinear_interleaved(
                 0.0
             }
         } else {
-            input as f32 / output as f32
+            explicit_scale.unwrap_or(input as f32 / output as f32)
         };
         (0..output)
             .map(|index| {
+                if input == output {
+                    return (index, index, 0.0);
+                }
                 let position = if align_corners {
                     index as f32 * scale
                 } else {
@@ -368,8 +426,16 @@ pub fn resize_f32_bilinear_interleaved(
             })
             .collect::<Vec<_>>()
     };
-    let rows = axis(source.height, target.height);
-    let columns = axis(source.width, target.width);
+    let rows = axis(
+        source.height,
+        target.height,
+        inverse_scales.map(|scales| scales[0]),
+    );
+    let columns = axis(
+        source.width,
+        target.width,
+        inverse_scales.map(|scales| scales[1]),
+    );
     let mut output = vec![0.0; output_len];
     output
         .par_chunks_exact_mut(target.width * channels)
