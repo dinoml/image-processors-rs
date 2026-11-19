@@ -477,7 +477,7 @@ fn original_torch_explicit_scale_and_center_crop() {
         }
         let mut crop = Vec::new();
         for row in 2..6 {
-            let start = (row * 5 + 0) * 3;
+            let start = (row * 5) * 3;
             crop.extend_from_slice(&actual[start..start + 4 * 3]);
         }
         for (a, e) in crop.iter().zip(crop_expected) {
@@ -853,7 +853,7 @@ fn original_torch_explicit_scale_and_center_crop() {
         }
         let mut crop = Vec::new();
         for row in 0..3 {
-            let start = (row * 6 + 0) * 3;
+            let start = (row * 6) * 3;
             crop.extend_from_slice(&actual[start..start + 5 * 3]);
         }
         for (a, e) in crop.iter().zip(crop_expected) {
@@ -1389,7 +1389,7 @@ fn original_torch_explicit_scale_and_center_crop() {
         }
         let mut crop = Vec::new();
         for row in 0..2 {
-            let start = (row * 3 + 0) * 3;
+            let start = (row * 3) * 3;
             crop.extend_from_slice(&actual[start..start + 2 * 3]);
         }
         for (a, e) in crop.iter().zip(crop_expected) {
