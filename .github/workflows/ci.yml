@@ -22,6 +22,14 @@ jobs:
       - run: cargo test -p image-processors --no-default-features
       - run: cargo clippy --workspace --all-targets --features url -- -D warnings
       - run: cargo test --workspace --features url
+      - name: Fetch pinned font for CPU reference checks
+        run: |
+          curl --fail --location --max-filesize 2097152 --output "$RUNNER_TEMP/Arial.ttf" https://huggingface.co/datasets/JingyeChen22/TextDiffuser/resolve/b4cdbd31d13556c06f8a3480a36d058eb83b4bea/Arial.ttf
+          echo "c9b76220a5be42ead4733611e417cd65c5fd8aeaa33eb56576ac378a37d130a1  $RUNNER_TEMP/Arial.ttf" | sha256sum --check
+          echo "DINOML_ARIAL_REFERENCE=$RUNNER_TEMP/Arial.ttf" >> "$GITHUB_ENV"
+          echo "DINOML_REQUIRE_FONT_REFERENCE=1" >> "$GITHUB_ENV"
+      - run: cargo clippy -p image-processors --all-targets --features url,freetype -- -D warnings
+      - run: cargo test -p image-processors --features url,freetype
 
   video-windows:
     if: ${{ false }}

@@ -29,11 +29,13 @@ harness = false
 [features]
 default = ["parallel"]
 parallel = ["dep:rayon"]
+freetype = ["dep:freetype-rs"]
 turbojpeg = ["dep:turbojpeg", "turbojpeg/cmake", "turbojpeg/pkg-config"]
 url = ["dep:reqwest"]
 video = ["dep:video-rs"]
 
 [dependencies]
+freetype-rs = { version = "=0.37.0", features = ["bundled"], optional = true }
 half = "2"
 image = { version = "0.25", default-features = false, features = ["bmp", "gif", "ico", "jpeg", "png", "pnm", "tiff", "webp"] }
 image-resize-kernels = { path = "../image-resize-kernels" }
