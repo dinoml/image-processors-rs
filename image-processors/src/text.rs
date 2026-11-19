@@ -1,5 +1,10 @@
-//! Dependency-free TrueType outline rasterization for image text overlays.
+//! TrueType outline overlays and optional hinted Pillow BASIC compatibility.
 use std::{collections::BTreeMap, io};
+
+#[cfg(feature = "freetype")]
+mod pillow52;
+#[cfg(feature = "freetype")]
+pub use pillow52::Pillow52TextMetrics;
 type Result<T> = io::Result<T>;
 fn invalid() -> io::Error {
     io::Error::new(
@@ -41,8 +46,9 @@ impl Point {
         }
     }
 }
-/// A parsed TrueType font. Rendering uses outlines, without native font libraries.
-/// TrueType bytecode hinting and CFF outlines are not supported.
+/// A parsed TrueType font. Default overlays use dependency-free outlines.
+/// Hinted Pillow BASIC compatibility is available with the `freetype` feature.
+/// The default outline renderer does not support bytecode hinting or CFF outlines.
 pub struct TrueTypeFont {
     data: Vec<u8>,
     tables: BTreeMap<[u8; 4], (usize, usize)>,
@@ -52,6 +58,29 @@ pub struct TrueTypeFont {
     glyphs: usize,
     long_loca: bool,
 }
+
+/// Position and geometry for an outline text overlay, in image pixels.
+#[derive(Clone, Copy, Debug)]
+pub struct TextStyle {
+    /// Top-left pen origin, before the font ascender is applied.
+    pub origin: [f32; 2],
+    /// Requested pixels per em.
+    pub pixel_size: u32,
+    /// Radius of the rounded outline, in pixels.
+    pub stroke_width: u32,
+}
+
+/// Font geometry using the same outlines, advances and kerning as rendering.
+#[derive(Clone, Copy, Debug)]
+pub struct TextMetrics {
+    /// Horizontal pen advance, before pixel rounding.
+    pub advance: f32,
+    /// Outward-rounded ink bounds [left, top, right, bottom] at origin zero.
+    pub bounds: [i32; 4],
+    /// Top-left outline extent including the ascender gap and advance.
+    pub size: [u32; 2],
+}
+
 impl TrueTypeFont {
     /// Parse an sfnt TrueType font containing Unicode mappings and quadratic outlines.
     /// # Errors
@@ -405,20 +434,71 @@ impl TrueTypeFont {
         pixel_size: u32,
         stroke_width: u32,
     ) -> Result<()> {
-        if width == 0
-            || height == 0
-            || width.checked_mul(height).and_then(|n| n.checked_mul(3)) != Some(pixels.len())
-            || pixel_size == 0
-            || stroke_width > pixel_size
-        {
+        self.draw_rgb_at(
+            pixels,
+            width,
+            height,
+            text,
+            TextStyle {
+                origin: [0.0, 0.0],
+                pixel_size,
+                stroke_width,
+            },
+        )
+    }
+
+    /// Measure text without allocating an image or estimating widths from pixels.
+    /// Whitespace advances and pair kerning are retained in the result.
+    /// # Errors
+    /// Reports zero size, malformed font geometry or missing characters.
+    pub fn measure(&self, text: &str, pixel_size: u32) -> Result<TextMetrics> {
+        let (edges, advance) = self.layout(text, pixel_size, [0.0, 0.0])?;
+        let mut bounds = [
+            f32::INFINITY,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NEG_INFINITY,
+        ];
+        for (a, b) in edges {
+            bounds[0] = bounds[0].min(a.x).min(b.x);
+            bounds[1] = bounds[1].min(a.y).min(b.y);
+            bounds[2] = bounds[2].max(a.x).max(b.x);
+            bounds[3] = bounds[3].max(a.y).max(b.y);
+        }
+        if !bounds[0].is_finite() {
+            bounds = [0.0; 4];
+        }
+        let bounds = [
+            bounds[0].floor() as i32,
+            bounds[1].floor() as i32,
+            bounds[2].ceil() as i32,
+            bounds[3].ceil() as i32,
+        ];
+        Ok(TextMetrics {
+            advance,
+            bounds,
+            size: [
+                (advance.ceil().max(bounds[2] as f32) - bounds[0].min(0) as f32).max(0.0) as u32,
+                bounds[3].max(0) as u32,
+            ],
+        })
+    }
+
+    fn layout(
+        &self,
+        text: &str,
+        pixel_size: u32,
+        origin: [f32; 2],
+    ) -> Result<(Vec<(Point, Point)>, f32)> {
+        if pixel_size == 0 || origin.iter().any(|value| !value.is_finite()) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "invalid text overlay geometry",
+                "invalid text layout geometry",
             ));
         }
         let scale = pixel_size as f32 / self.units;
-        let baseline = (f32::from(self.ascender) * scale).ceil();
-        let mut pen = 0.0;
+        let baseline = origin[1] + (f32::from(self.ascender) * scale).ceil();
+        let mut pen = origin[0];
         let mut previous = None;
         let metrics = self.table(b"hmtx")?;
         let mut edges = Vec::new();
@@ -441,6 +521,39 @@ impl TrueTypeFont {
             pen += f32::from(u16_at(metrics, id.min(self.metrics - 1) * 4)?) * scale;
             previous = Some(id);
         }
+        Ok((edges, pen - origin[0]))
+    }
+
+    /// Draw positioned black text with the existing rounded white outline.
+    /// Negative origins are clipped to the image. Existing draw_rgb callers keep
+    /// their original colors, stroke, positioning and integer blend rounding.
+    /// # Errors
+    /// Reports invalid image/style geometry, malformed fonts or missing characters.
+    pub fn draw_rgb_at(
+        &self,
+        pixels: &mut [u8],
+        width: usize,
+        height: usize,
+        text: &str,
+        style: TextStyle,
+    ) -> Result<()> {
+        let TextStyle {
+            origin,
+            pixel_size,
+            stroke_width,
+        } = style;
+        if width == 0
+            || height == 0
+            || width.checked_mul(height).and_then(|n| n.checked_mul(3)) != Some(pixels.len())
+            || pixel_size == 0
+            || stroke_width > pixel_size
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid text overlay geometry",
+            ));
+        }
+        let (edges, _) = self.layout(text, pixel_size, origin)?;
         if edges.is_empty() {
             return Ok(());
         }

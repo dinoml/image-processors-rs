@@ -1,0 +1,209 @@
+{
+  "font_sha256": "c9b76220a5be42ead4733611e417cd65c5fd8aeaa33eb56576ac378a37d130a1",
+  "width": 128,
+  "height": 64,
+  "metric_reference": "Pillow5.2 selected original BASIC/getsize functions ported independently using bundled FreeType2.13.2; not a historical Pillow5.2 binary/runtime claim.",
+  "raster_reference": "Pillow10.4 BASIC CPU smoke with same FreeType2.13.2. Exact pixels for these8cases only; no RAQM or historical complete raster-parity claim.",
+  "cases": [
+    {
+      "text": "Hello",
+      "pixel_size": 16,
+      "size": [
+        38,
+        15
+      ],
+      "offset": [
+        0,
+        3
+      ],
+      "mask_size": [
+        38,
+        12
+      ],
+      "origin": [
+        0,
+        0
+      ],
+      "background": [
+        255,
+        255,
+        255
+      ]
+    },
+    {
+      "text": "AVATAR",
+      "pixel_size": 32,
+      "size": [
+        128,
+        29
+      ],
+      "offset": [
+        -1,
+        6
+      ],
+      "mask_size": [
+        129,
+        23
+      ],
+      "origin": [
+        7,
+        3
+      ],
+      "background": [
+        255,
+        255,
+        255
+      ]
+    },
+    {
+      "text": "Agjp",
+      "pixel_size": 24,
+      "size": [
+        48,
+        27
+      ],
+      "offset": [
+        -1,
+        5
+      ],
+      "mask_size": [
+        49,
+        22
+      ],
+      "origin": [
+        -3,
+        -2
+      ],
+      "background": [
+        180,
+        180,
+        180
+      ]
+    },
+    {
+      "text": "Text Diffuser",
+      "pixel_size": 32,
+      "size": [
+        184,
+        29
+      ],
+      "offset": [
+        0,
+        6
+      ],
+      "mask_size": [
+        184,
+        23
+      ],
+      "origin": [
+        0,
+        0
+      ],
+      "background": [
+        255,
+        255,
+        255
+      ]
+    },
+    {
+      "text": " ",
+      "pixel_size": 16,
+      "size": [
+        4,
+        15
+      ],
+      "offset": [
+        0,
+        15
+      ],
+      "mask_size": [
+        4,
+        0
+      ],
+      "origin": [
+        0,
+        0
+      ],
+      "background": [
+        255,
+        255,
+        255
+      ]
+    },
+    {
+      "text": "",
+      "pixel_size": 16,
+      "size": [
+        0,
+        0
+      ],
+      "offset": [
+        0,
+        0
+      ],
+      "mask_size": [
+        0,
+        0
+      ],
+      "origin": [
+        0,
+        0
+      ],
+      "background": [
+        255,
+        255,
+        255
+      ]
+    },
+    {
+      "text": "A",
+      "pixel_size": 24,
+      "size": [
+        18,
+        22
+      ],
+      "offset": [
+        -1,
+        5
+      ],
+      "mask_size": [
+        19,
+        17
+      ],
+      "origin": [
+        -1,
+        0
+      ],
+      "background": [
+        20,
+        120,
+        220
+      ]
+    },
+    {
+      "text": "Turkish",
+      "pixel_size": 24,
+      "size": [
+        78,
+        22
+      ],
+      "offset": [
+        0,
+        5
+      ],
+      "mask_size": [
+        78,
+        17
+      ],
+      "origin": [
+        120,
+        40
+      ],
+      "background": [
+        255,
+        255,
+        255
+      ]
+    }
+  ]
+}
