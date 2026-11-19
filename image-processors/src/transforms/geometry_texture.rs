@@ -6,6 +6,7 @@ use std::io::Cursor;
 
 use thiserror::Error;
 
+pub mod multiview;
 mod processing;
 pub use processing::{
     cleanup_mesh, remesh_narrow_band_dc, simplify_mesh, unify_face_orientations, ChartOptions,
@@ -15,6 +16,9 @@ pub use processing::{
 /// Geometry and texture contract failures.
 #[derive(Debug, Error)]
 pub enum GeometryError {
+    /// A caller-owned learned completion operation failed.
+    #[error("texture completion failed: {0}")]
+    Completion(String),
     /// Invalid dimensions, indices or attribute buffers.
     #[error("invalid geometry: {0}")]
     Invalid(&'static str),
@@ -758,11 +762,21 @@ fn normalized(a: [f32; 3]) -> [f32; 3] {
     }
 }
 fn barycentric(p: [f32; 2], t: [[f32; 2]; 3]) -> Option<[f32; 3]> {
+    barycentric_with_minimum_area(p, t, 0.0)
+}
+
+// Keep one coordinate calculation while callers retain their degeneracy and
+// coverage policies. Baking accepts every nonzero area and raw outside weights.
+fn barycentric_with_minimum_area(
+    p: [f32; 2],
+    t: [[f32; 2]; 3],
+    minimum_area: f32,
+) -> Option<[f32; 3]> {
     let edge = |a: [f32; 2], b: [f32; 2], c: [f32; 2]| {
         (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
     };
     let area = edge(t[0], t[1], t[2]);
-    if area == 0.0 {
+    if area.abs() <= minimum_area {
         return None;
     }
     let a = edge(t[1], t[2], p) / area;
