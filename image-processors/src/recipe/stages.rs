@@ -499,6 +499,25 @@ impl RecipeResizeStage {
         }
     }
 
+    /// Creates a capped resize that rounds the short edge to even, then truncates
+    /// the long edge from that rounded short edge before a single resample.
+    pub fn shortest_edge_capped_ties_even(
+        shortest_edge: usize,
+        longest_edge: Option<usize>,
+        filter: ResizeFilter,
+        parity: ResizeParity,
+    ) -> Self {
+        Self {
+            target: RecipeResizeTarget::ShortestEdgeCappedTiesEven {
+                shortest_edge,
+                longest_edge,
+            },
+            mode: ResizeMode::Default,
+            filter,
+            parity,
+        }
+    }
+
     /// Creates a single resize after rounding both resolved axes down to a divisor.
     /// Uses the unrounded capped aspect scale before applying the divisor.
     pub fn shortest_edge_round_down(
@@ -560,6 +579,15 @@ pub enum RecipeResizeTarget {
         #[serde(default)]
         longest_edge: Option<usize>,
     },
+    /// Cap and round the short edge to nearest-even, then truncate the long edge
+    /// from the rounded short edge before one resample.
+    ShortestEdgeCappedTiesEven {
+        /// Target size for the shorter image edge.
+        shortest_edge: usize,
+        /// Optional cap applied before short-edge rounding.
+        #[serde(default)]
+        longest_edge: Option<usize>,
+    },
     /// Round scaled dimensions to nearest-even, then align upward before one resample.
     ShortestEdgeRoundTiesEven {
         /// Target size for the shorter image edge.
@@ -592,6 +620,7 @@ impl RecipeResizeTarget {
             Self::Dynamic => "resize_dynamic",
             Self::SmartResize { .. } => "resize_smart",
             Self::ShortestEdge { .. } => "resize_shortest_edge",
+            Self::ShortestEdgeCappedTiesEven { .. } => "resize_shortest_edge_capped_ties_even",
             Self::ShortestEdgeRoundTiesEven { .. } => "resize_shortest_edge_round_ties_even",
             Self::ShortestEdgeRoundDown { .. } => "resize_shortest_edge_round_down",
             Self::LongestEdge { .. } => "resize_longest_edge",

@@ -82,23 +82,24 @@ pub use detection::non_max_suppression_minimum;
 // The same output representation serves softmax- and sigmoid-ranked queries.
 pub(crate) use detection::post_process_oneformer_panoptic_segmentation;
 pub use detection::{
-    detection_box_iou, non_max_suppression, non_max_suppression_by_class,
-    non_max_suppression_inclusive, normalize_detection_annotation,
+    detection_box_iou, mmcv_non_max_suppression_by_class, non_max_suppression,
+    non_max_suppression_by_class, non_max_suppression_inclusive, normalize_detection_annotation,
     pad_normalized_detection_annotation, post_process_instance_segmentation,
     post_process_object_detection, post_process_object_detection_with_options,
     post_process_oneformer_instance_segmentation, post_process_panoptic_segmentation,
     post_process_semantic_segmentation, post_process_sigmoid_best_object_detection,
     post_process_sigmoid_top_k_instance_segmentation, post_process_sigmoid_top_k_object_detection,
     post_process_sigmoid_top_k_object_detection_with_options, prepare_coco_detection_annotation,
-    resize_detection_annotation, scale_detection_box, weighted_keypoint_non_max_suppression,
+    resize_detection_annotation, scale_detection_box, soft_non_max_suppression,
+    soft_non_max_suppression_by_class, weighted_keypoint_non_max_suppression,
     weighted_keypoint_non_max_suppression_with_score, CocoObjectAnnotation, DetectionAnnotation,
     DetectionBoundingBox, DetectionBoxScaling, DetectionCenterBox, KeypointDetection,
     NormalizedDetectionAnnotation, ObjectDetectionPrediction, OneFormerInstanceOptions,
     OneFormerTask, SegmentationPostProcessOptions, SegmentationPostProcessPrediction,
     SegmentationSegmentInfo, SemanticSegmentationPrediction, SigmoidInstanceSegmentationFormat,
     SigmoidInstanceSegmentationMasks, SigmoidInstanceSegmentationOptions,
-    SigmoidInstanceSegmentationPrediction, SigmoidTopKDetectionOptions, SoftmaxDetectionOptions,
-    WeightedNmsScore,
+    SigmoidInstanceSegmentationPrediction, SigmoidTopKDetectionOptions, SoftNmsMethod,
+    SoftNmsOptions, SoftmaxDetectionOptions, WeightedNmsScore,
 };
 pub use detection::{
     SigmoidInstanceSegmentationFormat as InstanceSegmentationFormat,
@@ -140,7 +141,8 @@ use frame_ops::convert_to_rgb;
 pub use frame_ops::{
     bottom_right_resize_pad_plan, center_crop_box, center_crop_frame,
     center_crop_frame_with_padding, composite_alpha_to_rgb, composite_alpha_to_rgb_f32,
-    composite_mask_f32_frame, composite_mask_f32_frame_with_precision, composite_mask_frame,
+    composite_alpha_to_rgb_with_rounding, composite_mask_f32_frame,
+    composite_mask_f32_frame_with_precision, composite_mask_frame,
     concatenate_frames_horizontally_rgb, convert_frame_pixel_format, crop_frame, crop_region,
     halve_frame_box, multiple_of_resize_plan, overlay_frame, pad_frame,
     pad_frame_symmetric_to_next_multiple, pad_frame_to_multiple_with_canvas_fill,
@@ -762,12 +764,15 @@ pub enum CanvasFill {
     ImageEdges,
     /// Fill empty regions by reflecting image pixels at the canvas boundary.
     ReflectImage,
+    /// Reflect pixels including each edge sample, as NumPy's symmetric padding.
+    SymmetricImage,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum BorderFillMode {
     Replicate,
     Reflect,
+    Symmetric,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1182,6 +1187,40 @@ pub fn shortest_edge_resize_size(
     };
 
     ImageSize::new(height.max(1), width.max(1))
+}
+
+/// Computes capped shortest-edge geometry with ties-to-even short-edge rounding.
+///
+/// The cap comparison and rounding use Python-style FP64 arithmetic. The long
+/// edge is then truncated from the rounded short edge, as in original DINO.
+/// Existing half-up and unrounded-cap sizing policies remain independent.
+///
+/// # Errors
+/// Returns an error for zero dimensions or limits, a cap that rounds the short
+/// edge to zero, or arithmetic overflow while resolving the final dimensions.
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Match the original FP64 cap comparison and Python ties-to-even rounding"
+)]
+pub fn shortest_edge_resize_size_capped_ties_even(
+    original_size: ImageSize,
+    shortest_edge: usize,
+    longest_edge: Option<usize>,
+) -> Result<ImageSize, TransformError> {
+    validate_size(original_size)?;
+    if shortest_edge == 0 || longest_edge == Some(0) {
+        return Err(TransformError::InvalidScaleFactor(0));
+    }
+    let shortest = original_size.height.min(original_size.width);
+    let longest = original_size.height.max(original_size.width);
+    let capped_shortest = longest_edge
+        .filter(|cap| longest as f64 / shortest as f64 * shortest_edge as f64 > *cap as f64)
+        .map_or(shortest_edge, |cap| {
+            (cap as f64 * shortest as f64 / longest as f64).round_ties_even() as usize
+        });
+    shortest_edge_resize_size(original_size, capped_shortest, None)
 }
 
 /// Resolves a capped shortest-edge resize, rounding half up before divisor flooring.

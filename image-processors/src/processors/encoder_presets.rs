@@ -1509,6 +1509,14 @@ fn resolve_encoder_resize(
             shortest_edge,
             longest_edge,
         } => transformers_shortest_edge_resize_size(source, shortest_edge, longest_edge)?,
+        RecipeResizeTarget::ShortestEdgeCappedTiesEven {
+            shortest_edge,
+            longest_edge,
+        } => crate::transforms::shortest_edge_resize_size_capped_ties_even(
+            source,
+            shortest_edge,
+            longest_edge,
+        )?,
         RecipeResizeTarget::ShortestEdgeRoundTiesEven {
             shortest_edge,
             multiple,
