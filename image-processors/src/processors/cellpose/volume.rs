@@ -339,7 +339,7 @@ pub fn stitch_masks(slices: &mut [Vec<u32>], threshold: f64) -> Result<()> {
                     .ok_or_else(|| invalid("stitch label overflow"))?;
                 for label in &mut slices[z] {
                     if *label > 0 {
-                        *label = base + *label;
+                        *label += base;
                     }
                 }
             }
