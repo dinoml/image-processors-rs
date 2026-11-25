@@ -9,6 +9,7 @@ use std::io::Read;
 #[cfg(all(feature = "video", feature = "url"))]
 use std::io::Write;
 use std::io::{BufRead, BufReader, Cursor, Seek};
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -621,6 +622,33 @@ impl VideoClip {
         self.fps
     }
 
+    /// Selects a timestamp grid using this decoded clip's nominal source FPS.
+    ///
+    /// The optional source-index range is end-exclusive. Sampling duration is
+    /// the range length divided by source FPS, including the final frame period;
+    /// it is not the final presentation timestamp. Returned indices refer to
+    /// this clip, and the second result is selected count / sampling duration.
+    /// No frame buffers are cloned and no temporal padding is performed.
+    ///
+    /// # Errors
+    /// Rejects missing/invalid source FPS, invalid controls or an invalid range.
+    pub fn timestamp_grid_indices(
+        &self,
+        target_fps: f64,
+        max_frames: usize,
+        frame_range: Option<Range<usize>>,
+        uniform_over_clip: bool,
+    ) -> Result<(Vec<usize>, f64), MediaError> {
+        FrameSampling::timestamp_grid_indices(
+            self.frames.len(),
+            self.fps.ok_or(MediaError::InvalidTimestampFrameRate)?,
+            target_fps,
+            max_frames,
+            frame_range,
+            uniform_over_clip,
+        )
+    }
+
     /// Returns duration in milliseconds when known.
     pub fn duration_ms(&self) -> Option<f64> {
         self.duration_ms
@@ -671,6 +699,130 @@ impl Default for FrameSampling {
 }
 
 impl FrameSampling {
+    /// Selects a strict timestamp grid, deduplicating before endpoint-inclusive thinning.
+    ///
+    /// Duration is `(end-start)/source_fps`. The grid starts at zero and excludes
+    /// that duration; source indices use floor(time * source_fps + 1e-9), offset
+    /// by the range start and clamped to its final frame. Consecutive duplicates
+    /// are removed before limiting the count. Above the cap, a FP32 linspace
+    /// over the complete deduplicated grid is rounded ties-to-even, retaining
+    /// both endpoints when the cap exceeds one. A one-frame cap selects first.
+    ///
+    /// `uniform_over_clip` instead uses an endpoint-inclusive FP64 linspace
+    /// directly over source indices, also with ties-to-even rounding. Existing
+    /// stride and floor-rounded uniform APIs retain their own policies.
+    /// The second result is the selected count divided by sampling duration.
+    /// This method never drops frames to obtain temporal-tube divisibility.
+    ///
+    /// # Errors
+    /// Rejects empty clips, invalid rates/ranges/caps or unrepresentable grids.
+    pub fn timestamp_grid_indices(
+        len: usize,
+        source_fps: f64,
+        target_fps: f64,
+        max_frames: usize,
+        frame_range: Option<Range<usize>>,
+        uniform_over_clip: bool,
+    ) -> Result<(Vec<usize>, f64), MediaError> {
+        if len == 0 {
+            return Err(MediaError::EmptyFrameSequence);
+        }
+        if !source_fps.is_finite()
+            || source_fps <= 0.0
+            || !target_fps.is_finite()
+            || target_fps <= 0.0
+        {
+            return Err(MediaError::InvalidTimestampFrameRate);
+        }
+        if max_frames == 0 {
+            return Err(MediaError::InvalidFrameLimit);
+        }
+        let range = frame_range.unwrap_or(0..len);
+        if range.start >= range.end || range.end > len {
+            return Err(MediaError::InvalidFrameRange {
+                start: range.start,
+                end: range.end,
+                len,
+            });
+        }
+        let available = range.end - range.start;
+        let duration = available as f64 / source_fps;
+        if !duration.is_finite() || duration <= 0.0 {
+            return Err(MediaError::InvalidTimestampFrameRate);
+        }
+        let mut indices = Vec::new();
+        if uniform_over_clip {
+            let count = available.min(max_frames);
+            indices
+                .try_reserve(count)
+                .map_err(|_| MediaError::InvalidFrameLimit)?;
+            let first = range.start as f64;
+            let last = (range.end - 1) as f64;
+            let step = if count > 1 {
+                (last - first) / (count - 1) as f64
+            } else {
+                0.0
+            };
+            for index in 0..count {
+                let position = if count == 1 {
+                    first
+                } else if index < count / 2 {
+                    first + step * index as f64
+                } else {
+                    last - step * (count - 1 - index) as f64
+                };
+                let source =
+                    (position.round_ties_even() as usize).clamp(range.start, range.end - 1);
+                if indices.last().copied() != Some(source) {
+                    indices.push(source);
+                }
+            }
+        } else {
+            let period = 1.0 / target_fps;
+            let requested = (duration / period).ceil().max(1.0);
+            if !period.is_finite() || !requested.is_finite() || requested >= usize::MAX as f64 {
+                return Err(MediaError::InvalidFrameLimit);
+            }
+            let count = requested as usize;
+            indices
+                .try_reserve(count.min(available))
+                .map_err(|_| MediaError::InvalidFrameLimit)?;
+            for index in 0..count {
+                let time = index as f64 * period;
+                let relative = ((time * source_fps + 1e-9).floor() as usize).min(available - 1);
+                let source = range.start + relative;
+                if indices.last().copied() != Some(source) {
+                    indices.push(source);
+                }
+            }
+        }
+        if indices.len() > max_frames {
+            let mut thinned = Vec::new();
+            thinned
+                .try_reserve(max_frames)
+                .map_err(|_| MediaError::InvalidFrameLimit)?;
+            let last = (indices.len() - 1) as f32;
+            let step = if max_frames > 1 {
+                last / (max_frames - 1) as f32
+            } else {
+                0.0
+            };
+            for index in 0..max_frames {
+                let position = if max_frames == 1 {
+                    0.0
+                } else if index < max_frames / 2 {
+                    step * index as f32
+                } else {
+                    last - step * (max_frames - 1 - index) as f32
+                };
+                thinned.push(indices[(position.round_ties_even() as usize).min(indices.len() - 1)]);
+            }
+            indices = thinned;
+        }
+        let conditioning_fps = indices.len() as f64 / duration;
+        Ok((indices, conditioning_fps))
+    }
+
     /// Select an endpoint-inclusive clip using floor-rounded linspace indices.
     /// The span is `num_frames * frame_sampling_rate`, starting at frame zero.
     /// A one-frame clip selects index zero, matching NumPy linspace.
@@ -1145,6 +1297,19 @@ pub enum MediaError {
     /// Uniform FPS sampling lacked a finite positive source/target rate.
     #[error("uniform FPS sampling requires finite positive source and target rates")]
     InvalidUniformFrameRate,
+    /// Timestamp-grid sampling lacked finite positive source/target rates.
+    #[error("timestamp-grid sampling requires finite positive source and target rates")]
+    InvalidTimestampFrameRate,
+    /// An end-exclusive source-frame range was empty or out of bounds.
+    #[error("invalid source-frame range [{start}, {end}) for {len} frames")]
+    InvalidFrameRange {
+        /// First source frame to consider.
+        start: usize,
+        /// Source frame at the exclusive upper bound.
+        end: usize,
+        /// Total source frame count.
+        len: usize,
+    },
     /// Frame sampling started past the available frames.
     #[error("frame sampling start index {start} is out of range for {len} frames")]
     FrameStartOutOfRange {
