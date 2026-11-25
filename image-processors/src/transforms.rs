@@ -182,12 +182,13 @@ mod patch_grid;
 pub use masks::{
     binarize_mask, binarize_mask_to_unit_f32, binary_mask_to_box, binary_mask_to_rle,
     binary_mask_to_start_length_rle, binary_rle_to_coco_counts, binary_rle_to_mask,
-    box_near_crop_edge, filter_generated_masks, generate_layered_crop_boxes, mask_stability_score,
-    normalized_point_grid, pad_crop_mask, post_process_binary_mask, post_process_generated_masks,
+    box_near_crop_edge, filter_generated_masks, generate_layered_crop_boxes,
+    generate_layered_crop_boxes_with_policy, mask_stability_score, normalized_point_grid,
+    pad_crop_mask, post_process_binary_mask, post_process_generated_masks,
     remove_small_mask_regions, resize_padded_mask_logits, resize_padded_mask_logits_with_dtype,
     scale_image_point, segment_map_to_start_length_rle, BinaryRleMask, BinaryStartLengthRleMask,
-    CropGenerationOptions, FilteredMask, GeneratedMaskPrediction, ImagePoint, LayeredCropBox,
-    MaskFilterOptions, MaskRegionMode,
+    CropGenerationOptions, CropGenerationPolicy, FilteredMask, GeneratedMaskPrediction, ImagePoint,
+    LayeredCropBox, MaskFilterOptions, MaskRegionMode,
 };
 pub use patch_grid::{
     aspect_ratio_tile_frames, flatten_hwc_patches, patch_grid_batch_plan, patch_grid_image_patches,

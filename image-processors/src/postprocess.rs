@@ -25,21 +25,22 @@ use crate::tensor::{Layout, Tensor, TensorData, TensorError, TensorLeadingAxis};
 pub use crate::transforms::{
     binarize_mask, binary_mask_to_box, binary_mask_to_rle, binary_rle_to_coco_counts,
     binary_rle_to_mask, box_near_crop_edge, detection_box_iou, filter_generated_masks,
-    generate_layered_crop_boxes, logc3_to_linear, mask_stability_score, non_max_suppression,
-    non_max_suppression_inclusive, normalized_point_grid, pad_crop_mask, post_process_binary_mask,
-    post_process_generated_masks, post_process_instance_segmentation,
-    post_process_object_detection, post_process_object_detection_with_options,
-    post_process_oneformer_instance_segmentation, post_process_panoptic_segmentation,
-    post_process_semantic_segmentation, post_process_sigmoid_best_object_detection,
-    post_process_sigmoid_top_k_object_detection, remove_small_mask_regions,
-    resize_padded_mask_logits, resize_padded_mask_logits_with_dtype, scale_detection_box,
-    scale_image_point, weighted_keypoint_non_max_suppression, BinaryRleMask, CropGenerationOptions,
-    DetectionBoundingBox, DetectionCenterBox, FilteredMask, GeneratedMaskPrediction, ImagePoint,
-    ImageSize, InstanceSegmentationFormat, InstanceSegmentationMasks,
-    InstanceSegmentationPrediction, KeypointDetection, LayeredCropBox, MaskFilterOptions,
-    MaskRegionMode, ObjectDetectionPrediction, OneFormerInstanceOptions, OneFormerTask,
-    SegmentationPostProcessOptions, SegmentationPostProcessPrediction, SegmentationSegmentInfo,
-    SemanticSegmentationPrediction, SoftmaxDetectionOptions, TransformError,
+    generate_layered_crop_boxes, generate_layered_crop_boxes_with_policy, logc3_to_linear,
+    mask_stability_score, non_max_suppression, non_max_suppression_inclusive,
+    normalized_point_grid, pad_crop_mask, post_process_binary_mask, post_process_generated_masks,
+    post_process_instance_segmentation, post_process_object_detection,
+    post_process_object_detection_with_options, post_process_oneformer_instance_segmentation,
+    post_process_panoptic_segmentation, post_process_semantic_segmentation,
+    post_process_sigmoid_best_object_detection, post_process_sigmoid_top_k_object_detection,
+    remove_small_mask_regions, resize_padded_mask_logits, resize_padded_mask_logits_with_dtype,
+    scale_detection_box, scale_image_point, weighted_keypoint_non_max_suppression, BinaryRleMask,
+    CropGenerationOptions, CropGenerationPolicy, DetectionBoundingBox, DetectionCenterBox,
+    FilteredMask, GeneratedMaskPrediction, ImagePoint, ImageSize, InstanceSegmentationFormat,
+    InstanceSegmentationMasks, InstanceSegmentationPrediction, KeypointDetection, LayeredCropBox,
+    MaskFilterOptions, MaskRegionMode, ObjectDetectionPrediction, OneFormerInstanceOptions,
+    OneFormerTask, SegmentationPostProcessOptions, SegmentationPostProcessPrediction,
+    SegmentationSegmentInfo, SemanticSegmentationPrediction, SoftmaxDetectionOptions,
+    TransformError,
 };
 
 mod multiclass;
@@ -1663,9 +1664,7 @@ fn query_mask_logits_shape(
     tensor: &Tensor,
 ) -> Result<(usize, usize, ImageSize), RecipePostprocessError> {
     match tensor.shape() {
-        [num_queries, height, width] => {
-            Ok((1, *num_queries, ImageSize::new(*height, *width)?))
-        }
+        [num_queries, height, width] => Ok((1, *num_queries, ImageSize::new(*height, *width)?)),
         [batch, num_queries, height, width] => {
             Ok((*batch, *num_queries, ImageSize::new(*height, *width)?))
         }
@@ -2154,16 +2153,12 @@ fn binary_mask_logits_shape(
     tensor: &Tensor,
 ) -> Result<(usize, usize, ImageSize), RecipePostprocessError> {
     match tensor.shape() {
-        [masks_per_image, height, width] => Ok((
-            1,
-            *masks_per_image,
-            ImageSize::new(*height, *width)?,
-        )),
-        [batch, masks_per_image, height, width] => Ok((
-            *batch,
-            *masks_per_image,
-            ImageSize::new(*height, *width)?,
-        )),
+        [masks_per_image, height, width] => {
+            Ok((1, *masks_per_image, ImageSize::new(*height, *width)?))
+        }
+        [batch, masks_per_image, height, width] => {
+            Ok((*batch, *masks_per_image, ImageSize::new(*height, *width)?))
+        }
         actual => Err(RecipePostprocessError::InvalidTensorShape {
             output: output.to_string(),
             expected: "[masks_per_image, mask_height, mask_width] or [batch, masks_per_image, mask_height, mask_width]",
