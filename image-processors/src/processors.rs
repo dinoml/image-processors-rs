@@ -37,6 +37,8 @@ use crate::tensor::{
     VideoLayout,
 };
 mod dpt;
+/// Cellpose normalization, tiled prediction and flow-to-instance reconstruction.
+pub mod cellpose;
 mod encoder_presets;
 pub use dpt::{
     DptDepthPrediction, DptImageProcessor, DptImageProcessorConfig, DptResizeBackend,
