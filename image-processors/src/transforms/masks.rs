@@ -60,6 +60,23 @@ pub struct CropGenerationOptions {
     pub overlap_ratio: f32,
 }
 
+/// Coordinate and overlap policy for the existing layered crop generator.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum CropGenerationPolicy {
+    /// Original SAM/Transformers short-side overlap, integer crop sizes and order.
+    ShortSide(CropGenerationOptions),
+    /// Expand an evenly divided grid relative to each image axis, rounding each
+    /// boundary to the nearest even integer. Crops are emitted in row-major order.
+    AxisRelativeTiesToEven {
+        /// Number of additional crop layers beyond the full-image crop.
+        crop_layers: usize,
+        /// First-layer overlap as a fraction of the corresponding image axis.
+        /// Each subsequent layer halves the overlap. FP64 retains the supplied
+        /// ratio through grid construction and boundary rounding.
+        overlap_ratio: f64,
+    },
+}
+
 /// Options for filtering generated mask logits.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MaskFilterOptions {
@@ -319,8 +336,40 @@ pub fn generate_layered_crop_boxes(
     image_size: ImageSize,
     options: CropGenerationOptions,
 ) -> Result<Vec<LayeredCropBox>, TransformError> {
+    generate_layered_crop_boxes_with_policy(image_size, CropGenerationPolicy::ShortSide(options))
+}
+
+/// Generates layered crops using an explicit overlap and coordinate policy.
+///
+/// Layer zero is the whole image. Additional layers have `2 ** layer` cells per
+/// axis. The axis-relative policy expands each nominal cell by half its overlap
+/// on either side, clips to the image, and rounds boundaries with ties to even.
+/// The original entrypoint retains its existing short-side policy unchanged.
+///
+/// # Errors
+///
+/// Returns an error for invalid image dimensions, overlap outside `[0, 1)`,
+/// overflowing crop counts, unavailable allocation, or empty rounded crop boxes.
+pub fn generate_layered_crop_boxes_with_policy(
+    image_size: ImageSize,
+    policy: CropGenerationPolicy,
+) -> Result<Vec<LayeredCropBox>, TransformError> {
     validate_size(image_size)?;
-    validate_overlap_ratio(options.overlap_ratio)?;
+    let crop_layers = match policy {
+        CropGenerationPolicy::ShortSide(options) => {
+            validate_overlap_ratio(options.overlap_ratio)?;
+            options.crop_layers
+        }
+        CropGenerationPolicy::AxisRelativeTiesToEven {
+            crop_layers,
+            overlap_ratio,
+        } => {
+            if !overlap_ratio.is_finite() || !(0.0..1.0).contains(&overlap_ratio) {
+                return Err(TransformError::InvalidOverlapRatio(overlap_ratio as f32));
+            }
+            crop_layers
+        }
+    };
 
     let mut boxes = vec![LayeredCropBox {
         x_min: 0,
@@ -331,7 +380,7 @@ pub fn generate_layered_crop_boxes(
     }];
     let short_side = image_size.height.min(image_size.width);
 
-    for layer_index in 0..options.crop_layers {
+    for layer_index in 0..crop_layers {
         let layer = layer_index
             .checked_add(1)
             .ok_or(TransformError::ImageSizeOverflow)?;
@@ -339,6 +388,55 @@ pub fn generate_layered_crop_boxes(
         let crops_per_side = 1usize
             .checked_shl(shift)
             .ok_or(TransformError::ImageSizeOverflow)?;
+        let options = match policy {
+            CropGenerationPolicy::ShortSide(options) => options,
+            CropGenerationPolicy::AxisRelativeTiesToEven { overlap_ratio, .. } => {
+                let count = crops_per_side
+                    .checked_mul(crops_per_side)
+                    .ok_or(TransformError::ImageSizeOverflow)?;
+                boxes
+                    .len()
+                    .checked_add(count)
+                    .ok_or(TransformError::ImageSizeOverflow)?;
+                boxes
+                    .try_reserve(count)
+                    .map_err(|_| TransformError::ImageSizeOverflow)?;
+                let width = image_size.width as f64;
+                let height = image_size.height as f64;
+                let side = crops_per_side as f64;
+                let step_x = width / side;
+                let step_y = height / side;
+                let pad_x = width * overlap_ratio / side;
+                let pad_y = height * overlap_ratio / side;
+                for y in 0..crops_per_side {
+                    for x in 0..crops_per_side {
+                        let crop = ImageCropBox::new(
+                            (x as f64 * step_x - pad_x)
+                                .clamp(0.0, width)
+                                .round_ties_even() as usize,
+                            (y as f64 * step_y - pad_y)
+                                .clamp(0.0, height)
+                                .round_ties_even() as usize,
+                            ((x + 1) as f64 * step_x + pad_x)
+                                .clamp(0.0, width)
+                                .round_ties_even() as usize,
+                            ((y + 1) as f64 * step_y + pad_y)
+                                .clamp(0.0, height)
+                                .round_ties_even() as usize,
+                        );
+                        validate_image_crop_box(crop, image_size)?;
+                        boxes.push(LayeredCropBox {
+                            x_min: crop.x_min,
+                            y_min: crop.y_min,
+                            x_max: crop.x_max,
+                            y_max: crop.y_max,
+                            layer,
+                        });
+                    }
+                }
+                continue;
+            }
+        };
         let overlap = layered_crop_overlap(options.overlap_ratio, short_side, crops_per_side)?;
         let crop_width = overlap
             .checked_mul(crops_per_side - 1)
