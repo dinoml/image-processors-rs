@@ -468,7 +468,7 @@ pub fn resize_f32_torchvision(
     target: ImageSize,
     filter: ResizeFilter,
 ) -> Result<Vec<f32>, ResizeError> {
-    resize_f32_antialiased(values, source, channels, target, filter, false)
+    resize_f32_antialiased(values, source, channels, target, filter, false, false)
 }
 
 /// Resize interleaved FP32 values using an explicit existing resize profile.
@@ -588,6 +588,33 @@ pub fn resize_f32_bilinear_antialiased(
         target,
         ResizeFilter::Bilinear,
         align_corners,
+        false,
+    )
+}
+
+/// Resize interleaved FP32 pixels using PyTorch's scalar-FP32 antialias coefficients.
+///
+/// Scale, center, support and coefficient totals retain the rounding boundaries
+/// of PyTorch's FP32 CPU interpolation path. Existing resize profiles and the
+/// ordinary antialiased entrypoint retain their wider coefficient construction.
+///
+/// # Errors
+/// Rejects invalid dimensions, storage lengths, channels or nonfinite pixels.
+pub fn resize_f32_bilinear_antialiased_torch(
+    values: &[f32],
+    source: ImageSize,
+    channels: usize,
+    target: ImageSize,
+    align_corners: bool,
+) -> Result<Vec<f32>, ResizeError> {
+    resize_f32_antialiased(
+        values,
+        source,
+        channels,
+        target,
+        ResizeFilter::Bilinear,
+        align_corners,
+        true,
     )
 }
 
@@ -598,6 +625,7 @@ fn resize_f32_antialiased(
     target: ImageSize,
     filter: ResizeFilter,
     align_corners: bool,
+    torch_float32_coefficients: bool,
 ) -> Result<Vec<f32>, ResizeError> {
     validate_image_data(values.len(), source, channels)?;
     if let Some((index, _)) = values
@@ -607,13 +635,14 @@ fn resize_f32_antialiased(
     {
         return Err(ResizeError::NonFiniteValue { index });
     }
-    resize_f32_torchvision_interleaved_with_alignment(
+    resize_f32_torchvision_interleaved_with_coefficients(
         values,
         source,
         channels,
         target,
         filter,
         align_corners,
+        torch_float32_coefficients,
     )
 }
 
@@ -1542,6 +1571,26 @@ fn resize_f32_torchvision_interleaved_with_alignment(
     filter: ResizeFilter,
     align_corners: bool,
 ) -> Result<Vec<f32>, ResizeError> {
+    resize_f32_torchvision_interleaved_with_coefficients(
+        values,
+        source,
+        channels,
+        target,
+        filter,
+        align_corners,
+        false,
+    )
+}
+
+fn resize_f32_torchvision_interleaved_with_coefficients(
+    values: &[f32],
+    source: ImageSize,
+    channels: usize,
+    target: ImageSize,
+    filter: ResizeFilter,
+    align_corners: bool,
+    torch_float32_coefficients: bool,
+) -> Result<Vec<f32>, ResizeError> {
     if filter == ResizeFilter::Box {
         return Err(ResizeError::UnsupportedBoxProfile);
     }
@@ -1563,7 +1612,9 @@ fn resize_f32_torchvision_interleaved_with_alignment(
         return Ok(output);
     }
 
-    let horizontal = if align_corners {
+    let horizontal = if torch_float32_coefficients {
+        Coefficients::new_torch_float32(source.width, target.width, filter, align_corners)?
+    } else if align_corners {
         Coefficients::new_window_with_alignment(
             source.width,
             target.width,
@@ -1575,7 +1626,9 @@ fn resize_f32_torchvision_interleaved_with_alignment(
     } else {
         Coefficients::new(source.width, target.width, filter)?
     };
-    let vertical = if align_corners {
+    let vertical = if torch_float32_coefficients {
+        Coefficients::new_torch_float32(source.height, target.height, filter, align_corners)?
+    } else if align_corners {
         Coefficients::new_window_with_alignment(
             source.height,
             target.height,
@@ -2799,6 +2852,87 @@ struct Coefficients {
 }
 
 impl Coefficients {
+    // Mirrors HelperInterpBase::_compute_indices_min_size_weights_aa<float>
+    // and HelperInterpLinear::compute_index_ranges_weights at PyTorch revision
+    // 6596a0dea537c1c78520c73cc6678214781a9d06, aten/src/ATen/native/cpu/UpSampleKernel.cpp.
+    // Double literals in that source promote only the indicated expressions;
+    // storing each scalar_t value and accumulating/normalizing weights use FP32.
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::cast_possible_wrap
+    )]
+    fn new_torch_float32(
+        input: usize,
+        output: usize,
+        filter: ResizeFilter,
+        align_corners: bool,
+    ) -> Result<Self, ResizeError> {
+        if input == 0 || output == 0 {
+            return Err(ResizeError::InvalidSize {
+                height: input,
+                width: output,
+            });
+        }
+        let scale = if align_corners {
+            if output > 1 {
+                (input - 1) as f32 / (output - 1) as f32
+            } else {
+                0.0
+            }
+        } else {
+            input as f32 / output as f32
+        };
+        let support = (filter_support(filter) * f64::from(scale.max(1.0))) as f32;
+        let window = (support.ceil() as usize)
+            .checked_mul(2)
+            .and_then(|value| value.checked_add(1))
+            .ok_or(ResizeError::ImageSizeOverflow)?;
+        let count = output
+            .checked_mul(window)
+            .ok_or(ResizeError::ImageSizeOverflow)?;
+        let invscale = if scale >= 1.0 {
+            (1.0_f64 / f64::from(scale)) as f32
+        } else {
+            1.0
+        };
+        let mut starts = Vec::with_capacity(output);
+        let mut lengths = Vec::with_capacity(output);
+        let mut weights = vec![0.0_f32; count];
+        for out in 0..output {
+            let center = (f64::from(scale) * (out as f64 + 0.5)) as f32;
+            // C++ converts these expressions to int64 by truncation, not floor.
+            // The center +/- support subexpression is evaluated in scalar_t.
+            let start = ((f64::from(center - support) + 0.5) as isize).max(0);
+            let end = ((f64::from(center + support) + 0.5) as isize).min(input as isize);
+            let len = end.saturating_sub(start).max(0) as usize;
+            let len = len.min(window);
+            let start = start as usize;
+            starts.push(start);
+            lengths.push(len);
+            let row = &mut weights[out * window..(out + 1) * window];
+            let mut total = 0.0_f32;
+            for (index, weight) in row.iter_mut().take(len).enumerate() {
+                let distance = (start + index) as f32 - center;
+                let x = ((f64::from(distance) + 0.5) * f64::from(invscale)) as f32;
+                *weight = filter_weight(filter, x);
+                total += *weight;
+            }
+            if total != 0.0 {
+                for weight in row.iter_mut().take(len) {
+                    *weight /= total;
+                }
+            }
+        }
+        Ok(Self {
+            starts,
+            lengths,
+            weights,
+            window,
+        })
+    }
+
     fn new(input: usize, output: usize, filter: ResizeFilter) -> Result<Self, ResizeError> {
         Self::new_window(input, output, 0, output, filter)
     }
