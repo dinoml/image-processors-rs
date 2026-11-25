@@ -500,7 +500,9 @@ fn fixed_axis(
         .collect()
 }
 
-fn cubic_coefficients(x: f32) -> [f32; 8] {
+/// FP32 coefficient table row for the existing cubic interpolation profile.
+/// The first four coefficients are active; the remaining entries are zero.
+pub fn cubic_coefficients(x: f32) -> [f32; 8] {
     let a = -0.75_f32;
     let first = ((a * (x + 1.0) - 5.0 * a) * (x + 1.0) + 8.0 * a) * (x + 1.0) - 4.0 * a;
     let second = ((a + 2.0) * x - (a + 3.0)) * x * x + 1.0;

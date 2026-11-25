@@ -134,13 +134,67 @@ pub fn post_process_text_detection(
     Ok(detections)
 }
 
-// Suzuki border following without hierarchy, with 8-connected foreground.
+/// Which borders to return from an eight-connected foreground bitmap.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ContourRetrieval {
+    /// All outer and hole borders, without hierarchy.
+    List,
+    /// Only borders adjacent to the unbounded exterior background.
+    External,
+}
+
 fn list_contours(
     values: &[f32],
     size: ImageSize,
     threshold: f32,
     external_only: bool,
 ) -> Result<Vec<Vec<[f32; 2]>>, TextDetectionError> {
+    bitmap_contours(
+        values,
+        size,
+        threshold,
+        if external_only {
+            ContourRetrieval::External
+        } else {
+            ContourRetrieval::List
+        },
+    )
+}
+
+/// Trace pixel-centre borders with eight-connected foreground and simple chains.
+///
+/// Borders use Suzuki raster discovery order, the first boundary pixel as origin,
+/// and opposite winding for outer and hole borders. Straight digital runs retain
+/// their endpoints; isolated pixels and two-point lines remain degenerate contours.
+/// Reverse the returned list for reverse-discovery retrieval order. External mode
+/// excludes holes and islands nested inside holes, using four-connected exterior
+/// background, without changing list-mode border tracing or ordering.
+///
+/// # Errors
+/// Returns invalid geometry, storage length, nonfinite values or thresholds.
+pub fn bitmap_contours(
+    values: &[f32],
+    size: ImageSize,
+    threshold: f32,
+    retrieval: ContourRetrieval,
+) -> Result<Vec<Vec<[f32; 2]>>, TextDetectionError> {
+    ImageSize::new(size.height, size.width)?;
+    let expected = size
+        .width
+        .checked_mul(size.height)
+        .ok_or(TransformError::ImageSizeOverflow)?;
+    if values.len() != expected {
+        return Err(TransformError::InvalidBufferLength {
+            expected,
+            actual: values.len(),
+        }
+        .into());
+    }
+    if !threshold.is_finite() || values.iter().any(|value| !value.is_finite()) {
+        return Err(TextDetectionError::Invalid(
+            "nonfinite contour bitmap or threshold",
+        ));
+    }
     let stride = size
         .width
         .checked_add(2)
@@ -166,7 +220,7 @@ fn list_contours(
     // padded background with four-connectivity identifies the external side of
     // each eight-connected foreground border without changing border tracing.
     let mut exterior = Vec::new();
-    if external_only {
+    if retrieval == ContourRetrieval::External {
         exterior.resize(length, false);
         exterior[0] = true;
         let mut pending = VecDeque::from([0_usize]);
@@ -209,7 +263,8 @@ fn list_contours(
             } else {
                 continue;
             };
-            let retain = !external_only || (initial == 4 && exterior[start - 1]);
+            let retain =
+                retrieval == ContourRetrieval::List || (initial == 4 && exterior[start - 1]);
             border += 1;
             let first = (0..8)
                 .map(|step| (initial + step) % 8)
@@ -276,6 +331,146 @@ fn list_contours(
         }
     }
     Ok(contours)
+}
+
+/// Approximate a closed pixel-centre polygon at a Euclidean distance tolerance.
+///
+/// Uses three strict farthest-point passes, cyclic Douglas–Peucker subdivision
+/// and the final half-tolerance collinearity cleanup of the upstream closed-curve
+/// algorithm. The closing point is implicit and the cyclic output origin follows
+/// the subdivision, rather than being rotated back to the input's first point.
+/// Empty inputs stay empty; collapsed rings may contain fewer than three points.
+///
+/// # Errors
+/// Returns an error for nonfinite coordinates or a negative/nonfinite tolerance.
+pub fn approximate_closed_polygon(
+    points: &[[f32; 2]],
+    epsilon: f64,
+) -> Result<Vec<[f32; 2]>, TextDetectionError> {
+    if !epsilon.is_finite() || epsilon < 0.0 || points.iter().flatten().any(|x| !x.is_finite()) {
+        return Err(TextDetectionError::Invalid(
+            "invalid polygon coordinate or tolerance",
+        ));
+    }
+    let count = points.len();
+    if count == 0 {
+        return Ok(Vec::new());
+    }
+    let epsilon = epsilon * epsilon;
+    let mut position = 0;
+    let mut offset = 0;
+    let mut start = points[0];
+    let mut within = false;
+    for _ in 0..3 {
+        position = (position + offset) % count;
+        start = points[position];
+        position = (position + 1) % count;
+        let mut maximum = 0.0;
+        for index in 1..count {
+            let point = points[position];
+            position = (position + 1) % count;
+            let dx = f64::from(point[0]) - f64::from(start[0]);
+            let dy = f64::from(point[1]) - f64::from(start[1]);
+            let distance = dx * dx + dy * dy;
+            if distance > maximum {
+                maximum = distance;
+                offset = index;
+            }
+        }
+        within = maximum <= epsilon;
+    }
+    let mut output = Vec::new();
+    let mut pending = Vec::new();
+    if within {
+        output.push(start);
+    } else {
+        let opposite = (offset + position) % count;
+        pending.push((opposite, position));
+        pending.push((position, opposite));
+    }
+    while let Some((first, last)) = pending.pop() {
+        let start = points[first];
+        let end = points[last];
+        let dx = f64::from(end[0]) - f64::from(start[0]);
+        let dy = f64::from(end[1]) - f64::from(start[1]);
+        let mut position = (first + 1) % count;
+        let mut maximum = 0.0;
+        let mut split = first;
+        while position != last {
+            let point = points[position];
+            let distance = ((f64::from(point[1]) - f64::from(start[1])) * dx
+                - (f64::from(point[0]) - f64::from(start[0])) * dy)
+                .abs();
+            if distance > maximum {
+                maximum = distance;
+                split = position;
+            }
+            position = (position + 1) % count;
+        }
+        if maximum * maximum <= epsilon * (dx * dx + dy * dy) || split == first {
+            output.push(start);
+        } else {
+            pending.push((split, last));
+            pending.push((first, split));
+        }
+    }
+    let count = output.len();
+    if count <= 2 {
+        return Ok(output);
+    }
+    let mut start = output[count - 1];
+    let mut current = output[0];
+    let mut position = 1;
+    let mut write = 0;
+    let mut retained = count;
+    let mut index = 0;
+    while index < count && retained > 2 {
+        let end = output[position];
+        position = (position + 1) % count;
+        let dx = f64::from(end[0]) - f64::from(start[0]);
+        let dy = f64::from(end[1]) - f64::from(start[1]);
+        let ax = f64::from(current[0]) - f64::from(start[0]);
+        let ay = f64::from(current[1]) - f64::from(start[1]);
+        let distance = (ax * dy - ay * dx).abs();
+        let inner = ax * (f64::from(end[0]) - f64::from(current[0]))
+            + ay * (f64::from(end[1]) - f64::from(current[1]));
+        if distance * distance <= 0.5 * epsilon * (dx * dx + dy * dy)
+            && dx != 0.0
+            && dy != 0.0
+            && inner >= 0.0
+        {
+            retained -= 1;
+            output[write] = end;
+            start = end;
+            write = (write + 1) % count;
+            current = output[position];
+            position = (position + 1) % count;
+            index += 2;
+        } else {
+            output[write] = current;
+            start = current;
+            write = (write + 1) % count;
+            current = end;
+            index += 1;
+        }
+    }
+    output.truncate(retained);
+    Ok(output)
+}
+
+/// Unsigned polygon area; fewer than three vertices have zero area.
+pub fn closed_polygon_area(points: &[[f32; 2]]) -> f64 {
+    if points.len() < 3 {
+        return 0.0;
+    }
+    points
+        .iter()
+        .zip(points.iter().cycle().skip(1))
+        .take(points.len())
+        .map(|(a, b)| f64::from(a[0]) * f64::from(b[1]) - f64::from(a[1]) * f64::from(b[0]))
+        .sum::<f64>()
+        .abs()
+        * 0.5
 }
 
 fn cross(origin: [f32; 2], a: [f32; 2], b: [f32; 2]) -> f64 {

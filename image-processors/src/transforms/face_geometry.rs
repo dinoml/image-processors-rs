@@ -667,6 +667,8 @@ pub enum PerspectiveInterpolation {
     /// Five-bit bilinear interpolation with one final byte rounding.
     #[default]
     Bilinear,
+    /// Sixteen-neighbor -0.75 cubic interpolation with normalized Q15 weights.
+    Bicubic,
 }
 
 /// Pixel values used outside a perspective warp's source image.
@@ -936,7 +938,7 @@ pub fn warp_perspective_quad_rgb_with_options(
     };
     let lattice = match options.interpolation {
         PerspectiveInterpolation::Nearest => 1.0,
-        PerspectiveInterpolation::Bilinear => 32.0,
+        PerspectiveInterpolation::Bilinear | PerspectiveInterpolation::Bicubic => 32.0,
     };
     let mut output = vec![0; output_len.ok_or(FaceGeometryError::Geometry)?];
     for y in 0..target.height {
@@ -975,6 +977,14 @@ pub fn warp_perspective_quad_rgb_with_options(
                     &border
                 };
                 output[start..start + 3].copy_from_slice(pixel);
+            } else if options.interpolation == PerspectiveInterpolation::Bicubic {
+                bicubic_perspective_u8(
+                    values,
+                    source,
+                    options.border,
+                    [fixed_x, fixed_y],
+                    &mut output[start..start + 3],
+                );
             } else {
                 if options.border == PerspectiveBorder::Replicate {
                     fixed_x = fixed_x.clamp(0, (source.width as i64 - 1) * 32);
@@ -991,6 +1001,69 @@ pub fn warp_perspective_quad_rgb_with_options(
         }
     }
     Ok(output)
+}
+
+fn bicubic_perspective_u8(
+    values: &[u8],
+    source: ImageSize,
+    border: PerspectiveBorder,
+    fixed: [i64; 2],
+    output: &mut [u8],
+) {
+    // Reuse the resize owner's FP32 coefficient polynomial. Warp sampling has
+    // a distinct Q5-coordinate/Q15-two-dimensional-table rounding contract.
+    static TABLE: std::sync::LazyLock<[[i16; 16]; 1024]> = std::sync::LazyLock::new(|| {
+        std::array::from_fn(|index| {
+            let x = image_resize_kernels::opencv_cubic_coefficients((index % 32) as f32 / 32.0);
+            let y = image_resize_kernels::opencv_cubic_coefficients((index / 32) as f32 / 32.0);
+            let mut weights: [i16; 16] = std::array::from_fn(|tap| {
+                (y[tap / 4] * x[tap % 4] * 32768.0)
+                    .round_ties_even()
+                    .clamp(i16::MIN as f32, i16::MAX as f32) as i16
+            });
+            let difference = weights.iter().map(|&weight| i32::from(weight)).sum::<i32>() - 32768;
+            if difference != 0 {
+                let (mut minimum, mut maximum) = (10, 10);
+                for row in 2..4 {
+                    for column in 2..4 {
+                        let tap = row * 4 + column;
+                        if weights[tap] < weights[minimum] {
+                            minimum = tap;
+                        } else if weights[tap] > weights[maximum] {
+                            maximum = tap;
+                        }
+                    }
+                }
+                let tap = if difference < 0 { maximum } else { minimum };
+                weights[tap] = (i32::from(weights[tap]) - difference) as i16;
+            }
+            weights
+        })
+    });
+    let x = (fixed[0] >> 5).clamp(i64::from(i16::MIN), i64::from(i16::MAX)) - 1;
+    let y = (fixed[1] >> 5).clamp(i64::from(i16::MIN), i64::from(i16::MAX)) - 1;
+    let coefficients = &TABLE[((fixed[1] & 31) * 32 + (fixed[0] & 31)) as usize];
+    for (channel, value) in output.iter_mut().enumerate() {
+        let mut sum = 0_i32;
+        for (tap, &weight) in coefficients.iter().enumerate() {
+            let mut px = x + (tap % 4) as i64;
+            let mut py = y + (tap / 4) as i64;
+            if border == PerspectiveBorder::Replicate {
+                px = px.clamp(0, source.width as i64 - 1);
+                py = py.clamp(0, source.height as i64 - 1);
+            }
+            let pixel =
+                if px >= 0 && py >= 0 && px < source.width as i64 && py < source.height as i64 {
+                    values[(py as usize * source.width + px as usize) * 3 + channel]
+                } else if let PerspectiveBorder::Constant(color) = border {
+                    color[channel]
+                } else {
+                    0
+                };
+            sum += i32::from(pixel) * i32::from(weight);
+        }
+        *value = ((sum + (1 << 14)) >> 15).clamp(0, 255) as u8;
+    }
 }
 
 fn quad_inverse(
