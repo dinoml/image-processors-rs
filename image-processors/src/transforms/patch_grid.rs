@@ -2,6 +2,190 @@
 
 use super::*;
 
+/// A row-major crop and its non-overlapping valid core, in crop pixel coordinates.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OverlapMarginTile {
+    /// Rectangle copied from the padded canvas.
+    pub crop: ImageCropBox,
+    /// Core retained after discarding interior overlap margins.
+    pub valid: ImageCropBox,
+}
+
+/// Fixed-margin overlapping geometry for a caller-selected grid.
+/// Selection policy, patch pooling and token order belong to the caller.
+#[derive(Clone, Debug)]
+pub struct OverlapMarginGridPlan {
+    /// Padded canvas covered exactly by the crops.
+    pub canvas_size: ImageSize,
+    /// Row-major crop rectangles and valid cores.
+    pub tiles: Vec<OverlapMarginTile>,
+}
+
+impl OverlapMarginGridPlan {
+    /// Build a grid with leading/trailing pixel margins on interior edges.
+    /// Outer edges retain their margins; the final crop ends at the canvas edge.
+    ///
+    /// # Errors
+    /// Rejects zero dimensions, margins consuming a crop, or arithmetic overflow.
+    pub fn new(
+        rows: usize,
+        columns: usize,
+        crop_size: ImageSize,
+        leading: usize,
+        trailing: usize,
+    ) -> Result<Self, TransformError> {
+        ImageSize::new(rows, columns)?;
+        ImageSize::new(crop_size.height, crop_size.width)?;
+        let margins = leading
+            .checked_add(trailing)
+            .ok_or(TransformError::ImageSizeOverflow)?;
+        if margins >= crop_size.height || margins >= crop_size.width {
+            return Err(TransformError::InvalidScaleFactor(margins));
+        }
+        let step_y = crop_size.height - margins;
+        let step_x = crop_size.width - margins;
+        let canvas_size = ImageSize::new(
+            rows.checked_mul(step_y)
+                .and_then(|v| v.checked_add(margins))
+                .ok_or(TransformError::ImageSizeOverflow)?,
+            columns
+                .checked_mul(step_x)
+                .and_then(|v| v.checked_add(margins))
+                .ok_or(TransformError::ImageSizeOverflow)?,
+        )?;
+        let count = rows
+            .checked_mul(columns)
+            .ok_or(TransformError::ImageSizeOverflow)?;
+        let mut tiles = Vec::with_capacity(count);
+        for row in 0..rows {
+            for column in 0..columns {
+                let x = column * step_x;
+                let y = row * step_y;
+                tiles.push(OverlapMarginTile {
+                    crop: ImageCropBox::new(x, y, x + crop_size.width, y + crop_size.height),
+                    valid: ImageCropBox::new(
+                        if column == 0 { 0 } else { leading },
+                        if row == 0 { 0 } else { leading },
+                        crop_size.width - if column + 1 == columns { 0 } else { trailing },
+                        crop_size.height - if row + 1 == rows { 0 } else { trailing },
+                    ),
+                });
+            }
+        }
+        Ok(Self { canvas_size, tiles })
+    }
+}
+
+/// Interleaved floating pixels and a one-channel validity mask on a padded canvas.
+#[derive(Clone, Debug)]
+pub struct FloatResizePad {
+    /// Canvas dimensions.
+    pub size: ImageSize,
+    /// Number of interleaved channels.
+    pub channels: usize,
+    /// Pixels, retaining FP32 resize precision.
+    pub values: Vec<f32>,
+    /// One for resized source pixels and zero for centered padding.
+    pub valid: Vec<f32>,
+}
+
+impl FloatResizePad {
+    /// Extract pixels and validity together, preserving row-major channel order.
+    ///
+    /// # Errors
+    /// Rejects invalid crop bounds or inconsistent public storage.
+    pub fn crop(&self, region: ImageCropBox) -> Result<(Vec<f32>, Vec<f32>), TransformError> {
+        validate_image_crop_box(region, self.size)?;
+        let pixels = self
+            .size
+            .height
+            .checked_mul(self.size.width)
+            .ok_or(TransformError::ImageSizeOverflow)?;
+        let expected = pixels
+            .checked_mul(self.channels)
+            .ok_or(TransformError::ImageSizeOverflow)?;
+        if self.channels == 0 || self.values.len() != expected || self.valid.len() != pixels {
+            return Err(TransformError::InvalidBufferLength {
+                expected,
+                actual: self.values.len(),
+            });
+        }
+        let mut values = Vec::new();
+        let mut valid = Vec::new();
+        for row in region.y_min..region.y_max {
+            let start = row * self.size.width + region.x_min;
+            let end = row * self.size.width + region.x_max;
+            values.extend_from_slice(&self.values[start * self.channels..end * self.channels]);
+            valid.extend_from_slice(&self.valid[start..end]);
+        }
+        Ok((values, valid))
+    }
+}
+
+/// Antialiased bilinear resize with FP32 scale/truncation and centered padding.
+/// Coefficients follow PyTorch's scalar-FP32 CPU interpolation boundaries.
+/// Input pixels are unit-range interleaved floats. Resize results are clipped
+/// to that range before padding; callers can normalize the complete canvas.
+///
+/// # Errors
+/// Rejects invalid dimensions/storage, empty rounded dimensions or resize errors.
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
+pub fn resize_pad_f32_with_mask(
+    values: &[f32],
+    source: ImageSize,
+    channels: usize,
+    target: ImageSize,
+    pad_value: f32,
+) -> Result<FloatResizePad, TransformError> {
+    ImageSize::new(source.height, source.width)?;
+    ImageSize::new(target.height, target.width)?;
+    let scale = (target.height as f32 / source.height as f32)
+        .min(target.width as f32 / source.width as f32);
+    let resized = ImageSize::new(
+        (source.height as f32 * scale) as usize,
+        (source.width as f32 * scale) as usize,
+    )?;
+    if resized.height > target.height || resized.width > target.width || !pad_value.is_finite() {
+        return Err(TransformError::InvalidSize {
+            height: resized.height,
+            width: resized.width,
+        });
+    }
+    let pixels = target
+        .height
+        .checked_mul(target.width)
+        .ok_or(TransformError::ImageSizeOverflow)?;
+    let len = pixels
+        .checked_mul(channels)
+        .ok_or(TransformError::ImageSizeOverflow)?;
+    let resized_values =
+        resize_f32_bilinear_antialiased_torch(values, source, channels, resized, false)?;
+    let mut output = FloatResizePad {
+        size: target,
+        channels,
+        values: vec![pad_value; len],
+        valid: vec![0.0; pixels],
+    };
+    let top = (target.height - resized.height) / 2;
+    let left = (target.width - resized.width) / 2;
+    for row in 0..resized.height {
+        for column in 0..resized.width {
+            let destination = (row + top) * target.width + column + left;
+            output.valid[destination] = 1.0;
+            for channel in 0..channels {
+                output.values[destination * channels + channel] = resized_values
+                    [(row * resized.width + column) * channels + channel]
+                    .clamp(0.0, 1.0);
+            }
+        }
+    }
+    Ok(output)
+}
+
 #[allow(missing_docs)]
 pub fn flatten_hwc_patches(
     values: &[f32],

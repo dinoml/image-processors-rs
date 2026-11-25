@@ -192,8 +192,9 @@ pub use masks::{
 pub use patch_grid::{
     aspect_ratio_tile_frames, flatten_hwc_patches, patch_grid_batch_plan, patch_grid_image_patches,
     patch_grid_image_patches_with_decision, patch_grid_output_size, patch_grid_plan,
-    pillow_patch_grid_image_patches, select_patch_grid_resolution, PatchGridBatchPlan,
-    PatchGridFrames, PatchGridPlan,
+    pillow_patch_grid_image_patches, resize_pad_f32_with_mask, select_patch_grid_resolution,
+    FloatResizePad, OverlapMarginGridPlan, OverlapMarginTile, PatchGridBatchPlan, PatchGridFrames,
+    PatchGridPlan,
 };
 pub use patch_grid::{aspect_ratio_tile_grid, covering_area_tile_grid};
 mod tiled_canvas;
@@ -2168,6 +2169,38 @@ pub fn resize_f32_bilinear_antialiased(
     align_corners: bool,
 ) -> Result<Vec<f32>, TransformError> {
     image_resize_kernels::resize_f32_bilinear_antialiased(
+        values,
+        KernelImageSize {
+            height: source_size.height,
+            width: source_size.width,
+        },
+        channels,
+        KernelImageSize {
+            height: target_size.height,
+            width: target_size.width,
+        },
+        align_corners,
+    )
+    .map_err(|error| TransformError::ResizeKernel {
+        message: error.to_string(),
+    })
+}
+
+/// Resizes interleaved FP32 pixels using PyTorch scalar-FP32 antialias coefficients.
+///
+/// This explicit entrypoint retains scale/center and weight-normalization rounding
+/// from the FP32 CPU interpolation path. Existing resize entrypoints are unchanged.
+///
+/// # Errors
+/// Rejects invalid dimensions, storage lengths, channels or nonfinite pixels.
+pub fn resize_f32_bilinear_antialiased_torch(
+    values: &[f32],
+    source_size: ImageSize,
+    channels: usize,
+    target_size: ImageSize,
+    align_corners: bool,
+) -> Result<Vec<f32>, TransformError> {
+    image_resize_kernels::resize_f32_bilinear_antialiased_torch(
         values,
         KernelImageSize {
             height: source_size.height,
