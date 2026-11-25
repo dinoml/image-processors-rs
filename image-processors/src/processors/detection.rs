@@ -691,6 +691,14 @@ impl ImageProcessor {
                             longest_edge,
                         },
                     )?,
+                    crate::recipe::RecipeResizeTarget::ShortestEdgeCappedTiesEven {
+                        shortest_edge,
+                        longest_edge,
+                    } => crate::transforms::shortest_edge_resize_size_capped_ties_even(
+                        original,
+                        shortest_edge,
+                        longest_edge,
+                    )?,
                     crate::recipe::RecipeResizeTarget::LongestEdge { longest_edge } => {
                         crate::transforms::longest_edge_resize_size(original, longest_edge)?
                     }

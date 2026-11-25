@@ -1185,6 +1185,40 @@ pub fn shortest_edge_resize_size(
     ImageSize::new(height.max(1), width.max(1))
 }
 
+/// Computes capped shortest-edge geometry with ties-to-even short-edge rounding.
+///
+/// The cap comparison and rounding use Python-style FP64 arithmetic. The long
+/// edge is then truncated from the rounded short edge, as in original DINO.
+/// Existing half-up and unrounded-cap sizing policies remain independent.
+///
+/// # Errors
+/// Returns an error for zero dimensions or limits, a cap that rounds the short
+/// edge to zero, or arithmetic overflow while resolving the final dimensions.
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Match the original FP64 cap comparison and Python ties-to-even rounding"
+)]
+pub fn shortest_edge_resize_size_capped_ties_even(
+    original_size: ImageSize,
+    shortest_edge: usize,
+    longest_edge: Option<usize>,
+) -> Result<ImageSize, TransformError> {
+    validate_size(original_size)?;
+    if shortest_edge == 0 || longest_edge == Some(0) {
+        return Err(TransformError::InvalidScaleFactor(0));
+    }
+    let shortest = original_size.height.min(original_size.width);
+    let longest = original_size.height.max(original_size.width);
+    let capped_shortest = longest_edge
+        .filter(|cap| longest as f64 / shortest as f64 * shortest_edge as f64 > *cap as f64)
+        .map_or(shortest_edge, |cap| {
+            (cap as f64 * shortest as f64 / longest as f64).round_ties_even() as usize
+        });
+    shortest_edge_resize_size(original_size, capped_shortest, None)
+}
+
 /// Resolves a capped shortest-edge resize, rounding half up before divisor flooring.
 ///
 /// The aspect scale is evaluated in FP64, including the second scale when the
