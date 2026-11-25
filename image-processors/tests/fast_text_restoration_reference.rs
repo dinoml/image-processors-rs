@@ -6,17 +6,23 @@ use serde::Deserialize;
 
 #[derive(Deserialize)]
 struct Fixture {
+    planes: Vec<Plane>,
     cases: Vec<Case>,
 }
 
 #[derive(Deserialize)]
-struct Case {
-    name: String,
+struct Plane {
     image_size: [usize; 2],
     original_size: [usize; 2],
     kernel_labels: Vec<i64>,
     labels: Vec<i64>,
     scores: Vec<f32>,
+}
+
+#[derive(Deserialize)]
+struct Case {
+    name: String,
+    plane: usize,
     bbox_type: FastTextBoxType,
     min_score: f64,
     min_area: usize,
@@ -32,12 +38,13 @@ fn fast_restoration_matches_pinned_original_cpu_geometry_and_filtering() {
             .expect("original FAST fixture must parse");
     assert_eq!(fixture.cases.len(), 66);
     for case in fixture.cases {
+        let plane = fixture.planes.get(case.plane).expect("valid fixture plane");
         let result = post_process_fast_text_detection(
-            &case.kernel_labels,
-            &case.labels,
-            &case.scores,
-            ImageSize::new(case.image_size[0], case.image_size[1]).expect("valid fixture size"),
-            ImageSize::new(case.original_size[0], case.original_size[1])
+            &plane.kernel_labels,
+            &plane.labels,
+            &plane.scores,
+            ImageSize::new(plane.image_size[0], plane.image_size[1]).expect("valid fixture size"),
+            ImageSize::new(plane.original_size[0], plane.original_size[1])
                 .expect("valid original size"),
             FastTextDetectionOptions {
                 min_score: case.min_score,
