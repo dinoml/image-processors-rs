@@ -1,3 +1,5 @@
+mod capped_resize_even;
+
 use proptest::prelude::*;
 
 use super::*;
