@@ -5,6 +5,7 @@
 
 use crate::transforms::{ImageSize, TransformError};
 use serde::{Deserialize, Serialize};
+use std::collections::{BTreeSet, VecDeque};
 use thiserror::Error;
 
 /// Detection settings for one probability map.
@@ -96,7 +97,7 @@ pub fn post_process_text_detection(
     if let Some(value) = probabilities.iter().find(|value| !value.is_finite()) {
         return Err(TransformError::InvalidScoreValue(*value).into());
     }
-    let contours = list_contours(probabilities, map_size, options.threshold)?;
+    let contours = list_contours(probabilities, map_size, options.threshold, false)?;
     let mut detections = Vec::new();
     for contour in contours.into_iter().rev().take(options.max_candidates) {
         let (points, short_side) = minimum_box(&contour);
@@ -138,6 +139,7 @@ fn list_contours(
     values: &[f32],
     size: ImageSize,
     threshold: f32,
+    external_only: bool,
 ) -> Result<Vec<Vec<[f32; 2]>>, TextDetectionError> {
     let stride = size
         .width
@@ -158,6 +160,31 @@ fn list_contours(
     for y in 0..size.height {
         for x in 0..size.width {
             bitmap[(y + 1) * stride + x + 1] = i32::from(values[y * size.width + x] > threshold);
+        }
+    }
+    // RETR_EXTERNAL excludes holes and islands enclosed by holes. Flooding the
+    // padded background with four-connectivity identifies the external side of
+    // each eight-connected foreground border without changing border tracing.
+    let mut exterior = Vec::new();
+    if external_only {
+        exterior.resize(length, false);
+        exterior[0] = true;
+        let mut pending = VecDeque::from([0_usize]);
+        while let Some(index) = pending.pop_front() {
+            let row = index / stride;
+            let column = index % stride;
+            let neighbors = [
+                (row > 0).then(|| index - stride),
+                (row + 1 < rows).then(|| index + stride),
+                (column > 0).then(|| index - 1),
+                (column + 1 < stride).then(|| index + 1),
+            ];
+            for neighbor in neighbors.into_iter().flatten() {
+                if bitmap[neighbor] == 0 && !exterior[neighbor] {
+                    exterior[neighbor] = true;
+                    pending.push_back(neighbor);
+                }
+            }
         }
     }
     let offsets = [
@@ -182,6 +209,7 @@ fn list_contours(
             } else {
                 continue;
             };
+            let retain = !external_only || (initial == 4 && exterior[start - 1]);
             border += 1;
             let first = (0..8)
                 .map(|step| (initial + step) % 8)
@@ -189,7 +217,9 @@ fn list_contours(
                 .find(|&index| bitmap[index] != 0);
             let Some(first) = first else {
                 bitmap[start] = -border;
-                contours.push(vec![[(x - 1) as f32, (y - 1) as f32]]);
+                if retain {
+                    contours.push(vec![[(x - 1) as f32, (y - 1) as f32]]);
+                }
                 continue;
             };
             let mut previous = first;
@@ -240,7 +270,9 @@ fn list_contours(
                     (incoming != outgoing || contour.len() <= 2).then_some(current)
                 })
                 .collect();
-            contours.push(simplified);
+            if retain {
+                contours.push(simplified);
+            }
         }
     }
     Ok(contours)
@@ -277,14 +309,20 @@ fn convex_hull(points: &[[f32; 2]]) -> Vec<[f32; 2]> {
     hull
 }
 
-fn minimum_box(points: &[[f32; 2]]) -> ([[f32; 2]; 4], f32) {
-    let hull = convex_hull(points);
-    if hull.len() <= 1 {
-        return ([hull.first().copied().unwrap_or([0.0; 2]); 4], 0.0);
-    }
-    if hull.len() == 2 {
-        return ([hull[0], hull[1], hull[1], hull[0]], 0.0);
-    }
+struct RotatedRectangle {
+    center: [f32; 2],
+    size: [f32; 2],
+    angle: f32,
+}
+
+enum RectangleConvention {
+    Existing,
+    OpenCv,
+}
+
+// The caller supplies a nondegenerate convex hull. Both restoration policies
+// share the same rotating calipers and FP32 center/size/angle boundary.
+fn minimum_rectangle(hull: &[[f32; 2]], convention: RectangleConvention) -> RotatedRectangle {
     let edges = (0..hull.len())
         .map(|i| {
             [
@@ -368,6 +406,16 @@ fn minimum_box(points: &[[f32; 2]]) -> ([[f32; 2]; 4], f32) {
         (f64::from(vector[0]) * f64::from(vector[0]) + f64::from(vector[1]) * f64::from(vector[1]))
             .sqrt() as f32
     };
+    if matches!(convention, RectangleConvention::OpenCv) {
+        // OpenCV minAreaRect rounds atan2 to FP32 radians before converting
+        // to degrees. Its width follows out[1], with no vertex reordering.
+        let radians = f64::from(f64::from(horizontal[1]).atan2(f64::from(horizontal[0])) as f32);
+        return RotatedRectangle {
+            center,
+            size: [norm(horizontal), norm(vertical)],
+            angle: (radians * 180.0 / std::f64::consts::PI) as f32,
+        };
+    }
     // minAreaRect's center/size/angle boundary is significant: truncating its
     // reconstructed corners later defines the score mask. Direct projection is
     // mathematically equivalent but loses those FP32 rounding boundaries.
@@ -380,6 +428,26 @@ fn minimum_box(points: &[[f32; 2]]) -> ([[f32; 2]; 4], f32) {
         (-f64::from(horizontal[0]).atan2(f64::from(horizontal[1])) * 180.0 / std::f64::consts::PI)
             as f32
     };
+    RotatedRectangle {
+        center,
+        size: [box_width, box_height],
+        angle,
+    }
+}
+
+fn minimum_box(points: &[[f32; 2]]) -> ([[f32; 2]; 4], f32) {
+    let hull = convex_hull(points);
+    if hull.len() <= 1 {
+        return ([hull.first().copied().unwrap_or([0.0; 2]); 4], 0.0);
+    }
+    if hull.len() == 2 {
+        return ([hull[0], hull[1], hull[1], hull[0]], 0.0);
+    }
+    let RotatedRectangle {
+        center,
+        size: [box_width, box_height],
+        angle,
+    } = minimum_rectangle(&hull, RectangleConvention::Existing);
     let radians = f64::from(angle) * std::f64::consts::PI / 180.0;
     let sine = radians.sin() as f32 * 0.5;
     let cosine = radians.cos() as f32 * 0.5;
@@ -414,6 +482,202 @@ fn minimum_box(points: &[[f32; 2]]) -> ([[f32; 2]; 4], f32) {
         ],
         short_side,
     )
+}
+
+/// FAST restoration shape selected by the original `bbox_type` setting.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FastTextBoxType {
+    /// Area-adjusted minimum-area rectangle, in original corner order.
+    #[default]
+    Rect,
+    /// First external contour in reverse raster-discovery order.
+    Poly,
+}
+
+/// Original FAST component filtering and output geometry settings.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[serde(default)]
+pub struct FastTextDetectionOptions {
+    /// Minimum mean score over all pixels assigned to a component.
+    pub min_score: f64,
+    /// Minimum expanded component area, in resized-image pixels.
+    pub min_area: usize,
+    /// Rectangle or polygon output.
+    pub bbox_type: FastTextBoxType,
+}
+
+impl Default for FastTextDetectionOptions {
+    fn default() -> Self {
+        Self {
+            min_score: 0.88,
+            min_area: 250,
+            bbox_type: FastTextBoxType::Rect,
+        }
+    }
+}
+
+/// One FAST region, with coordinates truncated to original-image integer pixels.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct FastTextDetection {
+    /// Rectangle corners or external contour vertices in upstream order.
+    pub points: Vec<[i32; 2]>,
+    /// Mean score over the complete expanded component, before restoration.
+    pub score: f64,
+}
+
+fn sum_fp32(values: &[f32]) -> f32 {
+    match values {
+        [] => 0.0,
+        [value] => *value,
+        _ => {
+            let (left, right) = values.split_at(values.len() / 2);
+            sum_fp32(left) + sum_fp32(right)
+        }
+    }
+}
+
+/// Restore one original FAST kernel-label plane and expanded label/score planes.
+///
+/// `kernel_labels` is the pre-expansion quarter-resolution output; `labels` and
+/// `scores` have `image_size` pixels. Candidate keys come from the kernel plane,
+/// including the original first-key skip. Polygon output selects the first
+/// external contour rather than the largest contour. No DBNet unclip, clipping,
+/// vertex reordering, or nearest-integer rounding is applied.
+///
+/// # Errors
+/// Rejects invalid dimensions/storage, invalid filtering settings, nonfinite
+/// scores and degenerate rectangle geometry that has zero denominator area.
+pub fn post_process_fast_text_detection(
+    kernel_labels: &[i64],
+    labels: &[i64],
+    scores: &[f32],
+    image_size: ImageSize,
+    original_size: ImageSize,
+    options: FastTextDetectionOptions,
+) -> Result<Vec<FastTextDetection>, TextDetectionError> {
+    ImageSize::new(image_size.height, image_size.width)?;
+    ImageSize::new(original_size.height, original_size.width)?;
+    let pixels = image_size
+        .height
+        .checked_mul(image_size.width)
+        .ok_or(TransformError::ImageSizeOverflow)?;
+    if !image_size.height.is_multiple_of(4)
+        || !image_size.width.is_multiple_of(4)
+        || labels.len() != pixels
+        || scores.len() != pixels
+        || kernel_labels.len() != pixels / 16
+    {
+        return Err(TextDetectionError::Invalid(
+            "FAST label/score plane geometry differs",
+        ));
+    }
+    if !options.min_score.is_finite() {
+        return Err(TextDetectionError::Invalid(
+            "FAST requires finite min_score",
+        ));
+    }
+    if scores.iter().any(|value| !value.is_finite()) {
+        return Err(TextDetectionError::Invalid("nonfinite FAST score"));
+    }
+    let keys = kernel_labels.iter().copied().collect::<BTreeSet<_>>();
+    let scales = [
+        original_size.width as f64 / image_size.width as f64,
+        original_size.height as f64 / image_size.height as f64,
+    ];
+    let mut detections = Vec::new();
+    for key in keys.into_iter().skip(1) {
+        let mut points = Vec::new();
+        for (index, &label) in labels.iter().enumerate() {
+            if label == key {
+                points.push([
+                    (index % image_size.width) as f32,
+                    (index / image_size.width) as f32,
+                ]);
+            }
+        }
+        if points.len() < options.min_area {
+            continue;
+        }
+        if points.is_empty() {
+            return Err(TextDetectionError::Invalid("empty FAST region"));
+        }
+        let selected_scores = labels
+            .iter()
+            .zip(scores)
+            .filter_map(|(&label, &score)| (label == key).then_some(score))
+            .collect::<Vec<_>>();
+        // The source mean has FP32 accumulation/output, followed by .item()
+        // promotion for comparison with the Python binary64 threshold. A tree
+        // reduction avoids linear FP32 accumulation drift over large regions.
+        let score = f64::from(sum_fp32(&selected_scores) / points.len() as f32);
+        if score < options.min_score {
+            continue;
+        }
+        let vertices = match options.bbox_type {
+            FastTextBoxType::Rect => {
+                let mut hull = convex_hull(&points);
+                if hull.len() < 3 {
+                    return Err(TextDetectionError::Invalid("degenerate FAST rectangle"));
+                }
+                // The input points are in raster order. Match OpenCV's hull
+                // starting at the last raster point so equal-area caliper
+                // candidates preserve its angle and corner ordering.
+                let start = hull
+                    .iter()
+                    .enumerate()
+                    .max_by(|(_, a), (_, b)| a[1].total_cmp(&b[1]).then(a[0].total_cmp(&b[0])))
+                    .map_or(0, |(index, _)| index);
+                hull.rotate_left(start);
+                let RotatedRectangle {
+                    center,
+                    size,
+                    angle,
+                } = minimum_rectangle(&hull, RectangleConvention::OpenCv);
+                let area = f64::from(size[0]) * f64::from(size[1]);
+                if area <= 0.0 {
+                    return Err(TextDetectionError::Invalid("degenerate FAST rectangle"));
+                }
+                let alpha = ((points.len() as f64 / area).sqrt()).sqrt();
+                let width = (f64::from(size[0]) * alpha) as f32;
+                let height = (f64::from(size[1]) * alpha) as f32;
+                let radians = f64::from(angle) * std::f64::consts::PI / 180.0;
+                let a = radians.sin() as f32 * 0.5;
+                let b = radians.cos() as f32 * 0.5;
+                let p0 = [
+                    center[0] - a * height - b * width,
+                    center[1] + b * height - a * width,
+                ];
+                let p1 = [
+                    center[0] + a * height - b * width,
+                    center[1] - b * height - a * width,
+                ];
+                vec![
+                    p0,
+                    p1,
+                    [2.0 * center[0] - p0[0], 2.0 * center[1] - p0[1]],
+                    [2.0 * center[0] - p1[0], 2.0 * center[1] - p1[1]],
+                ]
+            }
+            FastTextBoxType::Poly => {
+                let bitmap = labels
+                    .iter()
+                    .map(|&value| if value == key { 1.0 } else { 0.0 })
+                    .collect::<Vec<_>>();
+                let mut contours = list_contours(&bitmap, image_size, 0.5, true)?;
+                let Some(contour) = contours.pop() else {
+                    continue;
+                };
+                contour
+            }
+        };
+        let points = vertices
+            .into_iter()
+            .map(|point| std::array::from_fn(|axis| (f64::from(point[axis]) * scales[axis]) as i32))
+            .collect();
+        detections.push(FastTextDetection { points, score });
+    }
+    Ok(detections)
 }
 
 fn unclip(points: &[[f32; 2]; 4], ratio: f64) -> [[f32; 2]; 4] {
