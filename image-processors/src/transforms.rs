@@ -118,8 +118,8 @@ pub use face_geometry::{
     PerspectiveBorder, PerspectiveInterpolation, PerspectiveWarpOptions,
 };
 pub use frame_ops::{
-    convert_frame_to_pillow_luma, flip_frame_horizontal, resize_f32_area_torch, resize_f32_opencv,
-    resize_f64_opencv, resize_frame_pillow_reducing_gap, resize_u16_lanczos4,
+    autocontrast_frame, convert_frame_to_pillow_luma, flip_frame_horizontal, resize_f32_area_torch,
+    resize_f32_opencv, resize_f64_opencv, resize_frame_pillow_reducing_gap, resize_u16_lanczos4,
     rotate_frame_90_clockwise,
 };
 pub use raster_drawing::{

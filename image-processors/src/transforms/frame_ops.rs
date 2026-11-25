@@ -53,6 +53,57 @@ pub fn convert_frame_to_pillow_luma(frame: &ImageFrame) -> Result<ImageFrame, Tr
     )
 }
 
+/// Stretch byte-channel histograms with Pillow's percentile-cutoff and LUT rounding.
+/// Alpha, when present, is preserved rather than contrast-normalized.
+///
+/// # Errors
+/// Returns invalid cutoff percentages or image storage/geometry errors.
+pub fn autocontrast_frame(frame: &ImageFrame, cutoff: f64) -> Result<ImageFrame, TransformError> {
+    if !cutoff.is_finite() || !(0.0..50.0).contains(&cutoff) {
+        return Err(TransformError::InvalidScoreValue(cutoff as f32));
+    }
+    let channels = frame.channels();
+    let mut pixels = frame.data().to_vec();
+    for channel in 0..channels.min(3) {
+        let mut histogram = [0usize; 256];
+        for pixel in frame.data().chunks_exact(channels) {
+            histogram[pixel[channel] as usize] += 1;
+        }
+        let cut = (histogram.iter().sum::<usize>() as f64 * cutoff / 100.0) as usize;
+        let mut remaining = cut;
+        for count in &mut histogram {
+            let removed = remaining.min(*count);
+            *count -= removed;
+            remaining -= removed;
+        }
+        remaining = cut;
+        for count in histogram.iter_mut().rev() {
+            let removed = remaining.min(*count);
+            *count -= removed;
+            remaining -= removed;
+        }
+        let low = histogram.iter().position(|&count| count != 0).unwrap_or(0);
+        let high = histogram.iter().rposition(|&count| count != 0).unwrap_or(0);
+        if high <= low {
+            continue;
+        }
+        let scale = 255.0 / (high - low) as f64;
+        let offset = -(low as f64) * scale;
+        let table: [u8; 256] =
+            std::array::from_fn(|index| (index as f64 * scale + offset).clamp(0.0, 255.0) as u8);
+        for pixel in pixels.chunks_exact_mut(channels) {
+            pixel[channel] = table[pixel[channel] as usize];
+        }
+    }
+    new_frame(
+        frame.width(),
+        frame.height(),
+        frame.pixel_format(),
+        pixels,
+        frame.timing(),
+    )
+}
+
 /// Resize a full frame with Pillow's integer reduction prepass.
 /// Byte rounding and the fractional reduced-image box remain in the kernel owner.
 /// RGBA follows Pillow's premultiplied-alpha branch, which omits the prepass.
