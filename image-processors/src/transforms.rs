@@ -140,7 +140,8 @@ use frame_ops::convert_to_rgb;
 pub use frame_ops::{
     bottom_right_resize_pad_plan, center_crop_box, center_crop_frame,
     center_crop_frame_with_padding, composite_alpha_to_rgb, composite_alpha_to_rgb_f32,
-    composite_mask_f32_frame, composite_mask_f32_frame_with_precision, composite_mask_frame,
+    composite_alpha_to_rgb_with_rounding, composite_mask_f32_frame,
+    composite_mask_f32_frame_with_precision, composite_mask_frame,
     concatenate_frames_horizontally_rgb, convert_frame_pixel_format, crop_frame, crop_region,
     halve_frame_box, multiple_of_resize_plan, overlay_frame, pad_frame,
     pad_frame_symmetric_to_next_multiple, pad_frame_to_multiple_with_canvas_fill,
@@ -762,12 +763,15 @@ pub enum CanvasFill {
     ImageEdges,
     /// Fill empty regions by reflecting image pixels at the canvas boundary.
     ReflectImage,
+    /// Reflect pixels including each edge sample, as NumPy's symmetric padding.
+    SymmetricImage,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum BorderFillMode {
     Replicate,
     Reflect,
+    Symmetric,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

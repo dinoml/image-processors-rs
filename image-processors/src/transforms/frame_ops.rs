@@ -396,15 +396,30 @@ pub(crate) fn resize_frame_owned_with_decision_workspace(
 /// # Errors
 ///
 /// Returns an error when the input does not contain complete pixels.
-#[expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "Composited channels are clamped to 0..=255 before truncating"
-)]
 pub fn composite_alpha_to_rgb(
     values: &[u8],
     pixel_format: PixelFormat,
     background: [u8; 3],
+) -> Result<Vec<u8>, TransformError> {
+    composite_alpha_to_rgb_with_rounding(values, pixel_format, background, false)
+}
+
+/// Composite onto opaque RGB using explicit Pillow integer rounding or FP32 truncation.
+///
+/// False preserves `composite_alpha_to_rgb` semantics. True uses rounded integer
+/// source-over blending, matching Pillow alpha_composite over an opaque canvas.
+/// # Errors
+/// Returns an error when the input does not contain complete pixels.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Blended channels are bounded to byte range"
+)]
+pub fn composite_alpha_to_rgb_with_rounding(
+    values: &[u8],
+    pixel_format: PixelFormat,
+    background: [u8; 3],
+    pillow_rounding: bool,
 ) -> Result<Vec<u8>, TransformError> {
     if pixel_format != PixelFormat::Rgba8 {
         return convert_to_rgb(values, pixel_format.channels());
@@ -414,6 +429,13 @@ pub fn composite_alpha_to_rgb(
     for pixel in values.as_chunks::<4>().0 {
         let alpha = f32::from(pixel[3]) / 255.0;
         for channel in 0..3 {
+            if pillow_rounding {
+                let alpha = u32::from(pixel[3]);
+                let blended = u32::from(pixel[channel]) * alpha
+                    + u32::from(background[channel]) * (255 - alpha);
+                output.push(((blended + 127) / 255) as u8);
+                continue;
+            }
             let foreground = f32::from(pixel[channel]) * alpha;
             let background = f32::from(background[channel]) * (1.0 - alpha);
             output.push((foreground + background).clamp(0.0, 255.0) as u8);
@@ -718,6 +740,18 @@ pub fn pad_frame_with_canvas_fill(
                 bottom,
             },
             BorderFillMode::Reflect,
+        ),
+        CanvasFill::SymmetricImage => fill_pasted_border(
+            &mut output,
+            target,
+            channels,
+            PastedRegion {
+                left: padding.left,
+                top: padding.top,
+                right,
+                bottom,
+            },
+            BorderFillMode::Symmetric,
         ),
     }
 
@@ -1055,14 +1089,18 @@ fn next_multiple(value: usize, multiple: usize) -> Result<usize, TransformError>
 }
 
 fn symmetric_source_index(index: usize, length: usize) -> Result<usize, TransformError> {
-    let period = length
+    length
         .checked_mul(2)
         .ok_or(TransformError::ImageSizeOverflow)?;
-    let reflected = index % period;
-    if reflected < length {
-        Ok(reflected)
+    Ok(symmetric_coordinate(index, length))
+}
+
+fn symmetric_coordinate(index: usize, length: usize) -> usize {
+    let remainder = index % length;
+    if (index / length).is_multiple_of(2) {
+        remainder
     } else {
-        Ok(period - reflected - 1)
+        length - remainder - 1
     }
 }
 
@@ -2448,6 +2486,14 @@ fn border_source_coordinate(
     match mode {
         BorderFillMode::Replicate => coordinate.clamp(start, end - 1),
         BorderFillMode::Reflect => reflect_coordinate(coordinate, start, end),
+        BorderFillMode::Symmetric => {
+            let offset = if coordinate < start {
+                start - coordinate - 1
+            } else {
+                coordinate - start
+            };
+            start + symmetric_coordinate(offset, end - start)
+        }
     }
 }
 
