@@ -399,7 +399,9 @@ pub fn predict<E: From<CellposeError>>(
     }
     let original = [image.height, image.width];
     let mut pixels = image.pixels.clone();
-    normalize_planes(&mut pixels, &original, &options.normalization)?;
+    if options.normalization.normalize {
+        normalize_planes(&mut pixels, &original, &options.normalization)?;
+    }
     let scale = match options.diameter {
         Some(d) if d.is_finite() && d > 0.0 => 30.0 / d,
         None => 1.0,

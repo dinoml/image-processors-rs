@@ -163,7 +163,14 @@ pub fn predict_volume<E: From<CellposeError>>(
         (original[2] as f64 * scale) as usize,
     ];
     let mut pixels = volume.pixels.clone();
-    normalize_planes(&mut pixels, &original, &options.inference.normalization)?;
+    if options.inference.normalization.normalize {
+        let mut normalization = options.inference.normalization.clone();
+        if original[0] > 1 {
+            // CellposeModel.eval forces volume normalization for do_3D.
+            normalization.norm_3d = true;
+        }
+        normalize_planes(&mut pixels, &original, &normalization)?;
+    }
     pixels = resize_volume(&pixels, 3, original, shape)?;
     let count = elements(&shape)?;
     let mut maps = vec![0.0; elements(&[4, shape[0], shape[1], shape[2]])?];
@@ -447,11 +454,13 @@ pub fn predict_stack<E: From<CellposeError>>(
             pixels.extend_from_slice(&image.pixels[c * area..(c + 1) * area]);
         }
     }
-    normalize_planes(
-        &mut pixels,
-        &[images.len(), height, width],
-        &options.normalization,
-    )?;
+    if options.normalization.normalize {
+        normalize_planes(
+            &mut pixels,
+            &[images.len(), height, width],
+            &options.normalization,
+        )?;
+    }
     let mut plane_options = options.clone();
     plane_options.normalization = super::CellposeNormalization {
         normalize: false,
