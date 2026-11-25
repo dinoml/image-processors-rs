@@ -1726,6 +1726,283 @@ fn non_max_suppression_impl(
     Ok(keep)
 }
 
+/// Score-decay policy supported by MMCV's CPU soft-NMS implementation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SoftNmsMethod {
+    /// Remove candidates at or above the overlap threshold.
+    Hard,
+    /// Multiply scores by one minus IoU at or above the threshold.
+    Linear,
+    /// Multiply scores by exp(-IoU squared / sigma).
+    Gaussian,
+}
+
+/// FP32 soft-NMS settings matching MMCV 1.5's original inference contract.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SoftNmsOptions {
+    /// Overlap threshold for hard and linear score decay.
+    pub iou_threshold: f32,
+    /// Gaussian decay denominator; must be positive and finite.
+    pub sigma: f32,
+    /// Remove remaining candidates whose updated score is below this cutoff.
+    pub min_score: f32,
+    /// Selected score-decay policy.
+    pub method: SoftNmsMethod,
+    /// Include the final pixel when calculating widths and heights.
+    pub inclusive_pixels: bool,
+}
+
+impl Default for SoftNmsOptions {
+    fn default() -> Self {
+        Self {
+            iou_threshold: 0.3,
+            sigma: 0.5,
+            min_score: 0.001,
+            method: SoftNmsMethod::Linear,
+            inclusive_pixels: false,
+        }
+    }
+}
+
+/// Apply MMCV CPU soft-NMS and return original indices with updated scores.
+///
+/// Selection uses strict score comparisons. Discarded candidates are replaced
+/// with the final remaining candidate, preserving upstream tie behavior. The
+/// selected maximum is retained even if its original score is below min_score.
+///
+/// # Errors
+/// Rejects nonfinite geometry or scores, negative box extents, invalid IoU
+/// thresholds, nonfinite score cutoffs, or nonpositive/nonfinite sigma.
+pub fn soft_non_max_suppression(
+    boxes: &[DetectionBoundingBox],
+    scores: &[f32],
+    options: SoftNmsOptions,
+) -> Result<Vec<(usize, f32)>, TransformError> {
+    validate_len(scores.len(), boxes.len())?;
+    validate_iou_threshold(options.iou_threshold)?;
+    validate_score_value(options.min_score)?;
+    if !options.sigma.is_finite() || options.sigma <= 0.0 {
+        return Err(TransformError::InvalidFloatScaleFactor(options.sigma));
+    }
+    for bbox in boxes {
+        validate_detection_box_extents(*bbox)?;
+    }
+    for score in scores {
+        validate_score_value(*score)?;
+    }
+    let offset = if options.inclusive_pixels { 1.0 } else { 0.0 };
+    let mut indices = (0..boxes.len()).collect::<Vec<_>>();
+    let mut scores = scores.to_vec();
+    let mut output = Vec::with_capacity(indices.len());
+    let mut selected = 0;
+    while selected < indices.len() {
+        let mut maximum = selected;
+        for candidate in selected + 1..indices.len() {
+            if scores[maximum] < scores[candidate] {
+                maximum = candidate;
+            }
+        }
+        indices.swap(selected, maximum);
+        scores.swap(selected, maximum);
+        let first = boxes[indices[selected]];
+        let area = (first.x_max - first.x_min + offset) * (first.y_max - first.y_min + offset);
+        output.push((indices[selected], scores[selected]));
+        let mut candidate = selected + 1;
+        while candidate < indices.len() {
+            let second = boxes[indices[candidate]];
+            let width =
+                (first.x_max.min(second.x_max) - first.x_min.max(second.x_min) + offset).max(0.0);
+            let height =
+                (first.y_max.min(second.y_max) - first.y_min.max(second.y_min) + offset).max(0.0);
+            let intersection = width * height;
+            let other_area =
+                (second.x_max - second.x_min + offset) * (second.y_max - second.y_min + offset);
+            let overlap = intersection / (area + other_area - intersection);
+            let weight = match options.method {
+                SoftNmsMethod::Hard if overlap >= options.iou_threshold => 0.0,
+                SoftNmsMethod::Linear if overlap >= options.iou_threshold => 1.0 - overlap,
+                SoftNmsMethod::Gaussian => (-(overlap * overlap) / options.sigma).exp(),
+                _ => 1.0,
+            };
+            scores[candidate] *= weight;
+            if scores[candidate] < options.min_score {
+                indices.swap_remove(candidate);
+                scores.swap_remove(candidate);
+            } else {
+                candidate += 1;
+            }
+        }
+        selected += 1;
+    }
+    Ok(output)
+}
+
+/// Apply class-aware soft-NMS using MMCV's coordinate-offset policy.
+///
+/// Coordinate arithmetic retains the supplied tensor precision. Set
+/// `coordinate_offsets` for MMCV's small-input path; otherwise process each class
+/// independently and sort its updated scores, as in the split path. Results
+/// contain original prediction indices and updated scores.
+///
+/// # Errors
+/// Reports invalid precision, class IDs, offset overflow or soft-NMS inputs.
+pub fn soft_non_max_suppression_by_class(
+    predictions: &[ObjectDetectionPrediction],
+    options: SoftNmsOptions,
+    precision: DType,
+    coordinate_offsets: bool,
+) -> Result<Vec<(usize, f32)>, TransformError> {
+    validate_iou_threshold(options.iou_threshold)?;
+    validate_score_value(options.min_score)?;
+    if !options.sigma.is_finite() || options.sigma <= 0.0 {
+        return Err(TransformError::InvalidFloatScaleFactor(options.sigma));
+    }
+    let boxes = mmcv_class_offset_boxes(predictions, precision)?;
+    let scores = predictions
+        .iter()
+        .map(|value| value.score)
+        .collect::<Vec<_>>();
+    if coordinate_offsets {
+        return soft_non_max_suppression(&boxes, &scores, options);
+    }
+    let classes = predictions
+        .iter()
+        .map(|value| value.class_label)
+        .collect::<BTreeSet<_>>();
+    let mut output = Vec::new();
+    for class in classes {
+        let indices = predictions
+            .iter()
+            .enumerate()
+            .filter_map(|(index, value)| (value.class_label == class).then_some(index))
+            .collect::<Vec<_>>();
+        let class_boxes = indices
+            .iter()
+            .map(|&index| boxes[index])
+            .collect::<Vec<_>>();
+        let class_scores = indices
+            .iter()
+            .map(|&index| scores[index])
+            .collect::<Vec<_>>();
+        output.extend(
+            soft_non_max_suppression(&class_boxes, &class_scores, options)?
+                .into_iter()
+                .map(|(index, score)| (indices[index], score)),
+        );
+    }
+    output.sort_by(|left, right| {
+        right
+            .1
+            .total_cmp(&left.1)
+            .then_with(|| left.0.cmp(&right.0))
+    });
+    Ok(output)
+}
+
+/// Apply MMCV hard NMS, retaining translated coordinates in its split path.
+///
+/// Unlike torchvision's large-input grouping, MMCV translates all classes before
+/// dispatching either strategy. `inclusive_pixels` implements its offset=1
+/// width/height convention. Existing torchvision NMS APIs remain unchanged.
+///
+/// # Errors
+/// Reports invalid precision, class labels, coordinates, scores or threshold.
+pub fn mmcv_non_max_suppression_by_class(
+    predictions: &[ObjectDetectionPrediction],
+    iou_threshold: f32,
+    precision: DType,
+    coordinate_offsets: bool,
+    inclusive_pixels: bool,
+) -> Result<Vec<usize>, TransformError> {
+    validate_iou_threshold(iou_threshold)?;
+    let boxes = mmcv_class_offset_boxes(predictions, precision)?;
+    let scores = predictions
+        .iter()
+        .map(|value| value.score)
+        .collect::<Vec<_>>();
+    if coordinate_offsets {
+        return non_max_suppression_impl(&boxes, &scores, iou_threshold, inclusive_pixels, false);
+    }
+    let classes = predictions
+        .iter()
+        .map(|value| value.class_label)
+        .collect::<BTreeSet<_>>();
+    let mut output = Vec::new();
+    for class in classes {
+        let indices = predictions
+            .iter()
+            .enumerate()
+            .filter_map(|(index, value)| (value.class_label == class).then_some(index))
+            .collect::<Vec<_>>();
+        let class_boxes = indices
+            .iter()
+            .map(|&index| boxes[index])
+            .collect::<Vec<_>>();
+        let class_scores = indices
+            .iter()
+            .map(|&index| scores[index])
+            .collect::<Vec<_>>();
+        output.extend(
+            non_max_suppression_impl(
+                &class_boxes,
+                &class_scores,
+                iou_threshold,
+                inclusive_pixels,
+                false,
+            )?
+            .into_iter()
+            .map(|index| indices[index]),
+        );
+    }
+    output.sort_by(|&left, &right| {
+        scores[right]
+            .total_cmp(&scores[left])
+            .then_with(|| left.cmp(&right))
+    });
+    Ok(output)
+}
+
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "Match MMCV class-ID conversion to floating tensors"
+)]
+fn mmcv_class_offset_boxes(
+    predictions: &[ObjectDetectionPrediction],
+    precision: DType,
+) -> Result<Vec<DetectionBoundingBox>, TransformError> {
+    validate_detection_precision(precision)?;
+    if predictions.iter().any(|value| value.class_label < 0) {
+        return Err(TransformError::InvalidClassCount(0));
+    }
+    let rounded = |value| round_detection_value(value, precision);
+    let maximum = predictions
+        .iter()
+        .flat_map(|value| {
+            [
+                value.bbox.x_min,
+                value.bbox.y_min,
+                value.bbox.x_max,
+                value.bbox.y_max,
+            ]
+        })
+        .reduce(f32::max)
+        .unwrap_or(0.0);
+    let step = rounded(maximum + 1.0);
+    let boxes = predictions
+        .iter()
+        .map(|value| {
+            let offset = rounded(rounded(value.class_label as f32) * step);
+            DetectionBoundingBox::new(
+                rounded(value.bbox.x_min + offset),
+                rounded(value.bbox.y_min + offset),
+                rounded(value.bbox.x_max + offset),
+                rounded(value.bbox.y_max + offset),
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(boxes)
+}
+
 /// Class-aware NMS using per-class groups or torchvision's coordinate-offset policy.
 ///
 /// `coordinate_offsets` selects the small-input torchvision batched-NMS path;

@@ -82,23 +82,24 @@ pub use detection::non_max_suppression_minimum;
 // The same output representation serves softmax- and sigmoid-ranked queries.
 pub(crate) use detection::post_process_oneformer_panoptic_segmentation;
 pub use detection::{
-    detection_box_iou, non_max_suppression, non_max_suppression_by_class,
-    non_max_suppression_inclusive, normalize_detection_annotation,
+    detection_box_iou, mmcv_non_max_suppression_by_class, non_max_suppression,
+    non_max_suppression_by_class, non_max_suppression_inclusive, normalize_detection_annotation,
     pad_normalized_detection_annotation, post_process_instance_segmentation,
     post_process_object_detection, post_process_object_detection_with_options,
     post_process_oneformer_instance_segmentation, post_process_panoptic_segmentation,
     post_process_semantic_segmentation, post_process_sigmoid_best_object_detection,
     post_process_sigmoid_top_k_instance_segmentation, post_process_sigmoid_top_k_object_detection,
     post_process_sigmoid_top_k_object_detection_with_options, prepare_coco_detection_annotation,
-    resize_detection_annotation, scale_detection_box, weighted_keypoint_non_max_suppression,
+    resize_detection_annotation, scale_detection_box, soft_non_max_suppression,
+    soft_non_max_suppression_by_class, weighted_keypoint_non_max_suppression,
     weighted_keypoint_non_max_suppression_with_score, CocoObjectAnnotation, DetectionAnnotation,
     DetectionBoundingBox, DetectionBoxScaling, DetectionCenterBox, KeypointDetection,
     NormalizedDetectionAnnotation, ObjectDetectionPrediction, OneFormerInstanceOptions,
     OneFormerTask, SegmentationPostProcessOptions, SegmentationPostProcessPrediction,
     SegmentationSegmentInfo, SemanticSegmentationPrediction, SigmoidInstanceSegmentationFormat,
     SigmoidInstanceSegmentationMasks, SigmoidInstanceSegmentationOptions,
-    SigmoidInstanceSegmentationPrediction, SigmoidTopKDetectionOptions, SoftmaxDetectionOptions,
-    WeightedNmsScore,
+    SigmoidInstanceSegmentationPrediction, SigmoidTopKDetectionOptions, SoftNmsMethod,
+    SoftNmsOptions, SoftmaxDetectionOptions, WeightedNmsScore,
 };
 pub use detection::{
     SigmoidInstanceSegmentationFormat as InstanceSegmentationFormat,
