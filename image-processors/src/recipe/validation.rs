@@ -649,6 +649,16 @@ fn validate_resize_stage(index: usize, resize: RecipeResizeStage) -> Result<(), 
                 shortest_edge_resize_size(PROBE_SIZE, shortest_edge, longest_edge),
             )?;
         }
+        RecipeResizeTarget::ShortestEdgeCappedTiesEven {
+            shortest_edge,
+            longest_edge,
+        } => {
+            validate_transform(
+                index,
+                resize.target.kind(),
+                shortest_edge_resize_size_capped_ties_even(PROBE_SIZE, shortest_edge, longest_edge),
+            )?;
+        }
         RecipeResizeTarget::ShortestEdgeRoundTiesEven {
             shortest_edge,
             multiple,

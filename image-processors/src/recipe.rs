@@ -29,8 +29,9 @@ use crate::transforms::{
     area_resize_plan, aspect_ratio_crop_plan, centered_padding, fit_inside_size,
     longest_edge_resize_size, multiple_of_resize_plan, pad_to_multiple_plan, padded_image_size,
     patch_grid_plan, resize_center_crop_plan, resize_fill_plan, select_aspect_ratio_bucket,
-    shortest_edge_resize_size, should_rotate_to_match_orientation, split_image_encoder_size,
-    split_image_plan, temporal_repeat_last_plan, tiled_canvas_plan, validate_image_crop_box,
+    shortest_edge_resize_size, shortest_edge_resize_size_capped_ties_even,
+    should_rotate_to_match_orientation, split_image_encoder_size, split_image_plan,
+    temporal_repeat_last_plan, tiled_canvas_plan, validate_image_crop_box,
     validate_image_size_constraints, validate_padding_fill, video_size_bucket_plan,
     AspectRatioCropOptions, CanvasFill, ImageCropBox, ImageSize, ImageSizeConstraints,
     OverlayPosition, Padding, ResizeDecision, ResizeFilter, ResizeLimits, ResizeMode, ResizeParity,
@@ -280,6 +281,7 @@ impl ProcessorRecipe {
                         }
                         RecipeResizeTarget::MaxHeightWidth { .. }
                         | RecipeResizeTarget::ShortestEdge { .. }
+                        | RecipeResizeTarget::ShortestEdgeCappedTiesEven { .. }
                         | RecipeResizeTarget::ShortestEdgeRoundTiesEven { .. }
                         | RecipeResizeTarget::ShortestEdgeRoundDown { .. }
                         | RecipeResizeTarget::LongestEdge { .. } => {

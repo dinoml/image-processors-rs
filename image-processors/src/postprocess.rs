@@ -47,8 +47,10 @@ mod multiclass;
 mod query_mask;
 mod text_detection;
 pub use text_detection::{
-    approximate_closed_polygon, bitmap_contours, closed_polygon_area, post_process_text_detection,
-    ContourRetrieval, TextDetection, TextDetectionError, TextDetectionOptions,
+    approximate_closed_polygon, bitmap_contours, closed_polygon_area,
+    post_process_fast_text_detection, post_process_text_detection, ContourRetrieval,
+    FastTextBoxType, FastTextDetection, FastTextDetectionOptions, TextDetection,
+    TextDetectionError, TextDetectionOptions,
 };
 mod types;
 
