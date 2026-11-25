@@ -23,6 +23,8 @@ use thiserror::Error;
 
 mod grayscale;
 pub use grayscale::{decode_grayscale_image_bytes, load_grayscale_image_from_path};
+mod jpeg;
+pub use jpeg::jpeg_reference_roundtrip;
 
 use crate::tensor::{ImageLayout, TensorDataView, TensorError, TensorView};
 mod stream;
@@ -1348,6 +1350,9 @@ pub enum MediaError {
     /// TurboJPEG decoding was requested in a build without TurboJPEG support.
     #[error("turbojpeg image decoding is not available in this build")]
     TurboJpegUnavailable,
+    /// JPEG reference preprocessing received an invalid quality or pixel format.
+    #[error("invalid JPEG reference request: {0}")]
+    InvalidJpegReference(String),
     /// TurboJPEG decoding failed.
     #[error("turbojpeg image decoding failed: {message}")]
     TurboJpeg {
