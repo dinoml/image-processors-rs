@@ -46,7 +46,9 @@ mod multiclass;
 mod query_mask;
 mod text_detection;
 pub use text_detection::{
-    post_process_text_detection, TextDetection, TextDetectionError, TextDetectionOptions,
+    post_process_fast_text_detection, post_process_text_detection, FastTextBoxType,
+    FastTextDetection, FastTextDetectionOptions, TextDetection, TextDetectionError,
+    TextDetectionOptions,
 };
 mod types;
 
