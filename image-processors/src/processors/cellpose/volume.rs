@@ -385,8 +385,8 @@ pub fn stitch_masks(slices: &mut [Vec<u32>], threshold: f64) -> Result<()> {
         }
         // The original dense IoU matrix has a row for EVERY label through
         // current_max. Absent labels consume fresh IDs as well.
-        let matched_count = u32::try_from(matched.len())
-            .map_err(|_| invalid("stitch label overflow"))?;
+        let matched_count =
+            u32::try_from(matched.len()).map_err(|_| invalid("stitch label overflow"))?;
         let next_max = mmax
             .checked_add(current_max - matched_count)
             .ok_or_else(|| invalid("stitch label overflow"))?;

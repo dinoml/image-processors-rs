@@ -28,11 +28,16 @@ fn normalization_matches_unmodified_original_cpu_functions() {
             continue;
         }
         assert_eq!(actual.len(), case.expected.len());
-        let mismatch = actual.iter().zip(&case.expected).enumerate().find(|(_, (a, b))| {
-            !a.is_finite() || (*a - *b).abs() > 2e-6 * b.abs().max(1.0)
-        });
+        let mismatch = actual
+            .iter()
+            .zip(&case.expected)
+            .enumerate()
+            .find(|(_, (a, b))| !a.is_finite() || (*a - *b).abs() > 2e-6 * b.abs().max(1.0));
         if let Some((index, (a, b))) = mismatch {
-            failures.push(format!("{}: index {index}, actual {a}, original {b}", case.name));
+            failures.push(format!(
+                "{}: index {index}, actual {a}, original {b}",
+                case.name
+            ));
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));

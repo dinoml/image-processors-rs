@@ -285,18 +285,15 @@ pub fn reconstruct_masks(field: &CellposeField, options: &CellposeMaskOptions) -
 }
 
 fn renumber(masks: &mut [u32]) {
-    let mut labels = masks
-        .iter()
-        .copied()
-        .filter(|&n| n > 0)
-        .map(|n| (n, 0u32))
-        .collect::<BTreeMap<_, _>>();
-    for (index, value) in labels.values_mut().enumerate() {
-        *value = (index + 1) as u32;
-    }
+    let mut labels = BTreeMap::new();
+    let mut next = 0u32;
+    // fastremap assigns IDs on first array encounter, preserving zero.
     for label in masks {
         if *label > 0 {
-            *label = labels[label];
+            *label = *labels.entry(*label).or_insert_with(|| {
+                next += 1;
+                next
+            });
         }
     }
 }
@@ -326,15 +323,19 @@ fn quality_control(masks: &mut [u32], field: &CellposeField, threshold: f64) -> 
         let xmin = points.iter().map(|i| i % width).min().unwrap_or(0);
         let xmax = points.iter().map(|i| i % width).max().unwrap_or(0);
         let local = [ymax - ymin + 3, xmax - xmin + 3];
-        let mean_y = (points.iter().map(|i| i / width).sum::<usize>() as f64 / points.len() as f64)
+        // get_centers rounds coordinates inside each bounding box, then adds
+        // its origin. Global rounding differs at half-integers with odd origins.
+        let mean_y = (points.iter().map(|i| i / width - ymin).sum::<usize>() as f64
+            / points.len() as f64)
             .round_ties_even();
-        let mean_x = (points.iter().map(|i| i % width).sum::<usize>() as f64 / points.len() as f64)
+        let mean_x = (points.iter().map(|i| i % width - xmin).sum::<usize>() as f64
+            / points.len() as f64)
             .round_ties_even();
         let center = *points
             .iter()
             .min_by(|&&a, &&b| {
-                let distance = |i: usize| (i / width) as f64 - mean_y;
-                let xdistance = |i: usize| (i % width) as f64 - mean_x;
+                let distance = |i: usize| (i / width - ymin) as f64 - mean_y;
+                let xdistance = |i: usize| (i % width - xmin) as f64 - mean_x;
                 (distance(a).powi(2) + xdistance(a).powi(2))
                     .total_cmp(&(distance(b).powi(2) + xdistance(b).powi(2)))
             })
@@ -394,10 +395,29 @@ fn quality_control(masks: &mut [u32], field: &CellposeField, threshold: f64) -> 
     Ok(())
 }
 
+fn filter_small_masks(masks: &mut [u32], min_size: usize) {
+    let mut sizes = BTreeMap::<u32, usize>::new();
+    for &label in masks.iter() {
+        *sizes.entry(label).or_default() += 1;
+    }
+    // Preserve uniq[1:]/counts[1:] from the original utility. It excludes
+    // the first sorted unique label even when there is no background zero.
+    let first = sizes.keys().next().copied();
+    for label in masks.iter_mut() {
+        if Some(*label) != first && sizes.get(label).is_some_and(|&size| size < min_size) {
+            *label = 0;
+        }
+    }
+    renumber(masks);
+}
+
 pub(super) fn fill_and_filter(masks: &mut [u32], shape: &[usize], min_size: usize) -> Result<()> {
     let count = elements(shape)?;
     if masks.len() != count {
         return Err(invalid("mask geometry differs"));
+    }
+    if min_size > 0 {
+        filter_small_masks(masks, min_size);
     }
     let mut labels = BTreeMap::<u32, Vec<usize>>::new();
     for (i, &label) in masks.iter().enumerate() {
@@ -406,13 +426,8 @@ pub(super) fn fill_and_filter(masks: &mut [u32], shape: &[usize], min_size: usiz
         }
     }
     let adjacency = offsets(shape.len(), 1, false);
-    for (&label, points) in &labels {
-        if points.len() < min_size {
-            for &p in points {
-                masks[p] = 0;
-            }
-            continue;
-        }
+    for (index, (&label, points)) in labels.iter().enumerate() {
+        let output_label = (index + 1) as u32;
         let mut low = shape.to_vec();
         let mut high = vec![0; shape.len()];
         for &p in points {
@@ -428,6 +443,11 @@ pub(super) fn fill_and_filter(masks: &mut [u32], shape: &[usize], min_size: usiz
             .collect::<Vec<_>>();
         let mut inside = vec![false; elements(&box_shape)?];
         for &p in points {
+            // Earlier hole fills may have overwritten this original label.
+            // find_objects retains the original box, but msk reads current labels.
+            if masks[p] != label {
+                continue;
+            }
             let p = coordinates(p, shape)
                 .iter()
                 .zip(&low)
@@ -456,11 +476,13 @@ pub(super) fn fill_and_filter(masks: &mut [u32], shape: &[usize], min_size: usiz
                     .zip(&low)
                     .map(|(&a, &b)| a + b - 1)
                     .collect::<Vec<_>>();
-                masks[flat(&p, shape)] = label;
+                masks[flat(&p, shape)] = output_label;
             }
         }
     }
-    renumber(masks);
+    if min_size > 0 {
+        filter_small_masks(masks, min_size);
+    }
     Ok(())
 }
 
