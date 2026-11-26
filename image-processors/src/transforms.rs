@@ -180,6 +180,7 @@ pub use layout_plans::{
     SpatialBatchPaddingPlan, SplitImageBatchMetadata, SplitImagePlan,
 };
 mod masks;
+pub(crate) use masks::connected_mask_regions;
 mod patch_grid;
 pub use masks::{
     binarize_mask, binarize_mask_to_unit_f32, binary_mask_to_box, binary_mask_to_rle,
