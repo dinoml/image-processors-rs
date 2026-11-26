@@ -8,6 +8,7 @@ pub use affine3d::{
 
 use std::collections::{HashMap, HashSet};
 
+pub use frame_ops::crop_frame_with_constant_fill;
 pub use image_resize_kernels::OpenCvInterpolation;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;

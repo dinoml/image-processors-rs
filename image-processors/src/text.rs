@@ -9,9 +9,14 @@ mod autofit_unicode;
 mod caption;
 mod cff;
 mod cff_hint;
-mod gray;
+pub(crate) mod gray;
 mod hinting;
 mod truetype;
+
+/// Unicode whitespace used by Python-compatible native text processing.
+pub fn is_text_whitespace(c: char) -> bool {
+    matches!(c, '\u{0009}'..='\u{000d}' | '\u{001c}'..='\u{0020}' | '\u{0085}' | '\u{00a0}' | '\u{1680}' | '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}' | '\u{205f}' | '\u{3000}')
+}
 
 /// Native BASIC caption renderer with an explicit default font and ordered fallbacks.
 /// The default font is an application asset, rather than an engine-dependent system font.
@@ -139,6 +144,119 @@ pub struct TextMetrics {
 }
 
 impl TrueTypeFont {
+    /// Resolve an encoded PDF glyph independently of extracted /ToUnicode text.
+    pub(crate) fn document_glyph_index(&self, character: Option<char>) -> Result<usize> {
+        character.map_or(Ok(0), |character| self.glyph_index(character))
+    }
+
+    pub(crate) fn document_advance(&self, id: usize, pdf_advance: Option<f64>) -> Result<f64> {
+        if id >= self.glyphs {
+            return Err(invalid());
+        }
+        if let Some(advance) = pdf_advance {
+            return Ok(advance);
+        }
+        let units = f64::from(self.units);
+        let metrics = self.table(b"hmtx")?;
+        let width = f64::from(u16_at(metrics, id.min(self.metrics - 1) * 4)?);
+        Ok(((width * 1000.0 + (units / 2.0).floor()) / units).trunc() / 1000.0)
+    }
+
+    pub(crate) fn document_glyph(
+        &self,
+        id: usize,
+        transform: [f64; 6],
+        font_size: f64,
+        pdf_advance: Option<f64>,
+    ) -> Result<(Vec<gray::Segment>, f64, [f64; 4])> {
+        if id >= self.glyphs {
+            return Err(invalid());
+        }
+        let units = f64::from(self.units);
+        // PDFium's document metrics normalize to integer thousandths before
+        // applying text matrices, including its truncation for negative values.
+        let normalize =
+            |value: f64| ((value * 1000.0 + (units / 2.0).floor()) / units).trunc() / 1000.0;
+        let advance = self.document_advance(id, pdf_advance)?;
+        let contours = self.contours(id, 0)?;
+        let mut font_bounds = [
+            f64::INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NEG_INFINITY,
+        ];
+        for point in contours.iter().flatten() {
+            let x = f64::from(point.x);
+            let y = f64::from(point.y);
+            font_bounds[0] = font_bounds[0].min(x);
+            font_bounds[1] = font_bounds[1].min(y);
+            font_bounds[2] = font_bounds[2].max(x);
+            font_bounds[3] = font_bounds[3].max(y);
+        }
+        let mut metric_bounds = if font_bounds[0].is_finite() {
+            font_bounds.map(normalize)
+        } else {
+            [0.0; 4]
+        };
+        // An outline-free space still occupies its declared text advance.
+        // The original text extractor also gives a flat glyph one font unit
+        // of height after its 0.01-point degeneracy check.
+        if (metric_bounds[3] - metric_bounds[1]).abs() * font_size < 0.01 {
+            metric_bounds[3] = metric_bounds[1] + 0.001;
+        }
+        if (metric_bounds[2] - metric_bounds[0]).abs() * font_size < 0.01 {
+            metric_bounds[2] = metric_bounds[0] + advance;
+        }
+        let mut segments = Vec::new();
+        let mut bounds = [
+            f64::INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NEG_INFINITY,
+        ];
+        let map_units = |x: f64, y: f64| {
+            [
+                transform[0] * x + transform[2] * y + transform[4],
+                transform[1] * x + transform[3] * y + transform[5],
+            ]
+        };
+        let map = |point: Point| map_units(f64::from(point.x) / units, f64::from(point.y) / units);
+        for (x, y) in [
+            (metric_bounds[0], metric_bounds[1]),
+            (metric_bounds[0], metric_bounds[3]),
+            (metric_bounds[2], metric_bounds[1]),
+            (metric_bounds[2], metric_bounds[3]),
+        ] {
+            let [x, y] = map_units(x, y);
+            bounds[0] = bounds[0].min(x);
+            bounds[1] = bounds[1].min(y);
+            bounds[2] = bounds[2].max(x);
+            bounds[3] = bounds[3].max(y);
+        }
+        for contour in contours {
+            let mut edges = Vec::new();
+            outline(&contour, &mut edges);
+            if let Some((start, _)) = edges.first() {
+                let [x, y] = map(*start);
+                segments.push(gray::Segment::Move(gray::Position {
+                    x: (x * 64.0).round() as i64,
+                    y: (-y * 64.0).round() as i64,
+                }));
+            }
+            for (_, b) in edges {
+                let [x, y] = map(b);
+                segments.push(gray::Segment::Line(gray::Position {
+                    x: (x * 64.0).round() as i64,
+                    y: (-y * 64.0).round() as i64,
+                }));
+            }
+        }
+        if !bounds[0].is_finite() {
+            bounds = [transform[4], transform[5], transform[4], transform[5]];
+        }
+        Ok((segments, advance, bounds))
+    }
+
     /// Parse an sfnt TrueType font containing Unicode mappings and quadratic outlines.
     /// # Errors
     /// Returns InvalidData for malformed tables or unsupported outline formats.

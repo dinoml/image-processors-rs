@@ -2258,3 +2258,5 @@ fn image_size_source_name(source: &RecipeImageSizeSource) -> String {
         RecipeImageSizeSource::Other(name) => name.clone(),
     }
 }
+mod components;
+pub use components::{connected_components_4, ConnectedComponent, ConnectedComponentsError};

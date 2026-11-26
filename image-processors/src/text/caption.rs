@@ -112,9 +112,8 @@ fn paint(destination: &mut [u8], width: usize, height: usize, mask: &TextMask, o
 }
 
 fn lines(text: &str) -> Vec<String> {
-    let whitespace = |c| matches!(c, '\u{0009}'..='\u{000d}' | '\u{001c}'..='\u{0020}' | '\u{0085}' | '\u{00a0}' | '\u{1680}' | '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}' | '\u{205f}' | '\u{3000}');
     let compact = text
-        .split(whitespace)
+        .split(super::is_text_whitespace)
         .filter(|part| !part.is_empty())
         .collect::<Vec<_>>()
         .join(" ");

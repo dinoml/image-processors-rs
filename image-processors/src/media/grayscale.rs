@@ -24,6 +24,75 @@ pub fn load_grayscale_image_from_path(path: impl AsRef<Path>) -> Result<ImageFra
     decode_grayscale_image_bytes(&std::fs::read(path)?)
 }
 
+/// Decode all pages of a TIFF, or the original single grayscale image.
+///
+/// Each TIFF IFD is decoded through the existing codec and grayscale policy.
+/// Offsets remain relative to the original bytes; only the in-memory first-IFD
+/// pointer changes between pages. No page is silently discarded.
+/// # Errors
+/// Reports malformed/cyclic IFD chains, codec errors or unavailable JPEG support.
+pub fn decode_grayscale_image_sequence_bytes(bytes: &[u8]) -> Result<Vec<ImageFrame>, MediaError> {
+    if !matches!(bytes.get(..2), Some(b"II" | b"MM")) {
+        return decode_grayscale_image_bytes(bytes).map(|frame| vec![frame]);
+    }
+    let little = bytes.starts_with(b"II");
+    let read = |at: usize, count: usize| -> Result<u64, MediaError> {
+        let end = at.checked_add(count).ok_or(MediaError::FrameSizeOverflow)?;
+        let data = bytes
+            .get(at..end)
+            .ok_or(MediaError::InvalidImageSequence("truncated TIFF directory"))?;
+        let mut value = 0;
+        for (i, &byte) in data.iter().enumerate() {
+            let shift = if little { i } else { count - 1 - i };
+            value |= u64::from(byte) << (shift * 8);
+        }
+        Ok(value)
+    };
+    let magic = read(2, 2)?;
+    let (pointer, size, count_size, entry_size) = match magic {
+        42 => (4, 4, 2, 12),
+        43 => {
+            if read(4, 2)? != 8 || read(6, 2)? != 0 {
+                return Err(MediaError::InvalidImageSequence("invalid BigTIFF header"));
+            }
+            (8, 8, 8, 20)
+        }
+        _ => return Err(MediaError::InvalidImageSequence("invalid TIFF header")),
+    };
+    let mut next = read(pointer, size)?;
+    let mut visited = std::collections::BTreeSet::new();
+    let mut storage = bytes.to_vec();
+    let mut frames = Vec::new();
+    while next != 0 {
+        if !visited.insert(next) || visited.len() > 100_000 {
+            return Err(MediaError::InvalidImageSequence(
+                "cyclic or excessive TIFF directories",
+            ));
+        }
+        let at = usize::try_from(next).map_err(|_| MediaError::FrameSizeOverflow)?;
+        let count =
+            usize::try_from(read(at, count_size)?).map_err(|_| MediaError::FrameSizeOverflow)?;
+        let end = at
+            .checked_add(count_size)
+            .and_then(|v| {
+                count
+                    .checked_mul(entry_size)
+                    .and_then(|entries| v.checked_add(entries))
+            })
+            .ok_or(MediaError::FrameSizeOverflow)?;
+        for i in 0..size {
+            let shift = if little { i } else { size - 1 - i };
+            storage[pointer + i] = (next >> (shift * 8)) as u8;
+        }
+        next = read(end, size)?;
+        frames.push(decode_grayscale_image_bytes(&storage)?);
+    }
+    if frames.is_empty() {
+        return Err(MediaError::EmptyFrameSequence);
+    }
+    Ok(frames)
+}
+
 /// Decode encoded image bytes to eight-bit grayscale, respecting codec precision.
 ///
 /// PNG's integer coefficients are truncated to fifteen bits. Eight-bit sums
