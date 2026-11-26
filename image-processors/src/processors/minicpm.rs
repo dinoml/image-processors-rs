@@ -203,7 +203,9 @@ fn adaptive_upsize_resolution(frame: &ImageFrame, resolution: usize) -> Result<O
     let rgb = crate::convert_frame_pixel_format(frame, PixelFormat::Rgb8)?;
     let gray = rgb
         .data()
-        .chunks_exact(3)
+        .as_chunks::<3>()
+        .0
+        .iter()
         .map(|p| {
             ((u32::from(p[0]) * 19595 + u32::from(p[1]) * 38470 + u32::from(p[2]) * 7471 + 32768)
                 >> 16) as u8
