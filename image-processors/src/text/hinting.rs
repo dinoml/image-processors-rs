@@ -296,6 +296,18 @@ impl Interpreter {
         let dot = if dot.abs() < 1024 { 16384 } else { dot };
         let dx = mul_div(distance, freedom.x, dot)?;
         let dy = mul_div(distance, freedom.y, dot)?;
+        self.displace_point(zone, index, dx, dy, touch)
+    }
+
+    fn displace_point(
+        &mut self,
+        zone: usize,
+        index: usize,
+        dx: i64,
+        dy: i64,
+        touch: bool,
+    ) -> Result<()> {
+        let freedom = self.graphics.freedom;
         let point = self.zones[zone]
             .current
             .get_mut(index)
@@ -793,16 +805,22 @@ impl Interpreter {
                 }
                 0x38 => {
                     let distance = self.pop()?;
+                    // SHPIX is a pixel displacement along the freedom vector,
+                    // independent of the projection used by relative moves.
+                    let freedom = self.graphics.freedom;
+                    let dx = mul_div(distance, freedom.x, 16384)?;
+                    let dy = mul_div(distance, freedom.y, 16384)?;
+                    let in_twilight = self.graphics.zones.contains(&0);
                     for _ in 0..self.graphics.loop_count {
                         let point = self.index()?;
                         let zone = self.graphics.zones[2];
                         if !self.backward
-                            || zone == 0
+                            || in_twilight
                             || (!(self.interpolated[0] && self.interpolated[1])
                                 && ((self.composite && self.graphics.freedom.y != 0)
                                     || self.zones[zone].touched.get(point).ok_or_else(invalid)?[1]))
                         {
-                            self.move_point(zone, point, distance)?;
+                            self.displace_point(zone, point, dx, dy, true)?;
                         }
                     }
                     self.graphics.loop_count = 1;
@@ -1117,13 +1135,14 @@ impl Interpreter {
                     self.stack.push(value);
                 }
                 0x64..=0x67 => {
-                    let value = self.pop()?;
-                    self.stack.push(match opcode {
-                        0x64 => value.abs(),
-                        0x65 => -value,
+                    let value = self.pop()? as i32;
+                    let result = match opcode {
+                        0x64 => value.wrapping_abs(),
+                        0x65 => value.wrapping_neg(),
                         0x66 => value & !63,
-                        _ => (value + 63) & !63,
-                    });
+                        _ => value.wrapping_add(63) & !63,
+                    };
+                    self.stack.push(i64::from(result));
                 }
                 0x68..=0x6b => {
                     let value = self.pop()?;

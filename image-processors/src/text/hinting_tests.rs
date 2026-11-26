@@ -1,4 +1,5 @@
-use super::Interpreter;
+use super::super::gray::Position;
+use super::{Interpreter, Zone};
 
 fn arithmetic_program(a: i16, b: i16, opcode: u8) -> Vec<u8> {
     // PUSHB storage slot, PUSHW numerator/denominator, operation, WS.
@@ -67,5 +68,312 @@ fn arithmetic_results_preserve_reference_signed_32_bit_stack_width() {
             .execute(&[opcode, 0x42], 0)
             .expect("valid boundary arithmetic must execute");
         assert_eq!(interpreter.storage[0], expected);
+    }
+}
+
+#[test]
+fn unary_bytecode_matches_original_signed_32_bit_reference() {
+    // Actual FreeType2.13.2 Windows TT_RunIns results, interpreter40.
+    let cases: [(u8, i32, i32); 12] = [
+        (100, -2147483648, -2147483648),
+        (100, -1, 1),
+        (101, -2147483648, -2147483648),
+        (101, 2147483647, -2147483647),
+        (102, -1, -64),
+        (102, -2147483648, -2147483648),
+        (103, 2147483647, -2147483648),
+        (103, -65, -64),
+        (103, -64, -64),
+        (103, -1, 0),
+        (103, 0, 0),
+        (103, 1, 64),
+    ];
+    for (opcode, input, expected) in cases {
+        let mut interpreter = Interpreter::new(20, 2048, 1, 1, &[])
+            .expect("the bounded unary interpreter must initialize");
+        interpreter.stack = vec![0, i64::from(input)];
+        interpreter
+            .execute(&[opcode, 0x42], 0)
+            .expect("valid unary bytecode and storage write must execute");
+        assert_eq!(
+            interpreter.storage[0],
+            i64::from(expected),
+            "opcode {opcode:#x}, input {input}"
+        );
+    }
+}
+
+struct ShpixReference {
+    name: &'static str,
+    distance: i64,
+    freedom: [i64; 2],
+    projection: [i64; 2],
+    backward: bool,
+    zones: [usize; 3],
+    composite: bool,
+    touched_y: bool,
+    after_iup: bool,
+    expected_position: [i64; 2],
+    expected_touched: [bool; 2],
+}
+
+#[test]
+fn shpix_matches_original_direct_displacement_and_twilight_policy() {
+    // Actual original TT_RunIns, Ins_SHPIX and Move_Zp2_Point oracle values.
+    // All coordinates start at zero, with real IUP opcodes where requested.
+    let cases = [
+        ShpixReference {
+            name: "direct-freedom-not-projection",
+            distance: 64,
+            freedom: [0, 16384],
+            projection: [11585, 11585],
+            backward: false,
+            zones: [1, 1, 1],
+            composite: false,
+            touched_y: false,
+            after_iup: false,
+            expected_position: [0, 64],
+            expected_touched: [false, true],
+        },
+        ShpixReference {
+            name: "diagonal-freedom",
+            distance: 64,
+            freedom: [11585, 11585],
+            projection: [0, 16384],
+            backward: false,
+            zones: [1, 1, 1],
+            composite: false,
+            touched_y: false,
+            after_iup: false,
+            expected_position: [45, 45],
+            expected_touched: [true, true],
+        },
+        ShpixReference {
+            name: "negative-diagonal-freedom",
+            distance: -64,
+            freedom: [11585, 11585],
+            projection: [0, 16384],
+            backward: false,
+            zones: [1, 1, 1],
+            composite: false,
+            touched_y: false,
+            after_iup: false,
+            expected_position: [-45, -45],
+            expected_touched: [true, true],
+        },
+        ShpixReference {
+            name: "positive-half-rounding",
+            distance: 1,
+            freedom: [8192, 14189],
+            projection: [0, 16384],
+            backward: false,
+            zones: [1, 1, 1],
+            composite: false,
+            touched_y: false,
+            after_iup: false,
+            expected_position: [1, 1],
+            expected_touched: [true, true],
+        },
+        ShpixReference {
+            name: "negative-half-rounding",
+            distance: -1,
+            freedom: [8192, 14189],
+            projection: [0, 16384],
+            backward: false,
+            zones: [1, 1, 1],
+            composite: false,
+            touched_y: false,
+            after_iup: false,
+            expected_position: [-1, -1],
+            expected_touched: [true, true],
+        },
+        ShpixReference {
+            name: "backward-untouched-is-suppressed",
+            distance: 64,
+            freedom: [0, 16384],
+            projection: [11585, 11585],
+            backward: true,
+            zones: [1, 1, 1],
+            composite: false,
+            touched_y: false,
+            after_iup: false,
+            expected_position: [0, 0],
+            expected_touched: [false, false],
+        },
+        ShpixReference {
+            name: "backward-touched-y",
+            distance: 64,
+            freedom: [0, 16384],
+            projection: [11585, 11585],
+            backward: true,
+            zones: [1, 1, 1],
+            composite: false,
+            touched_y: true,
+            after_iup: false,
+            expected_position: [0, 64],
+            expected_touched: [false, true],
+        },
+        ShpixReference {
+            name: "backward-composite",
+            distance: 64,
+            freedom: [0, 16384],
+            projection: [11585, 11585],
+            backward: true,
+            zones: [1, 1, 1],
+            composite: true,
+            touched_y: false,
+            after_iup: false,
+            expected_position: [0, 64],
+            expected_touched: [false, true],
+        },
+        ShpixReference {
+            name: "any-selected-zone-0-twilight",
+            distance: 64,
+            freedom: [0, 16384],
+            projection: [11585, 11585],
+            backward: true,
+            zones: [0, 1, 1],
+            composite: false,
+            touched_y: false,
+            after_iup: false,
+            expected_position: [0, 64],
+            expected_touched: [false, true],
+        },
+        ShpixReference {
+            name: "any-selected-zone-1-twilight",
+            distance: 64,
+            freedom: [0, 16384],
+            projection: [11585, 11585],
+            backward: true,
+            zones: [1, 0, 1],
+            composite: false,
+            touched_y: false,
+            after_iup: false,
+            expected_position: [0, 64],
+            expected_touched: [false, true],
+        },
+        ShpixReference {
+            name: "any-selected-zone-2-twilight",
+            distance: 64,
+            freedom: [0, 16384],
+            projection: [11585, 11585],
+            backward: true,
+            zones: [1, 1, 0],
+            composite: false,
+            touched_y: false,
+            after_iup: false,
+            expected_position: [0, 64],
+            expected_touched: [false, true],
+        },
+        ShpixReference {
+            name: "after-both-iup-no-twilight",
+            distance: 64,
+            freedom: [0, 16384],
+            projection: [11585, 11585],
+            backward: true,
+            zones: [1, 1, 1],
+            composite: false,
+            touched_y: false,
+            after_iup: true,
+            expected_position: [0, 0],
+            expected_touched: [false, false],
+        },
+        ShpixReference {
+            name: "after-both-iup-twilight-touch",
+            distance: 64,
+            freedom: [0, 16384],
+            projection: [11585, 11585],
+            backward: true,
+            zones: [0, 1, 1],
+            composite: false,
+            touched_y: false,
+            after_iup: true,
+            expected_position: [0, 0],
+            expected_touched: [false, true],
+        },
+        ShpixReference {
+            name: "after-both-iup-twilight-both-touches",
+            distance: 64,
+            freedom: [11585, 11585],
+            projection: [0, 16384],
+            backward: true,
+            zones: [0, 1, 1],
+            composite: false,
+            touched_y: false,
+            after_iup: true,
+            expected_position: [0, 0],
+            expected_touched: [true, true],
+        },
+        ShpixReference {
+            name: "after-iup-with-backward-disabled",
+            distance: 64,
+            freedom: [0, 16384],
+            projection: [11585, 11585],
+            backward: false,
+            zones: [1, 1, 1],
+            composite: false,
+            touched_y: false,
+            after_iup: true,
+            expected_position: [0, 64],
+            expected_touched: [false, true],
+        },
+        ShpixReference {
+            name: "backward-x-only-records-touch",
+            distance: 64,
+            freedom: [16384, 0],
+            projection: [11585, 11585],
+            backward: true,
+            zones: [1, 1, 1],
+            composite: false,
+            touched_y: true,
+            after_iup: false,
+            expected_position: [0, 0],
+            expected_touched: [true, true],
+        },
+    ];
+    for case in cases {
+        let mut interpreter = Interpreter::new(20, 2048, 1, 1, &[])
+            .expect("the bounded SHPIX interpreter must initialize");
+        let zero = vec![Position::default()];
+        interpreter.zones[1] = Zone {
+            current: zero.clone(),
+            original: zero.clone(),
+            unscaled: zero,
+            touched: vec![[false; 2]],
+            on_curve: vec![true],
+            ends: vec![0],
+        };
+        interpreter.graphics.freedom = Position {
+            x: case.freedom[0],
+            y: case.freedom[1],
+        };
+        interpreter.graphics.projection = Position {
+            x: case.projection[0],
+            y: case.projection[1],
+        };
+        interpreter.graphics.dual = interpreter.graphics.projection;
+        interpreter.graphics.zones = case.zones;
+        interpreter.backward = case.backward;
+        interpreter.composite = case.composite;
+        let destination = case.zones[2];
+        interpreter.zones[destination].touched[0][1] = case.touched_y;
+        interpreter.stack = vec![0, case.distance];
+        let program: &[u8] = if case.after_iup {
+            &[0x30, 0x31, 0x38]
+        } else {
+            &[0x38]
+        };
+        interpreter
+            .execute(program, 0)
+            .expect("valid synthetic SHPIX bytecode must execute");
+        let point = interpreter.zones[destination].current[0];
+        assert_eq!([point.x, point.y], case.expected_position, "{}", case.name);
+        assert_eq!(
+            interpreter.zones[destination].touched[0], case.expected_touched,
+            "{}",
+            case.name
+        );
+        assert_eq!(interpreter.graphics.loop_count, 1);
+        assert!(interpreter.stack.is_empty());
     }
 }
