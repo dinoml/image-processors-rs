@@ -136,36 +136,8 @@ pub fn remove_small_mask_regions(
     area_threshold: usize,
     mode: MaskRegionMode,
 ) -> Result<(Vec<bool>, bool), TransformError> {
-    validate_size(size)?;
-    validate_len(mask.len(), checked_pixels(size)?)?;
-    let foreground = mode == MaskRegionMode::Islands;
-    let mut labels = vec![0usize; mask.len()];
-    let mut areas = vec![0usize];
-    let mut pending = Vec::new();
-    for start in 0..mask.len() {
-        if mask[start] != foreground || labels[start] != 0 {
-            continue;
-        }
-        let label = areas.len();
-        labels[start] = label;
-        pending.push(start);
-        let mut area = 0usize;
-        while let Some(index) = pending.pop() {
-            area += 1;
-            let y = index / size.width;
-            let x = index % size.width;
-            for row in y.saturating_sub(1)..=y.saturating_add(1).min(size.height - 1) {
-                for column in x.saturating_sub(1)..=x.saturating_add(1).min(size.width - 1) {
-                    let neighbor = row * size.width + column;
-                    if mask[neighbor] == foreground && labels[neighbor] == 0 {
-                        labels[neighbor] = label;
-                        pending.push(neighbor);
-                    }
-                }
-            }
-        }
-        areas.push(area);
-    }
+    let (labels, stats) = connected_mask_regions(mask, size, mode == MaskRegionMode::Islands)?;
+    let areas = stats.iter().map(|stat| stat[4]).collect::<Vec<_>>();
     let changed = areas.iter().skip(1).any(|&area| area < area_threshold);
     if !changed {
         return Ok((mask.to_vec(), false));
@@ -188,6 +160,50 @@ pub fn remove_small_mask_regions(
         })
         .collect();
     Ok((cleaned, true))
+}
+
+/// Eight-connected labels and [left, top, width, height, area] statistics.
+/// Label zero is reserved for pixels outside the selected polarity.
+pub(crate) fn connected_mask_regions(
+    mask: &[bool],
+    size: ImageSize,
+    foreground: bool,
+) -> Result<(Vec<usize>, Vec<[usize; 5]>), TransformError> {
+    validate_size(size)?;
+    validate_len(mask.len(), checked_pixels(size)?)?;
+    let mut labels = vec![0usize; mask.len()];
+    let mut stats = vec![[0; 5]];
+    let mut pending = Vec::new();
+    for start in 0..mask.len() {
+        if mask[start] != foreground || labels[start] != 0 {
+            continue;
+        }
+        let label = stats.len();
+        labels[start] = label;
+        pending.push(start);
+        let mut area = 0usize;
+        let (mut left, mut top, mut right, mut bottom) = (size.width, size.height, 0usize, 0usize);
+        while let Some(index) = pending.pop() {
+            area += 1;
+            let y = index / size.width;
+            let x = index % size.width;
+            left = left.min(x);
+            top = top.min(y);
+            right = right.max(x);
+            bottom = bottom.max(y);
+            for row in y.saturating_sub(1)..=y.saturating_add(1).min(size.height - 1) {
+                for column in x.saturating_sub(1)..=x.saturating_add(1).min(size.width - 1) {
+                    let neighbor = row * size.width + column;
+                    if mask[neighbor] == foreground && labels[neighbor] == 0 {
+                        labels[neighbor] = label;
+                        pending.push(neighbor);
+                    }
+                }
+            }
+        }
+        stats.push([left, top, right - left + 1, bottom - top + 1, area]);
+    }
+    Ok((labels, stats))
 }
 
 /// Encode uncompressed mask runs as COCO's signed, delta-coded ASCII counts.
