@@ -940,7 +940,7 @@ impl Decoder<'_, '_> {
             return Err(invalid());
         }
         let mut position = 0;
-        for pair in self.stack.chunks_exact(2) {
+        for pair in self.stack.as_chunks::<2>().0 {
             position = add(position, pair[0]);
             self.glyph.stems.push(Stem {
                 vertical,
@@ -988,7 +988,7 @@ impl Decoder<'_, '_> {
                     if !values.len().is_multiple_of(2) {
                         return Err(invalid());
                     }
-                    for pair in values.chunks_exact(2) {
+                    for pair in values.as_chunks::<2>().0 {
                         self.line(pair[0], pair[1]);
                     }
                 }
@@ -1007,7 +1007,7 @@ impl Decoder<'_, '_> {
                     if !values.len().is_multiple_of(6) {
                         return Err(invalid());
                     }
-                    for delta in values.chunks_exact(6) {
+                    for delta in values.as_chunks::<6>().0 {
                         self.curve(delta)?;
                     }
                 }
@@ -1061,7 +1061,7 @@ impl Decoder<'_, '_> {
                         return Err(invalid());
                     }
                     let n = values.len() - 2;
-                    for delta in values[..n].chunks_exact(6) {
+                    for delta in values[..n].as_chunks::<6>().0 {
                         self.curve(delta)?;
                     }
                     self.line(values[n], values[n + 1]);
@@ -1072,7 +1072,7 @@ impl Decoder<'_, '_> {
                         return Err(invalid());
                     }
                     let n = values.len() - 6;
-                    for pair in values[..n].chunks_exact(2) {
+                    for pair in values[..n].as_chunks::<2>().0 {
                         self.line(pair[0], pair[1]);
                     }
                     self.curve(&values[n..])?;
@@ -1087,7 +1087,7 @@ impl Decoder<'_, '_> {
                     if !values.len().is_multiple_of(4) {
                         return Err(invalid());
                     }
-                    for delta in values.chunks_exact(4) {
+                    for delta in values.as_chunks::<4>().0 {
                         if operator == 26 {
                             self.curve(&[optional, delta[0], delta[1], delta[2], 0, delta[3]])?;
                         } else {

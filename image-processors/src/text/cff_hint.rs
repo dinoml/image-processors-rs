@@ -268,7 +268,7 @@ impl Blues {
         }
         let mut maximum = 0;
         for (other, values) in [(false, &values), (true, &others)] {
-            for (index, pair) in values.chunks_exact(2).enumerate() {
+            for (index, pair) in values.as_chunks::<2>().0.iter().enumerate() {
                 if pair[1] < pair[0] {
                     continue;
                 }
@@ -288,7 +288,7 @@ impl Blues {
             let original = zone.flat;
             let mut difference = i64::from(i32::MAX);
             if zone.bottom {
-                for pair in family_others.chunks_exact(2) {
+                for pair in family_others.as_chunks::<2>().0 {
                     let distance = (original - pair[1]).abs();
                     if distance < difference && distance < pixel {
                         difference = distance;
@@ -305,7 +305,7 @@ impl Blues {
                     }
                 }
             } else {
-                for pair in family.chunks_exact(2).skip(1) {
+                for pair in family.as_chunks::<2>().0.iter().skip(1) {
                     let distance = (original - pair[0]).abs();
                     if distance < difference && distance < pixel {
                         difference = distance;

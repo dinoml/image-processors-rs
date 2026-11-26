@@ -51,7 +51,9 @@ impl Face {
         let cvt = font
             .table(b"cvt ")
             .unwrap_or(&[])
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|pair| i16::from_be_bytes([pair[0], pair[1]]))
             .collect::<Vec<_>>();
         let mut interpreter = Interpreter::new(pixel_size, units, twilight, storage, &cvt)?;
