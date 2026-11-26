@@ -392,6 +392,328 @@
           }
         }
       ]
+    },
+    {
+      "name": "open-horizontal",
+      "pdfBase64": "JVBERi0xLjMKJeLjz9MKMSAwIG9iago8PAovUHJvZHVjZXIgKHB5cGRmKQo+PgplbmRvYmoKMiAwIG9iago8PAovVHlwZSAvUGFnZXMKL0NvdW50IDEKL0tpZHMgWyA0IDAgUiBdCj4+CmVuZG9iagozIDAgb2JqCjw8Ci9UeXBlIC9DYXRhbG9nCi9QYWdlcyAyIDAgUgo+PgplbmRvYmoKNCAwIG9iago8PAovVHlwZSAvUGFnZQovUmVzb3VyY2VzIDw8Cj4+Ci9NZWRpYUJveCBbIDAuMCAwLjAgMTYwIDEyMCBdCi9QYXJlbnQgMiAwIFIKL0NvbnRlbnRzIDUgMCBSCj4+CmVuZG9iago1IDAgb2JqCjw8Ci9MZW5ndGggMjYKPj4Kc3RyZWFtCjAgRyA2IHcgMjAgNDAgbSAxMDAgNDAgbCBTCmVuZHN0cmVhbQplbmRvYmoKeHJlZgowIDYKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDE1IDAwMDAwIG4gCjAwMDAwMDAwNTQgMDAwMDAgbiAKMDAwMDAwMDExMyAwMDAwMCBuIAowMDAwMDAwMTYyIDAwMDAwIG4gCjAwMDAwMDAyNzIgMDAwMDAgbiAKdHJhaWxlcgo8PAovU2l6ZSA2Ci9Sb290IDMgMCBSCi9JbmZvIDEgMCBSCj4+CnN0YXJ0eHJlZgozNDgKJSVFT0YK",
+      "reference": [
+        {
+          "scale": 1.0,
+          "width": 160,
+          "height": 120,
+          "grayPngBase64": "iVBORw0KGgoAAAANSUhEUgAAAKAAAAB4CAAAAABQyaazAAAAo0lEQVR4nO3bMQqAQAwAQU/8/5f1A8IVI5hit0yTIX3Wfczu/BuwK6AWUAuoBdQCagG1gFpALaAWUAuoBdQCagG1gFpALaAWUAuoBdQCagG1gFpALaAWUAuoBdQCagG1gFpALaAWUAuoBdQCauOB19twfbxEHhrGXzCgFlBbvQxhAbWAWkAtoBZQC6gF1AJqAbWAWkAtoBZQC6gF1AJqAbXxwAfSfgPvOcm29gAAAABJRU5ErkJggg==",
+          "textLayer": {
+            "lines": [],
+            "size": [
+              160.0,
+              120.0
+            ],
+            "trusted": false,
+            "reason": "no text layer",
+            "stats": {
+              "chars": 0,
+              "rotated": 0,
+              "bad": 0
+            }
+          }
+        },
+        {
+          "scale": 2.0,
+          "width": 320,
+          "height": 240,
+          "grayPngBase64": "iVBORw0KGgoAAAANSUhEUgAAAUAAAADwCAAAAABURuK3AAACEElEQVR4nO3XQQqAMAwAQSv+/8v1C8JWijJzDjQsuXTMg+LcvcDXCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGF1PB8ebWywwN73rAiMBIwEjASMBIwEjASMBIwEjASMBo7HrD/kXLjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjC6ATKbBN9kep5yAAAAAElFTkSuQmCC",
+          "textLayer": {
+            "lines": [],
+            "size": [
+              160.0,
+              120.0
+            ],
+            "trusted": false,
+            "reason": "no text layer",
+            "stats": {
+              "chars": 0,
+              "rotated": 0,
+              "bad": 0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "open-vertical",
+      "pdfBase64": "JVBERi0xLjMKJeLjz9MKMSAwIG9iago8PAovUHJvZHVjZXIgKHB5cGRmKQo+PgplbmRvYmoKMiAwIG9iago8PAovVHlwZSAvUGFnZXMKL0NvdW50IDEKL0tpZHMgWyA0IDAgUiBdCj4+CmVuZG9iagozIDAgb2JqCjw8Ci9UeXBlIC9DYXRhbG9nCi9QYWdlcyAyIDAgUgo+PgplbmRvYmoKNCAwIG9iago8PAovVHlwZSAvUGFnZQovUmVzb3VyY2VzIDw8Cj4+Ci9NZWRpYUJveCBbIDAuMCAwLjAgMTYwIDEyMCBdCi9QYXJlbnQgMiAwIFIKL0NvbnRlbnRzIDUgMCBSCj4+CmVuZG9iago1IDAgb2JqCjw8Ci9MZW5ndGggMjYKPj4Kc3RyZWFtCjAgRyA2IHcgNDAgMjAgbSA0MCAxMDAgbCBTCmVuZHN0cmVhbQplbmRvYmoKeHJlZgowIDYKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDE1IDAwMDAwIG4gCjAwMDAwMDAwNTQgMDAwMDAgbiAKMDAwMDAwMDExMyAwMDAwMCBuIAowMDAwMDAwMTYyIDAwMDAwIG4gCjAwMDAwMDAyNzIgMDAwMDAgbiAKdHJhaWxlcgo8PAovU2l6ZSA2Ci9Sb290IDMgMCBSCi9JbmZvIDEgMCBSCj4+CnN0YXJ0eHJlZgozNDgKJSVFT0YK",
+      "reference": [
+        {
+          "scale": 1.0,
+          "width": 160,
+          "height": 120,
+          "grayPngBase64": "iVBORw0KGgoAAAANSUhEUgAAAKAAAAB4CAAAAABQyaazAAAAoUlEQVR4nO3boQ3AMAwAQafq/iu3I7TSgQT8YYOXmYHXM2e7dgd8KVAVqApUBaoCVYGqQFWgKlDdv6bWzMxsOV+O32CBqkBVoCpQFagKVAWqAlWBqkBVoCpQFagKVAWqAlWBqkBVoCpQFagKVAWqAlWBqkBVoCpQFagKVAWqAlWBqkBVoCpQFagKVAWq1Y87KlAVqApUBaoCVYGqQFWgKlC9kc4D7xEfRD8AAAAASUVORK5CYII=",
+          "textLayer": {
+            "lines": [],
+            "size": [
+              160.0,
+              120.0
+            ],
+            "trusted": false,
+            "reason": "no text layer",
+            "stats": {
+              "chars": 0,
+              "rotated": 0,
+              "bad": 0
+            }
+          }
+        },
+        {
+          "scale": 2.0,
+          "width": 320,
+          "height": 240,
+          "grayPngBase64": "iVBORw0KGgoAAAANSUhEUgAAAUAAAADwCAAAAABURuK3AAACDklEQVR4nO3bMQrAIBAAwRjy/y+bNv0KIpmprpJjudYxL4p79wKnEzASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMHrWPTU+839+n7jASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwGjM3RsczgVGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRi9tKQTfvTeS0AAAAABJRU5ErkJggg==",
+          "textLayer": {
+            "lines": [],
+            "size": [
+              160.0,
+              120.0
+            ],
+            "trusted": false,
+            "reason": "no text layer",
+            "stats": {
+              "chars": 0,
+              "rotated": 0,
+              "bad": 0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "open-miter-polyline",
+      "pdfBase64": "JVBERi0xLjMKJeLjz9MKMSAwIG9iago8PAovUHJvZHVjZXIgKHB5cGRmKQo+PgplbmRvYmoKMiAwIG9iago8PAovVHlwZSAvUGFnZXMKL0NvdW50IDEKL0tpZHMgWyA0IDAgUiBdCj4+CmVuZG9iagozIDAgb2JqCjw8Ci9UeXBlIC9DYXRhbG9nCi9QYWdlcyAyIDAgUgo+PgplbmRvYmoKNCAwIG9iago8PAovVHlwZSAvUGFnZQovUmVzb3VyY2VzIDw8Cj4+Ci9NZWRpYUJveCBbIDAuMCAwLjAgMTYwIDEyMCBdCi9QYXJlbnQgMiAwIFIKL0NvbnRlbnRzIDUgMCBSCj4+CmVuZG9iago1IDAgb2JqCjw8Ci9MZW5ndGggMzMKPj4Kc3RyZWFtCjAgRyA4IHcgMjAgMjAgbSA4MCAyMCBsIDgwIDgwIGwgUwplbmRzdHJlYW0KZW5kb2JqCnhyZWYKMCA2CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAxNSAwMDAwMCBuIAowMDAwMDAwMDU0IDAwMDAwIG4gCjAwMDAwMDAxMTMgMDAwMDAgbiAKMDAwMDAwMDE2MiAwMDAwMCBuIAowMDAwMDAwMjcyIDAwMDAwIG4gCnRyYWlsZXIKPDwKL1NpemUgNgovUm9vdCAzIDAgUgovSW5mbyAxIDAgUgo+PgpzdGFydHhyZWYKMzU1CiUlRU9GCg==",
+      "reference": [
+        {
+          "scale": 1.0,
+          "width": 160,
+          "height": 120,
+          "grayPngBase64": "iVBORw0KGgoAAAANSUhEUgAAAKAAAAB4CAAAAABQyaazAAAAq0lEQVR4nO3csQqAIBRA0Yz+/5draRQarpDDOYvgIJe3Ko772Nv5d8AXgZXASmAlsBJYCawEVgIrgZXASmAlsBJYCawEVgIrgZXASmB1rTxsvOvKu5ftJyiwElgJrARWAiuBlcBKYCWwElgJrARWAiuBlcBKYCWwElgJrARWAiuBlcBKYCWwElgJrKbvZsZs8yfbT1BgJbASWA3/LEQCK4GVwEpgJbASWAmsHmkCA/LdO/FiAAAAAElFTkSuQmCC",
+          "textLayer": {
+            "lines": [],
+            "size": [
+              160.0,
+              120.0
+            ],
+            "trusted": false,
+            "reason": "no text layer",
+            "stats": {
+              "chars": 0,
+              "rotated": 0,
+              "bad": 0
+            }
+          }
+        },
+        {
+          "scale": 2.0,
+          "width": 320,
+          "height": 240,
+          "grayPngBase64": "iVBORw0KGgoAAAANSUhEUgAAAUAAAADwCAAAAABURuK3AAACF0lEQVR4nO3dMQqAMBQFQSPe/8raC4KwSAzMdAGLx/J7x7lR7LMHrE7ASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIwOiYPeDJuL3/+t8TFxgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYHW8/HF+uWJgLjASMBIwEjASMBIwEjASMBIwEjASMBIwEjASMBIzGOXvB4lxgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgJGAkYCRgdAFL0ATi6HX0+AAAAABJRU5ErkJggg==",
+          "textLayer": {
+            "lines": [],
+            "size": [
+              160.0,
+              120.0
+            ],
+            "trusted": false,
+            "reason": "no text layer",
+            "stats": {
+              "chars": 0,
+              "rotated": 0,
+              "bad": 0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "nonuniform-horizontal",
+      "pdfBase64": "JVBERi0xLjMKJeLjz9MKMSAwIG9iago8PAovUHJvZHVjZXIgKHB5cGRmKQo+PgplbmRvYmoKMiAwIG9iago8PAovVHlwZSAvUGFnZXMKL0NvdW50IDEKL0tpZHMgWyA0IDAgUiBdCj4+CmVuZG9iagozIDAgb2JqCjw8Ci9UeXBlIC9DYXRhbG9nCi9QYWdlcyAyIDAgUgo+PgplbmRvYmoKNCAwIG9iago8PAovVHlwZSAvUGFnZQovUmVzb3VyY2VzIDw8Cj4+Ci9NZWRpYUJveCBbIDAuMCAwLjAgMTYwIDEyMCBdCi9QYXJlbnQgMiAwIFIKL0NvbnRlbnRzIDUgMCBSCj4+CmVuZG9iago1IDAgb2JqCjw8Ci9MZW5ndGggNDAKPj4Kc3RyZWFtCjIgMCAwIDEgMCAwIGNtIDAgRyA0IHcgMTAgNDAgbSA2MCA0MCBsIFMKZW5kc3RyZWFtCmVuZG9iagp4cmVmCjAgNgowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwMTUgMDAwMDAgbiAKMDAwMDAwMDA1NCAwMDAwMCBuIAowMDAwMDAwMTEzIDAwMDAwIG4gCjAwMDAwMDAxNjIgMDAwMDAgbiAKMDAwMDAwMDI3MiAwMDAwMCBuIAp0cmFpbGVyCjw8Ci9TaXplIDYKL1Jvb3QgMyAwIFIKL0luZm8gMSAwIFIKPj4Kc3RhcnR4cmVmCjM2MgolJUVPRgo=",
+      "reference": [
+        {
+          "scale": 1.0,
+          "width": 160,
+          "height": 120,
+          "grayPngBase64": "iVBORw0KGgoAAAANSUhEUgAAAKAAAAB4CAAAAABQyaazAAAAoUlEQVR4nO3bMQqAQAwAQSP+/8v6AUFhQK/YKdNkSZ85t7Xtfwc8KVAVqApUBaoCVYGqQFWgKlAVqApUBaoCVYGqQFWgKlAVqApUBaoCVYGqQFWgKlAVqApUBaoCVYGqQFWgKlAVqApUBaoCVYHquBvOB4vffmEsf8EC1fSRgwpUBaoCVYGqQFWgKlAVqApUBaoCVYGqQFWgKlAVqApUBaoLvA4D70GmhxYAAAAASUVORK5CYII=",
+          "textLayer": {
+            "lines": [],
+            "size": [
+              160.0,
+              120.0
+            ],
+            "trusted": false,
+            "reason": "no text layer",
+            "stats": {
+              "chars": 0,
+              "rotated": 0,
+              "bad": 0
+            }
+          }
+        },
+        {
+          "scale": 2.0,
+          "width": 320,
+          "height": 240,
+          "grayPngBase64": "iVBORw0KGgoAAAANSUhEUgAAAUAAAADwCAAAAABURuK3AAACEElEQVR4nO3WQQqAMAwAQSv+/8v1C8JURdw5hxKWHDrmFrG/vcDXFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAdVwfHnVs8aC5+rwtEBUQFRAVEBUQFRAVEY/W/6G+6QFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEB0AgC7BN/2MPozAAAAAElFTkSuQmCC",
+          "textLayer": {
+            "lines": [],
+            "size": [
+              160.0,
+              120.0
+            ],
+            "trusted": false,
+            "reason": "no text layer",
+            "stats": {
+              "chars": 0,
+              "rotated": 0,
+              "bad": 0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "nonuniform-vertical",
+      "pdfBase64": "JVBERi0xLjMKJeLjz9MKMSAwIG9iago8PAovUHJvZHVjZXIgKHB5cGRmKQo+PgplbmRvYmoKMiAwIG9iago8PAovVHlwZSAvUGFnZXMKL0NvdW50IDEKL0tpZHMgWyA0IDAgUiBdCj4+CmVuZG9iagozIDAgb2JqCjw8Ci9UeXBlIC9DYXRhbG9nCi9QYWdlcyAyIDAgUgo+PgplbmRvYmoKNCAwIG9iago8PAovVHlwZSAvUGFnZQovUmVzb3VyY2VzIDw8Cj4+Ci9NZWRpYUJveCBbIDAuMCAwLjAgMTYwIDEyMCBdCi9QYXJlbnQgMiAwIFIKL0NvbnRlbnRzIDUgMCBSCj4+CmVuZG9iago1IDAgb2JqCjw8Ci9MZW5ndGggNDAKPj4Kc3RyZWFtCjIgMCAwIDEgMCAwIGNtIDAgRyA0IHcgMzAgMjAgbSAzMCA5MCBsIFMKZW5kc3RyZWFtCmVuZG9iagp4cmVmCjAgNgowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwMTUgMDAwMDAgbiAKMDAwMDAwMDA1NCAwMDAwMCBuIAowMDAwMDAwMTEzIDAwMDAwIG4gCjAwMDAwMDAxNjIgMDAwMDAgbiAKMDAwMDAwMDI3MiAwMDAwMCBuIAp0cmFpbGVyCjw8Ci9TaXplIDYKL1Jvb3QgMyAwIFIKL0luZm8gMSAwIFIKPj4Kc3RhcnR4cmVmCjM2MgolJUVPRgo=",
+      "reference": [
+        {
+          "scale": 1.0,
+          "width": 160,
+          "height": 120,
+          "grayPngBase64": "iVBORw0KGgoAAAANSUhEUgAAAKAAAAB4CAAAAABQyaazAAAAoklEQVR4nO3bMQqAQAwAQSP+/8va2AsO4hU7TaqDJWXg5tzWtv8d8KRAVaAqUBWoClQFqgJVgapAVaAqUBWoClQFquPtw7nn19ex5TdYoCpQFagKVAWqAlWBqkBVoCpQFagKVAWqAlWBqkBVoCpQFagKVAWqAlWBqkBVoCpQFagKVAWqAlWBqkBVoCpQTX/cUYGqQFWgKlAVqApUBaoCVYHqAiXiA+++N8sdAAAAAElFTkSuQmCC",
+          "textLayer": {
+            "lines": [],
+            "size": [
+              160.0,
+              120.0
+            ],
+            "trusted": false,
+            "reason": "no text layer",
+            "stats": {
+              "chars": 0,
+              "rotated": 0,
+              "bad": 0
+            }
+          }
+        },
+        {
+          "scale": 2.0,
+          "width": 320,
+          "height": 240,
+          "grayPngBase64": "iVBORw0KGgoAAAANSUhEUgAAAUAAAADwCAAAAABURuK3AAACDklEQVR4nO3csQnAMAwAwShk/5WdPu1BjOGvU2XxqPasK+LevcDpCogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICoievx+cz3z6311dICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqIJq1e4PDdYGogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiA6AX7fwTfzlD3IQAAAABJRU5ErkJggg==",
+          "textLayer": {
+            "lines": [],
+            "size": [
+              160.0,
+              120.0
+            ],
+            "trusted": false,
+            "reason": "no text layer",
+            "stats": {
+              "chars": 0,
+              "rotated": 0,
+              "bad": 0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "leading-header",
+      "pdfBase64": "b3JpZ2luYWwgbGVhZGluZyBqdW5rCiVQREYtMS4zCiXi48/TCjEgMCBvYmoKPDwKL1Byb2R1Y2VyIChweXBkZikKPj4KZW5kb2JqCjIgMCBvYmoKPDwKL1R5cGUgL1BhZ2VzCi9Db3VudCAxCi9LaWRzIFsgNCAwIFIgXQo+PgplbmRvYmoKMyAwIG9iago8PAovVHlwZSAvQ2F0YWxvZwovUGFnZXMgMiAwIFIKPj4KZW5kb2JqCjQgMCBvYmoKPDwKL1R5cGUgL1BhZ2UKL1Jlc291cmNlcyA8PAo+PgovTWVkaWFCb3ggWyAwLjAgMC4wIDE2MCAxMjAgXQovUGFyZW50IDIgMCBSCi9Db250ZW50cyA1IDAgUgo+PgplbmRvYmoKNSAwIG9iago8PAovTGVuZ3RoIDIwCj4+CnN0cmVhbQowIGcgMjAgMzAgODAgNTAgcmUgZgplbmRzdHJlYW0KZW5kb2JqCnhyZWYKMCA2CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAzNyAwMDAwMCBuIAowMDAwMDAwMDc2IDAwMDAwIG4gCjAwMDAwMDAxMzUgMDAwMDAgbiAKMDAwMDAwMDE4NCAwMDAwMCBuIAowMDAwMDAwMjk0IDAwMDAwIG4gCnRyYWlsZXIKPDwKL1NpemUgNgovUm9vdCAzIDAgUgovSW5mbyAxIDAgUgo+PgpzdGFydHhyZWYKMzY0CiUlRU9GCg==",
+      "reference": [
+        {
+          "scale": 1.0,
+          "width": 160,
+          "height": 120,
+          "grayPngBase64": "iVBORw0KGgoAAAANSUhEUgAAAKAAAAB4CAAAAABQyaazAAAAoklEQVR4nO3bsQ2AMAwAQYzYf2VYACnFIZHir3STl1srcx97O/8OWClQFagKVAWqAlWBqkBVoCpQFagKVAWqAlWBqkBVoCpQFagKVNfbcD5+RG4x22+wQFWgKlAVqApUBaoCVYGqQFWgKlAVqApUBaoCVYGqQFWgKlAVqApUBaoCVYFq+pmIClQFqgJVgapAVaAqUBWoClQFqgJVgapAVaB6AOjzA+9vXpqgAAAAAElFTkSuQmCC",
+          "textLayer": {
+            "lines": [],
+            "size": [
+              160.0,
+              120.0
+            ],
+            "trusted": false,
+            "reason": "no text layer",
+            "stats": {
+              "chars": 0,
+              "rotated": 0,
+              "bad": 0
+            }
+          }
+        },
+        {
+          "scale": 2.0,
+          "width": 320,
+          "height": 240,
+          "grayPngBase64": "iVBORw0KGgoAAAANSUhEUgAAAUAAAADwCAAAAABURuK3AAACD0lEQVR4nO3dwQmAQAwAQSP237K2IIxyKDvvPMKSf+bcIvbVC3xdAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQHRcXdw3tziAav+onSBqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogGhW/Sb/iy4QFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRBdT78E31raxRkAAAAASUVORK5CYII=",
+          "textLayer": {
+            "lines": [],
+            "size": [
+              160.0,
+              120.0
+            ],
+            "trusted": false,
+            "reason": "no text layer",
+            "stats": {
+              "chars": 0,
+              "rotated": 0,
+              "bad": 0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "last-header-window",
+      "pdfBase64": "WFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFglUERGLTEuMwol4uPP0woxIDAgb2JqCjw8Ci9Qcm9kdWNlciAocHlwZGYpCj4+CmVuZG9iagoyIDAgb2JqCjw8Ci9UeXBlIC9QYWdlcwovQ291bnQgMQovS2lkcyBbIDQgMCBSIF0KPj4KZW5kb2JqCjMgMCBvYmoKPDwKL1R5cGUgL0NhdGFsb2cKL1BhZ2VzIDIgMCBSCj4+CmVuZG9iago0IDAgb2JqCjw8Ci9UeXBlIC9QYWdlCi9SZXNvdXJjZXMgPDwKPj4KL01lZGlhQm94IFsgMC4wIDAuMCAxNjAgMTIwIF0KL1BhcmVudCAyIDAgUgovQ29udGVudHMgNSAwIFIKPj4KZW5kb2JqCjUgMCBvYmoKPDwKL0xlbmd0aCAyMAo+PgpzdHJlYW0KMCBnIDIwIDMwIDgwIDUwIHJlIGYKZW5kc3RyZWFtCmVuZG9iagp4cmVmCjAgNgowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDEwMzQgMDAwMDAgbiAKMDAwMDAwMTA3MyAwMDAwMCBuIAowMDAwMDAxMTMyIDAwMDAwIG4gCjAwMDAwMDExODEgMDAwMDAgbiAKMDAwMDAwMTI5MSAwMDAwMCBuIAp0cmFpbGVyCjw8Ci9TaXplIDYKL1Jvb3QgMyAwIFIKL0luZm8gMSAwIFIKPj4Kc3RhcnR4cmVmCjEzNjEKJSVFT0YK",
+      "reference": [
+        {
+          "scale": 1.0,
+          "width": 160,
+          "height": 120,
+          "grayPngBase64": "iVBORw0KGgoAAAANSUhEUgAAAKAAAAB4CAAAAABQyaazAAAAoklEQVR4nO3bsQ2AMAwAQYzYf2VYACnFIZHir3STl1srcx97O/8OWClQFagKVAWqAlWBqkBVoCpQFagKVAWqAlWBqkBVoCpQFagKVNfbcD5+RG4x22+wQFWgKlAVqApUBaoCVYGqQFWgKlAVqApUBaoCVYGqQFWgKlAVqApUBaoCVYFq+pmIClQFqgJVgapAVaAqUBWoClQFqgJVgapAVaB6AOjzA+9vXpqgAAAAAElFTkSuQmCC",
+          "textLayer": {
+            "lines": [],
+            "size": [
+              160.0,
+              120.0
+            ],
+            "trusted": false,
+            "reason": "no text layer",
+            "stats": {
+              "chars": 0,
+              "rotated": 0,
+              "bad": 0
+            }
+          }
+        },
+        {
+          "scale": 2.0,
+          "width": 320,
+          "height": 240,
+          "grayPngBase64": "iVBORw0KGgoAAAANSUhEUgAAAUAAAADwCAAAAABURuK3AAACD0lEQVR4nO3dwQmAQAwAQSP237K2IIxyKDvvPMKSf+bcIvbVC3xdAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQHRcXdw3tziAav+onSBqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogKiAqICogGhW/Sb/iy4QFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRAVEBUQFRBdT78E31raxRkAAAAASUVORK5CYII=",
+          "textLayer": {
+            "lines": [],
+            "size": [
+              160.0,
+              120.0
+            ],
+            "trusted": false,
+            "reason": "no text layer",
+            "stats": {
+              "chars": 0,
+              "rotated": 0,
+              "bad": 0
+            }
+          }
+        }
+      ]
     }
   ],
   "embeddedCases": [
@@ -1839,7 +2161,1014 @@
           }
         }
       ]
+    },
+    {
+      "name": "unicode-glyph",
+      "sourcePdfSha256": "5247cca41de8e0aa8183413f9b5e74132d90593121118039e77d5d2692cc3d95",
+      "contentBase64": "QlQgL0YxIDEyIFRmIDE1IDg1IFRkIChBKSBUaiBFVA==",
+      "flate": false,
+      "rotation": 0,
+      "crop": null,
+      "toUnicodeBase64": "L0NJREluaXQgL1Byb2NTZXQgZmluZHJlc291cmNlIGJlZ2luCjEyIGRpY3QgYmVnaW4KYmVnaW5jbWFwCi9DSURTeXN0ZW1JbmZvIDw8IC9SZWdpc3RyeSAoQWRvYmUpIC9PcmRlcmluZyAoVUNTKSAvU3VwcGxlbWVudCAwID4+IGRlZgovQ01hcE5hbWUgL1Jldmlld01hcCBkZWYKL0NNYXBUeXBlIDIgZGVmCjEgYmVnaW5jb2Rlc3BhY2VyYW5nZQo8MDA+IDxGRj4KZW5kY29kZXNwYWNlcmFuZ2UKMSBiZWdpbmJmY2hhcgo8NDE+IDwwMDVBPgplbmRiZmNoYXIKZW5kY21hcApDTWFwTmFtZSBjdXJyZW50ZGljdCAvQ01hcCBkZWZpbmVyZXNvdXJjZSBwb3AKZW5kIGVuZAo=",
+      "reference": [
+        {
+          "scale": 1.0,
+          "width": 160,
+          "height": 120,
+          "textLayer": {
+            "lines": [
+              {
+                "bbox": [
+                  15.0,
+                  26.407997131347656,
+                  23.01599884033203,
+                  35.0
+                ],
+                "text": "Z",
+                "chars": [
+                  [
+                    "Z",
+                    [
+                      15.0,
+                      26.407997131347656,
+                      23.01599884033203,
+                      35.0
+                    ]
+                  ]
+                ]
+              }
+            ],
+            "size": [
+              160.0,
+              120.0
+            ],
+            "trusted": true,
+            "reason": "",
+            "stats": {
+              "chars": 1,
+              "rotated": 0,
+              "bad": 0,
+              "off_page": 0,
+              "no_ink": 0.0
+            }
+          }
+        },
+        {
+          "scale": 2.0,
+          "width": 320,
+          "height": 240,
+          "textLayer": {
+            "lines": [
+              {
+                "bbox": [
+                  15.0,
+                  26.407997131347656,
+                  23.01599884033203,
+                  35.0
+                ],
+                "text": "Z",
+                "chars": [
+                  [
+                    "Z",
+                    [
+                      15.0,
+                      26.407997131347656,
+                      23.01599884033203,
+                      35.0
+                    ]
+                  ]
+                ]
+              }
+            ],
+            "size": [
+              160.0,
+              120.0
+            ],
+            "trusted": true,
+            "reason": "",
+            "stats": {
+              "chars": 1,
+              "rotated": 0,
+              "bad": 0,
+              "off_page": 0,
+              "no_ink": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "broken-unicode-glyph",
+      "sourcePdfSha256": "3fb10dd943b7e3a333afafd56233154c58da3bc608de97122cb2b7e8cffc59e2",
+      "contentBase64": "QlQgL0YxIDEyIFRmIDE1IDg1IFRkIChBKSBUaiBFVA==",
+      "flate": false,
+      "rotation": 0,
+      "crop": null,
+      "toUnicodeBase64": "L0NJREluaXQgL1Byb2NTZXQgZmluZHJlc291cmNlIGJlZ2luCjEyIGRpY3QgYmVnaW4KYmVnaW5jbWFwCi9DSURTeXN0ZW1JbmZvIDw8IC9SZWdpc3RyeSAoQWRvYmUpIC9PcmRlcmluZyAoVUNTKSAvU3VwcGxlbWVudCAwID4+IGRlZgovQ01hcE5hbWUgL1Jldmlld01hcCBkZWYKL0NNYXBUeXBlIDIgZGVmCjEgYmVnaW5jb2Rlc3BhY2VyYW5nZQo8MDA+IDxGRj4KZW5kY29kZXNwYWNlcmFuZ2UKMSBiZWdpbmJmY2hhcgo8NDE+IDxGRkZGPgplbmRiZmNoYXIKZW5kY21hcApDTWFwTmFtZSBjdXJyZW50ZGljdCAvQ01hcCBkZWZpbmVyZXNvdXJjZSBwb3AKZW5kIGVuZAo=",
+      "reference": [
+        {
+          "scale": 1.0,
+          "width": 160,
+          "height": 120,
+          "textLayer": {
+            "lines": [
+              {
+                "bbox": [
+                  15.0,
+                  26.407997131347656,
+                  23.01599884033203,
+                  35.0
+                ],
+                "text": "A",
+                "chars": [
+                  [
+                    "A",
+                    [
+                      15.0,
+                      26.407997131347656,
+                      23.01599884033203,
+                      35.0
+                    ]
+                  ]
+                ]
+              }
+            ],
+            "size": [
+              160.0,
+              120.0
+            ],
+            "trusted": true,
+            "reason": "",
+            "stats": {
+              "chars": 1,
+              "rotated": 0,
+              "bad": 0,
+              "off_page": 0,
+              "no_ink": 0.0
+            }
+          }
+        },
+        {
+          "scale": 2.0,
+          "width": 320,
+          "height": 240,
+          "textLayer": {
+            "lines": [
+              {
+                "bbox": [
+                  15.0,
+                  26.407997131347656,
+                  23.01599884033203,
+                  35.0
+                ],
+                "text": "A",
+                "chars": [
+                  [
+                    "A",
+                    [
+                      15.0,
+                      26.407997131347656,
+                      23.01599884033203,
+                      35.0
+                    ]
+                  ]
+                ]
+              }
+            ],
+            "size": [
+              160.0,
+              120.0
+            ],
+            "trusted": true,
+            "reason": "",
+            "stats": {
+              "chars": 1,
+              "rotated": 0,
+              "bad": 0,
+              "off_page": 0,
+              "no_ink": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "replacement-unicode-glyph",
+      "sourcePdfSha256": "caaaae73bfa51335a471e510ac4f19e4866d828073127e9447ceb22956d93b5e",
+      "contentBase64": "QlQgL0YxIDEyIFRmIDE1IDg1IFRkIChBKSBUaiBFVA==",
+      "flate": false,
+      "rotation": 0,
+      "crop": null,
+      "toUnicodeBase64": "L0NJREluaXQgL1Byb2NTZXQgZmluZHJlc291cmNlIGJlZ2luCjEyIGRpY3QgYmVnaW4KYmVnaW5jbWFwCi9DSURTeXN0ZW1JbmZvIDw8IC9SZWdpc3RyeSAoQWRvYmUpIC9PcmRlcmluZyAoVUNTKSAvU3VwcGxlbWVudCAwID4+IGRlZgovQ01hcE5hbWUgL1Jldmlld01hcCBkZWYKL0NNYXBUeXBlIDIgZGVmCjEgYmVnaW5jb2Rlc3BhY2VyYW5nZQo8MDA+IDxGRj4KZW5kY29kZXNwYWNlcmFuZ2UKMSBiZWdpbmJmY2hhcgo8NDE+IDxGRkZEPgplbmRiZmNoYXIKZW5kY21hcApDTWFwTmFtZSBjdXJyZW50ZGljdCAvQ01hcCBkZWZpbmVyZXNvdXJjZSBwb3AKZW5kIGVuZAo=",
+      "reference": [
+        {
+          "scale": 1.0,
+          "width": 160,
+          "height": 120,
+          "textLayer": {
+            "lines": [
+              {
+                "bbox": [
+                  15.0,
+                  26.407997131347656,
+                  23.01599884033203,
+                  35.0
+                ],
+                "text": "�",
+                "chars": [
+                  [
+                    "�",
+                    [
+                      15.0,
+                      26.407997131347656,
+                      23.01599884033203,
+                      35.0
+                    ]
+                  ]
+                ]
+              }
+            ],
+            "size": [
+              160.0,
+              120.0
+            ],
+            "trusted": false,
+            "reason": "broken font map",
+            "stats": {
+              "chars": 1,
+              "rotated": 0,
+              "bad": 1,
+              "off_page": 0
+            }
+          }
+        },
+        {
+          "scale": 2.0,
+          "width": 320,
+          "height": 240,
+          "textLayer": {
+            "lines": [
+              {
+                "bbox": [
+                  15.0,
+                  26.407997131347656,
+                  23.01599884033203,
+                  35.0
+                ],
+                "text": "�",
+                "chars": [
+                  [
+                    "�",
+                    [
+                      15.0,
+                      26.407997131347656,
+                      23.01599884033203,
+                      35.0
+                    ]
+                  ]
+                ]
+              }
+            ],
+            "size": [
+              160.0,
+              120.0
+            ],
+            "trusted": false,
+            "reason": "broken font map",
+            "stats": {
+              "chars": 1,
+              "rotated": 0,
+              "bad": 1,
+              "off_page": 0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "generated-space-large",
+      "sourcePdfSha256": "e2d8e803eee55c1f23fd34454e805893e2ab38edc9ea9d2763bc5d9195517cd3",
+      "contentBase64": "QlQgL0YxIDEyIFRmIDE1IDg1IFRkIFsoSGVsbG8pIC0xMDAwIChXb3JsZCldIFRKIEVU",
+      "flate": false,
+      "rotation": 0,
+      "crop": null,
+      "toUnicodeBase64": null,
+      "reference": [
+        {
+          "scale": 1.0,
+          "width": 160,
+          "height": 120,
+          "textLayer": {
+            "lines": [
+              {
+                "bbox": [
+                  15.960000038146973,
+                  26.407997131347656,
+                  84.79199981689453,
+                  35.13200378417969
+                ],
+                "text": "Hello World",
+                "chars": [
+                  [
+                    "H",
+                    [
+                      15.960000038146973,
+                      26.407997131347656,
+                      22.70400047302246,
+                      35.0
+                    ]
+                  ],
+                  [
+                    "e",
+                    [
+                      24.107999801635742,
+                      28.639999389648438,
+                      29.8439998626709,
+                      35.13200378417969
+                    ]
+                  ],
+                  [
+                    "l",
+                    [
+                      31.104000091552734,
+                      26.407997131347656,
+                      32.15999984741211,
+                      35.0
+                    ]
+                  ],
+                  [
+                    "l",
+                    [
+                      33.76799774169922,
+                      26.407997131347656,
+                      34.823997497558594,
+                      35.0
+                    ]
+                  ],
+                  [
+                    "o",
+                    [
+                      36.05999755859375,
+                      28.639999389648438,
+                      41.891998291015625,
+                      35.13200378417969
+                    ]
+                  ],
+                  [
+                    " ",
+                    [
+                      54.33599853515625,
+                      35.0,
+                      54.33599853515625,
+                      35.0
+                    ]
+                  ],
+                  [
+                    "W",
+                    [
+                      54.47999954223633,
+                      26.407997131347656,
+                      65.53199768066406,
+                      35.0
+                    ]
+                  ],
+                  [
+                    "o",
+                    [
+                      66.04800415039062,
+                      28.639999389648438,
+                      71.8800048828125,
+                      35.13200378417969
+                    ]
+                  ],
+                  [
+                    "r",
+                    [
+                      73.10400390625,
+                      28.639999389648438,
+                      76.48800659179688,
+                      35.0
+                    ]
+                  ],
+                  [
+                    "l",
+                    [
+                      77.08799743652344,
+                      26.407997131347656,
+                      78.14399719238281,
+                      35.0
+                    ]
+                  ],
+                  [
+                    "d",
+                    [
+                      79.39199829101562,
+                      26.407997131347656,
+                      84.79199981689453,
+                      35.13200378417969
+                    ]
+                  ]
+                ]
+              }
+            ],
+            "size": [
+              160.0,
+              120.0
+            ],
+            "trusted": true,
+            "reason": "",
+            "stats": {
+              "chars": 10,
+              "rotated": 0,
+              "bad": 0,
+              "off_page": 0,
+              "no_ink": 0.0
+            }
+          }
+        },
+        {
+          "scale": 2.0,
+          "width": 320,
+          "height": 240,
+          "textLayer": {
+            "lines": [
+              {
+                "bbox": [
+                  15.960000038146973,
+                  26.407997131347656,
+                  84.79199981689453,
+                  35.13200378417969
+                ],
+                "text": "Hello World",
+                "chars": [
+                  [
+                    "H",
+                    [
+                      15.960000038146973,
+                      26.407997131347656,
+                      22.70400047302246,
+                      35.0
+                    ]
+                  ],
+                  [
+                    "e",
+                    [
+                      24.107999801635742,
+                      28.639999389648438,
+                      29.8439998626709,
+                      35.13200378417969
+                    ]
+                  ],
+                  [
+                    "l",
+                    [
+                      31.104000091552734,
+                      26.407997131347656,
+                      32.15999984741211,
+                      35.0
+                    ]
+                  ],
+                  [
+                    "l",
+                    [
+                      33.76799774169922,
+                      26.407997131347656,
+                      34.823997497558594,
+                      35.0
+                    ]
+                  ],
+                  [
+                    "o",
+                    [
+                      36.05999755859375,
+                      28.639999389648438,
+                      41.891998291015625,
+                      35.13200378417969
+                    ]
+                  ],
+                  [
+                    " ",
+                    [
+                      54.33599853515625,
+                      35.0,
+                      54.33599853515625,
+                      35.0
+                    ]
+                  ],
+                  [
+                    "W",
+                    [
+                      54.47999954223633,
+                      26.407997131347656,
+                      65.53199768066406,
+                      35.0
+                    ]
+                  ],
+                  [
+                    "o",
+                    [
+                      66.04800415039062,
+                      28.639999389648438,
+                      71.8800048828125,
+                      35.13200378417969
+                    ]
+                  ],
+                  [
+                    "r",
+                    [
+                      73.10400390625,
+                      28.639999389648438,
+                      76.48800659179688,
+                      35.0
+                    ]
+                  ],
+                  [
+                    "l",
+                    [
+                      77.08799743652344,
+                      26.407997131347656,
+                      78.14399719238281,
+                      35.0
+                    ]
+                  ],
+                  [
+                    "d",
+                    [
+                      79.39199829101562,
+                      26.407997131347656,
+                      84.79199981689453,
+                      35.13200378417969
+                    ]
+                  ]
+                ]
+              }
+            ],
+            "size": [
+              160.0,
+              120.0
+            ],
+            "trusted": true,
+            "reason": "",
+            "stats": {
+              "chars": 10,
+              "rotated": 0,
+              "bad": 0,
+              "off_page": 0,
+              "no_ink": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "generated-space-threshold",
+      "sourcePdfSha256": "70ba23842c91b9eb8c72c94f19149bb4011c95828076939e6fe771e56594eb26",
+      "contentBase64": "QlQgL0YxIDEyIFRmIDE1IDg1IFRkIFsoSGVsbG8pIC0yNTAgKFdvcmxkKV0gVEogRVQ=",
+      "flate": false,
+      "rotation": 0,
+      "crop": null,
+      "toUnicodeBase64": null,
+      "reference": [
+        {
+          "scale": 1.0,
+          "width": 160,
+          "height": 120,
+          "textLayer": {
+            "lines": [
+              {
+                "bbox": [
+                  15.960000038146973,
+                  26.407997131347656,
+                  75.79199981689453,
+                  35.13200378417969
+                ],
+                "text": "Hello World",
+                "chars": [
+                  [
+                    "H",
+                    [
+                      15.960000038146973,
+                      26.407997131347656,
+                      22.70400047302246,
+                      35.0
+                    ]
+                  ],
+                  [
+                    "e",
+                    [
+                      24.107999801635742,
+                      28.639999389648438,
+                      29.8439998626709,
+                      35.13200378417969
+                    ]
+                  ],
+                  [
+                    "l",
+                    [
+                      31.104000091552734,
+                      26.407997131347656,
+                      32.15999984741211,
+                      35.0
+                    ]
+                  ],
+                  [
+                    "l",
+                    [
+                      33.76799774169922,
+                      26.407997131347656,
+                      34.823997497558594,
+                      35.0
+                    ]
+                  ],
+                  [
+                    "o",
+                    [
+                      36.05999755859375,
+                      28.639999389648438,
+                      41.891998291015625,
+                      35.13200378417969
+                    ]
+                  ],
+                  [
+                    " ",
+                    [
+                      45.33599853515625,
+                      35.0,
+                      45.33599853515625,
+                      35.0
+                    ]
+                  ],
+                  [
+                    "W",
+                    [
+                      45.47999572753906,
+                      26.407997131347656,
+                      56.53199768066406,
+                      35.0
+                    ]
+                  ],
+                  [
+                    "o",
+                    [
+                      57.04800033569336,
+                      28.639999389648438,
+                      62.880001068115234,
+                      35.13200378417969
+                    ]
+                  ],
+                  [
+                    "r",
+                    [
+                      64.10400390625,
+                      28.639999389648438,
+                      67.48800659179688,
+                      35.0
+                    ]
+                  ],
+                  [
+                    "l",
+                    [
+                      68.08799743652344,
+                      26.407997131347656,
+                      69.14399719238281,
+                      35.0
+                    ]
+                  ],
+                  [
+                    "d",
+                    [
+                      70.39199829101562,
+                      26.407997131347656,
+                      75.79199981689453,
+                      35.13200378417969
+                    ]
+                  ]
+                ]
+              }
+            ],
+            "size": [
+              160.0,
+              120.0
+            ],
+            "trusted": true,
+            "reason": "",
+            "stats": {
+              "chars": 10,
+              "rotated": 0,
+              "bad": 0,
+              "off_page": 0,
+              "no_ink": 0.0
+            }
+          }
+        },
+        {
+          "scale": 2.0,
+          "width": 320,
+          "height": 240,
+          "textLayer": {
+            "lines": [
+              {
+                "bbox": [
+                  15.960000038146973,
+                  26.407997131347656,
+                  75.79199981689453,
+                  35.13200378417969
+                ],
+                "text": "Hello World",
+                "chars": [
+                  [
+                    "H",
+                    [
+                      15.960000038146973,
+                      26.407997131347656,
+                      22.70400047302246,
+                      35.0
+                    ]
+                  ],
+                  [
+                    "e",
+                    [
+                      24.107999801635742,
+                      28.639999389648438,
+                      29.8439998626709,
+                      35.13200378417969
+                    ]
+                  ],
+                  [
+                    "l",
+                    [
+                      31.104000091552734,
+                      26.407997131347656,
+                      32.15999984741211,
+                      35.0
+                    ]
+                  ],
+                  [
+                    "l",
+                    [
+                      33.76799774169922,
+                      26.407997131347656,
+                      34.823997497558594,
+                      35.0
+                    ]
+                  ],
+                  [
+                    "o",
+                    [
+                      36.05999755859375,
+                      28.639999389648438,
+                      41.891998291015625,
+                      35.13200378417969
+                    ]
+                  ],
+                  [
+                    " ",
+                    [
+                      45.33599853515625,
+                      35.0,
+                      45.33599853515625,
+                      35.0
+                    ]
+                  ],
+                  [
+                    "W",
+                    [
+                      45.47999572753906,
+                      26.407997131347656,
+                      56.53199768066406,
+                      35.0
+                    ]
+                  ],
+                  [
+                    "o",
+                    [
+                      57.04800033569336,
+                      28.639999389648438,
+                      62.880001068115234,
+                      35.13200378417969
+                    ]
+                  ],
+                  [
+                    "r",
+                    [
+                      64.10400390625,
+                      28.639999389648438,
+                      67.48800659179688,
+                      35.0
+                    ]
+                  ],
+                  [
+                    "l",
+                    [
+                      68.08799743652344,
+                      26.407997131347656,
+                      69.14399719238281,
+                      35.0
+                    ]
+                  ],
+                  [
+                    "d",
+                    [
+                      70.39199829101562,
+                      26.407997131347656,
+                      75.79199981689453,
+                      35.13200378417969
+                    ]
+                  ]
+                ]
+              }
+            ],
+            "size": [
+              160.0,
+              120.0
+            ],
+            "trusted": true,
+            "reason": "",
+            "stats": {
+              "chars": 10,
+              "rotated": 0,
+              "bad": 0,
+              "off_page": 0,
+              "no_ink": 0.0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "text-spacing-horizontal",
+      "sourcePdfSha256": "62fff0dfa848065cae622881d753faaea52d6c71599a9c5f685b7443d660ba7c",
+      "contentBase64": "QlQgL0YxIDEyIFRmIDIgVGMgMyBUdyA4MCBUeiAxNSA4NSBUZCAoQSBCKSBUaiBFVA==",
+      "flate": false,
+      "rotation": 0,
+      "crop": null,
+      "toUnicodeBase64": null,
+      "reference": [
+        {
+          "scale": 1.0,
+          "width": 160,
+          "height": 120,
+          "textLayer": {
+            "lines": [
+              {
+                "bbox": [
+                  15.0,
+                  26.407997131347656,
+                  35.547203063964844,
+                  35.0
+                ],
+                "text": "A B",
+                "chars": [
+                  [
+                    "A",
+                    [
+                      15.0,
+                      26.407997131347656,
+                      21.412799835205078,
+                      35.0
+                    ]
+                  ],
+                  [
+                    " ",
+                    [
+                      22.993600845336914,
+                      34.987998962402344,
+                      25.652801513671875,
+                      35.0
+                    ]
+                  ],
+                  [
+                    "B",
+                    [
+                      30.353599548339844,
+                      26.407997131347656,
+                      35.547203063964844,
+                      35.0
+                    ]
+                  ]
+                ]
+              }
+            ],
+            "size": [
+              160.0,
+              120.0
+            ],
+            "trusted": true,
+            "reason": "",
+            "stats": {
+              "chars": 2,
+              "rotated": 0,
+              "bad": 0,
+              "off_page": 0,
+              "no_ink": 0.0
+            }
+          }
+        },
+        {
+          "scale": 2.0,
+          "width": 320,
+          "height": 240,
+          "textLayer": {
+            "lines": [
+              {
+                "bbox": [
+                  15.0,
+                  26.407997131347656,
+                  35.547203063964844,
+                  35.0
+                ],
+                "text": "A B",
+                "chars": [
+                  [
+                    "A",
+                    [
+                      15.0,
+                      26.407997131347656,
+                      21.412799835205078,
+                      35.0
+                    ]
+                  ],
+                  [
+                    " ",
+                    [
+                      22.993600845336914,
+                      34.987998962402344,
+                      25.652801513671875,
+                      35.0
+                    ]
+                  ],
+                  [
+                    "B",
+                    [
+                      30.353599548339844,
+                      26.407997131347656,
+                      35.547203063964844,
+                      35.0
+                    ]
+                  ]
+                ]
+              }
+            ],
+            "size": [
+              160.0,
+              120.0
+            ],
+            "trusted": true,
+            "reason": "",
+            "stats": {
+              "chars": 2,
+              "rotated": 0,
+              "bad": 0,
+              "off_page": 0,
+              "no_ink": 0.0
+            }
+          }
+        }
+      ]
     }
   ],
-  "comparison": "Vector rasters exact. Same-font text/geometry/trust/statistics compared to original Indra/PDFium. Native font raster profile explicitly distinct; no font pixel identity claim."
+  "comparison": "Vector rasters exact. Same-font text/geometry/trust/statistics compared to original Indra/PDFium. Native font raster profile explicitly distinct; no font pixel identity claim.",
+  "headerCases": [
+    {
+      "name": "at-zero",
+      "bytesBase64": "JVBERi0xLjcK",
+      "expected": true
+    },
+    {
+      "name": "leading-junk",
+      "bytesBase64": "anVuawBqdW5rCiVQREYtMS43Cg==",
+      "expected": true
+    },
+    {
+      "name": "last-valid-offset",
+      "bytesBase64": "WFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFglUERGLTEuNwo=",
+      "expected": true
+    },
+    {
+      "name": "past-window",
+      "bytesBase64": "WFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYJVBERi0xLjcK",
+      "expected": false
+    },
+    {
+      "name": "bom",
+      "bytesBase64": "77u/JVBERi0xLjcK",
+      "expected": true
+    },
+    {
+      "name": "truncated",
+      "bytesBase64": "JVBERg==",
+      "expected": false
+    },
+    {
+      "name": "absent",
+      "bytesBase64": "cGxhaW4gdGV4dA==",
+      "expected": false
+    }
+  ],
+  "reviewRegressionSourceSha256": {
+    "document.py": "d0579b1528d8297cc97142a78f22f0ff225b6e6302d8e667b916ff280e5a1709",
+    "textlayer.py": "34e7ab4cbe231f495f9df3abbd9880c22ceb1c0eff84d88648307d4666d63327",
+    "pipeline.py": "fa98f1e36da0884085084bc1d8ac004381e2394ce4811e04aae269517401fc48"
+  },
+  "reviewRegressionReferenceSha256": "e436ed8a744ff2d2cae5718222947d40b3223e5c40cc0ed66a2541727e776856"
 }

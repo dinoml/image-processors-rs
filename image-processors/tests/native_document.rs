@@ -3,7 +3,7 @@ use std::{fs, io::Write};
 
 use base64::{engine::general_purpose::STANDARD, Engine};
 use image_processors::document::{
-    assess_text_layer, PdfDocument, PdfRenderOptions, RenderedPdfPage, TextLayerRejection,
+    assess_text_layer, is_pdf, PdfDocument, PdfRenderOptions, RenderedPdfPage, TextLayerRejection,
 };
 use serde_json::Value;
 
@@ -125,15 +125,20 @@ fn embedded_pdf(case: &Value, metrics: &Value, font: &[u8]) -> Vec<u8> {
             .expect("write crop to PDF page");
     }
     page.push_str(" >>");
+    let to_unicode = case
+        .get("toUnicodeBase64")
+        .filter(|v| v.is_string())
+        .map(bytes);
     let font_dictionary = format!(
-        "<< /Type /Font /Subtype /TrueType /BaseFont /Arial /Encoding /WinAnsiEncoding /FirstChar 32 /LastChar 126 /Widths [{}] /FontDescriptor 5 0 R >>",
-        numbers(&metrics["widths"])
+        "<< /Type /Font /Subtype /TrueType /BaseFont /Arial /Encoding /WinAnsiEncoding /FirstChar 32 /LastChar 126 /Widths [{}] /FontDescriptor 5 0 R{} >>",
+        numbers(&metrics["widths"]),
+        if to_unicode.is_some() { " /ToUnicode 8 0 R" } else { "" }
     );
     let descriptor = format!(
         "<< /Type /FontDescriptor /FontName /Arial /Flags 32 /FontBBox [{}] /ItalicAngle 0 /Ascent {} /Descent {} /CapHeight {} /StemV 80 /FontFile2 6 0 R >>",
         numbers(&metrics["bbox"]), metrics["ascent"], metrics["descent"], metrics["capHeight"]
     );
-    let objects = [
+    let mut objects = vec![
         b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
         b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
         page.into_bytes(),
@@ -149,6 +154,9 @@ fn embedded_pdf(case: &Value, metrics: &Value, font: &[u8]) -> Vec<u8> {
             },
         ),
     ];
+    if let Some(mapping) = to_unicode {
+        objects.push(stream(&mapping, ""));
+    }
     let mut output = b"%PDF-1.7\n".to_vec();
     let mut offsets = Vec::new();
     for (i, object) in objects.iter().enumerate() {
@@ -158,16 +166,87 @@ fn embedded_pdf(case: &Value, metrics: &Value, font: &[u8]) -> Vec<u8> {
         output.extend_from_slice(b"\nendobj\n");
     }
     let xref = output.len();
-    output.extend_from_slice(b"xref\n0 8\n0000000000 65535 f \n");
+    writeln!(&mut output, "xref\n0 {}", objects.len() + 1).expect("write test xref header");
+    output.extend_from_slice(b"0000000000 65535 f \n");
     for offset in offsets {
         writeln!(&mut output, "{offset:010} 00000 n ").expect("write test xref entry");
     }
     writeln!(
         &mut output,
-        "trailer\n<< /Size 8 /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF"
+        "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF",
+        objects.len() + 1
     )
     .expect("write test trailer");
     output
+}
+
+#[test]
+fn pdf_header_recognition_matches_original_window() {
+    let data = reference();
+    for case in data["headerCases"]
+        .as_array()
+        .expect("header recognition cases")
+    {
+        assert_eq!(
+            is_pdf(&bytes(&case["bytesBase64"])),
+            case["expected"]
+                .as_bool()
+                .expect("original header predicate"),
+            "{}: exact original 1024-byte window",
+            case["name"]
+        );
+    }
+}
+
+#[test]
+fn extracted_unicode_does_not_select_the_painted_glyph() {
+    let Some(path) = std::env::var_os("DINOML_ARIAL_REFERENCE") else {
+        assert_ne!(
+            std::env::var("DINOML_REQUIRE_FONT_REFERENCE").as_deref(),
+            Ok("1"),
+            "the required pinned Arial fixture is unavailable"
+        );
+        return;
+    };
+    let font = fs::read(path).expect("read existing pinned reference font asset");
+    let data = reference();
+    for name in [
+        "unicode-glyph",
+        "broken-unicode-glyph",
+        "replacement-unicode-glyph",
+    ] {
+        let case = data["embeddedCases"]
+            .as_array()
+            .expect("embedded cases")
+            .iter()
+            .find(|c| c["name"] == name)
+            .expect("mapping regression fixture");
+        let mut unmapped = case.clone();
+        unmapped["toUnicodeBase64"] = Value::Null;
+        let control = PdfDocument::from_bytes(embedded_pdf(&unmapped, &data["fontMetrics"], &font))
+            .expect("control PDF using identical glyph codes");
+        let mapped = PdfDocument::from_bytes(embedded_pdf(case, &data["fontMetrics"], &font))
+            .expect("PDF with extraction-only Unicode mapping");
+        let expected = control
+            .render_ocr_page(0, 1.0, &PdfRenderOptions::default())
+            .expect("control glyph raster");
+        let page = mapped
+            .render_page(0, 1.0, &PdfRenderOptions::default())
+            .expect("mapped text extraction with original glyph");
+        let ocr = mapped
+            .render_ocr_page(0, 1.0, &PdfRenderOptions::default())
+            .expect("OCR rendering ignores extraction mapping");
+        assert_eq!(
+            page.image.data(),
+            expected.data(),
+            "{name}: text-mode glyph identity"
+        );
+        assert_eq!(
+            ocr.data(),
+            expected.data(),
+            "{name}: OCR-only glyph identity"
+        );
+    }
 }
 
 #[test]

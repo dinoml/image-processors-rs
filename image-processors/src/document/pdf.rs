@@ -169,7 +169,7 @@ impl Parser<'_> {
                     hex.push(b'0');
                 }
                 let mut bytes = Vec::new();
-                for chunk in hex.chunks_exact(2) {
+                for chunk in hex.as_chunks::<2>().0 {
                     let text =
                         std::str::from_utf8(chunk).map_err(|_| invalid("invalid hex string"))?;
                     bytes.push(
@@ -285,7 +285,7 @@ impl PdfDocument {
     /// Reports malformed object references, encrypted PDFs, unsupported cross
     /// references and resource limits. Stream decoding remains bounded separately.
     pub fn from_bytes(bytes: Vec<u8>) -> Result<Self> {
-        if !bytes.starts_with(b"%PDF-") {
+        if !super::is_pdf(&bytes) {
             return Err(invalid("missing PDF header"));
         }
         let start = bytes

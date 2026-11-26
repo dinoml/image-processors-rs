@@ -14,7 +14,7 @@ fn sum_f32(values: &[f32]) -> f32 {
         let mut lanes = [0.0f32; 8];
         lanes.copy_from_slice(&values[..8]);
         let stop = values.len() / 8 * 8;
-        for block in values[8..stop].chunks_exact(8) {
+        for block in values[8..stop].as_chunks::<8>().0 {
             for (lane, &value) in lanes.iter_mut().zip(block) {
                 *lane += value;
             }

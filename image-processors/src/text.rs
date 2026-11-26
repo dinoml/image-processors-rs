@@ -144,24 +144,40 @@ pub struct TextMetrics {
 }
 
 impl TrueTypeFont {
+    /// Resolve an encoded PDF glyph independently of extracted /ToUnicode text.
+    pub(crate) fn document_glyph_index(&self, character: Option<char>) -> Result<usize> {
+        character.map_or(Ok(0), |character| self.glyph_index(character))
+    }
+
+    pub(crate) fn document_advance(&self, id: usize, pdf_advance: Option<f64>) -> Result<f64> {
+        if id >= self.glyphs {
+            return Err(invalid());
+        }
+        if let Some(advance) = pdf_advance {
+            return Ok(advance);
+        }
+        let units = f64::from(self.units);
+        let metrics = self.table(b"hmtx")?;
+        let width = f64::from(u16_at(metrics, id.min(self.metrics - 1) * 4)?);
+        Ok(((width * 1000.0 + (units / 2.0).floor()) / units).trunc() / 1000.0)
+    }
+
     pub(crate) fn document_glyph(
         &self,
-        character: char,
+        id: usize,
         transform: [f64; 6],
         font_size: f64,
         pdf_advance: Option<f64>,
     ) -> Result<(Vec<gray::Segment>, f64, [f64; 4])> {
-        let id = self.glyph(character)?;
-        let metrics = self.table(b"hmtx")?;
+        if id >= self.glyphs {
+            return Err(invalid());
+        }
         let units = f64::from(self.units);
         // PDFium's document metrics normalize to integer thousandths before
         // applying text matrices, including its truncation for negative values.
         let normalize =
             |value: f64| ((value * 1000.0 + (units / 2.0).floor()) / units).trunc() / 1000.0;
-        let advance = pdf_advance.unwrap_or(normalize(f64::from(u16_at(
-            metrics,
-            id.min(self.metrics - 1) * 4,
-        )?)));
+        let advance = self.document_advance(id, pdf_advance)?;
         let contours = self.contours(id, 0)?;
         let mut font_bounds = [
             f64::INFINITY,

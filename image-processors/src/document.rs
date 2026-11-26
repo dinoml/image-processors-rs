@@ -13,6 +13,14 @@ pub use pdf::PdfDocument;
 pub use render::{PdfRenderOptions, RenderedPdfPage};
 pub use unicode::{document_right_to_left, is_broken_document_character, is_document_letter};
 
+/// Recognize a PDF header within the first 1024 input bytes.
+/// The original bytes and absolute object offsets remain unchanged.
+pub fn is_pdf(bytes: &[u8]) -> bool {
+    bytes[..bytes.len().min(1024)]
+        .windows(5)
+        .any(|header| header == b"%PDF-")
+}
+
 /// Failure to interpret document geometry or positioned text.
 #[derive(Debug, thiserror::Error)]
 pub enum DocumentError {
