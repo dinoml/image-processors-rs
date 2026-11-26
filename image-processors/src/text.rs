@@ -1,5 +1,62 @@
-//! TrueType outline overlays and optional hinted Pillow BASIC compatibility.
+//! Font outline overlays and native TrueType/CFF BASIC caption rendering.
 use std::{collections::BTreeMap, io};
+
+mod autofit;
+mod autofit_layout;
+mod autofit_scripts;
+mod autofit_shaping;
+mod autofit_unicode;
+mod caption;
+mod cff;
+mod cff_hint;
+mod gray;
+mod hinting;
+mod truetype;
+
+/// Native BASIC caption renderer with an explicit default font and ordered fallbacks.
+/// The default font is an application asset, rather than an engine-dependent system font.
+/// Existing outline overlay entrypoints retain their original rendering policy.
+pub struct CaptionRenderer {
+    fonts: std::cell::RefCell<Vec<truetype::Face>>,
+}
+
+impl CaptionRenderer {
+    /// Parse the caption font assets at the reference size of 20 pixels.
+    ///
+    /// # Errors
+    /// Reports malformed or unsupported font containers and font-program failures.
+    pub fn from_bytes(default: Vec<u8>, fallbacks: Vec<Vec<u8>>) -> Result<Self> {
+        let mut fonts = Vec::with_capacity(fallbacks.len() + 1);
+        let mut seed = (&fonts as *const _ as usize ^ &default as *const _ as usize) as u32;
+        seed ^= (seed >> 10) ^ (seed >> 20);
+        if (seed as i32) < 0 {
+            seed = seed.wrapping_neg();
+        } else if seed == 0 {
+            seed = 123456789;
+        }
+        fonts.push(truetype::Face::new(default, 20, &mut seed)?);
+        for font in fallbacks {
+            fonts.push(truetype::Face::new(font, 20, &mut seed)?);
+        }
+        Ok(Self {
+            fonts: std::cell::RefCell::new(fonts),
+        })
+    }
+
+    /// Draw one caption entry on a white RGB canvas using BASIC layout.
+    /// Whitespace is collapsed and lines contain at most 256 Unicode characters.
+    ///
+    /// # Errors
+    /// Reports unavailable native hinting paths, invalid font programs, invalid
+    /// image geometry or a reentrant call on the same renderer.
+    pub fn render(&self, text: &str) -> Result<crate::media::ImageFrame> {
+        let mut fonts = self
+            .fonts
+            .try_borrow_mut()
+            .map_err(|_| io::Error::other("caption renderer is already in use"))?;
+        caption::render(&mut fonts, text)
+    }
+}
 
 #[cfg(feature = "freetype")]
 mod pillow52;
@@ -86,7 +143,13 @@ impl TrueTypeFont {
     /// # Errors
     /// Returns InvalidData for malformed tables or unsupported outline formats.
     pub fn from_bytes(data: Vec<u8>) -> Result<Self> {
-        if u32_at(&data, 0)? != 0x00010000 && data.get(..4) != Some(b"true") {
+        Self::from_sfnt(data, false)
+    }
+
+    fn from_sfnt(data: Vec<u8>, allow_cff: bool) -> Result<Self> {
+        let cff = data.get(..4) == Some(b"OTTO");
+        if u32_at(&data, 0)? != 0x00010000 && data.get(..4) != Some(b"true") && !(allow_cff && cff)
+        {
             return Err(invalid());
         }
         let count = usize::from(u16_at(&data, 4)?);
@@ -118,8 +181,12 @@ impl TrueTypeFont {
         if units == 0.0 || metrics == 0 || metrics > glyphs || !matches!(loca, 0 | 1) {
             return Err(invalid());
         }
-        table(b"glyf")?;
-        table(b"loca")?;
+        if cff {
+            table(b"CFF ")?;
+        } else {
+            table(b"glyf")?;
+            table(b"loca")?;
+        }
         table(b"hmtx")?;
         table(b"cmap")?;
         Ok(Self {
@@ -136,7 +203,7 @@ impl TrueTypeFont {
         let &(o, n) = self.tables.get(name).ok_or_else(invalid)?;
         self.data.get(o..o + n).ok_or_else(invalid)
     }
-    fn glyph(&self, c: char) -> Result<usize> {
+    fn glyph_index(&self, c: char) -> Result<usize> {
         let cmap = self.table(b"cmap")?;
         let count = usize::from(u16_at(cmap, 2)?);
         let code = c as u32;
@@ -168,7 +235,7 @@ impl TrueTypeFont {
                             let id = u32_at(sub, p + 8)?
                                 .checked_add(code - start)
                                 .ok_or_else(invalid)? as usize;
-                            if id == 0 || id >= self.glyphs {
+                            if id >= self.glyphs {
                                 return Err(invalid());
                             }
                             return Ok(id);
@@ -201,13 +268,20 @@ impl TrueTypeFont {
                                 id.wrapping_add(delta)
                             }
                         };
-                        if id == 0 || usize::from(id) >= self.glyphs {
+                        if usize::from(id) >= self.glyphs {
                             return Err(invalid());
                         }
                         return Ok(usize::from(id));
                     }
                 }
             }
+        }
+        Ok(0)
+    }
+    fn glyph(&self, c: char) -> Result<usize> {
+        let index = self.glyph_index(c)?;
+        if index != 0 {
+            return Ok(index);
         }
         Err(io::Error::new(
             io::ErrorKind::InvalidData,
