@@ -16,6 +16,9 @@ pub mod catalog;
 /// Media source loading, decoded frames, and frame sampling.
 pub mod media;
 
+/// Positioned document text and text-layer trust assessment.
+pub mod document;
+
 /// Typed processor outputs for model-family preprocessing.
 pub mod output;
 

@@ -22,7 +22,10 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 mod grayscale;
-pub use grayscale::{decode_grayscale_image_bytes, load_grayscale_image_from_path};
+pub use grayscale::{
+    decode_grayscale_image_bytes, decode_grayscale_image_sequence_bytes,
+    load_grayscale_image_from_path,
+};
 mod jpeg;
 pub use jpeg::jpeg_reference_roundtrip;
 
@@ -1265,6 +1268,9 @@ impl MediaLoader for DefaultMediaLoader {
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum MediaError {
+    /// Encoded document image pages have an invalid directory chain.
+    #[error("invalid image sequence: {0}")]
+    InvalidImageSequence(&'static str),
     /// Frame dimensions were zero.
     #[error("frame dimensions must be positive, got width={width}, height={height}")]
     InvalidFrameDimensions {

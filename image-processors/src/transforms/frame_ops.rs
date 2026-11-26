@@ -1614,6 +1614,72 @@ pub fn crop_frame(
     )
 }
 
+/// Crop a signed pixel window, filling portions outside the source frame.
+///
+/// The source's format and timing are retained. Fill may contain one byte or
+/// one byte per channel; no full-page padded intermediate is materialized.
+///
+/// # Errors
+/// Reports invalid target dimensions, fill width or storage/coordinate overflow.
+pub fn crop_frame_with_constant_fill(
+    frame: &ImageFrame,
+    left: i64,
+    top: i64,
+    target: ImageSize,
+    fill: &[u8],
+) -> Result<ImageFrame, TransformError> {
+    validate_size(target)?;
+    let channels = frame.channels();
+    if fill.len() != 1 && fill.len() != channels {
+        return Err(TransformError::ResizeKernel {
+            message: "crop fill must be scalar or match channel count".to_owned(),
+        });
+    }
+    let count = target
+        .width
+        .checked_mul(target.height)
+        .and_then(|n| n.checked_mul(channels))
+        .ok_or(TransformError::ImageSizeOverflow)?;
+    let mut data = Vec::with_capacity(count);
+    for index in 0..count {
+        data.push(fill[if fill.len() == 1 { 0 } else { index % channels }]);
+    }
+    let source_width =
+        i64::try_from(frame.width()).map_err(|_| TransformError::ImageSizeOverflow)?;
+    let source_height =
+        i64::try_from(frame.height()).map_err(|_| TransformError::ImageSizeOverflow)?;
+    let width = i64::try_from(target.width).map_err(|_| TransformError::ImageSizeOverflow)?;
+    let height = i64::try_from(target.height).map_err(|_| TransformError::ImageSizeOverflow)?;
+    let right = left
+        .checked_add(width)
+        .ok_or(TransformError::ImageSizeOverflow)?;
+    let bottom = top
+        .checked_add(height)
+        .ok_or(TransformError::ImageSizeOverflow)?;
+    let (x0, x1, y0, y1) = (
+        left.max(0),
+        right.min(source_width),
+        top.max(0),
+        bottom.min(source_height),
+    );
+    if x0 < x1 && y0 < y1 {
+        let row_bytes = (x1 - x0) as usize * channels;
+        for y in y0..y1 {
+            let source = (y as usize * frame.width() + x0 as usize) * channels;
+            let destination = ((y - top) as usize * target.width + (x0 - left) as usize) * channels;
+            data[destination..destination + row_bytes]
+                .copy_from_slice(&frame.data()[source..source + row_bytes]);
+        }
+    }
+    new_frame(
+        target.width,
+        target.height,
+        frame.pixel_format(),
+        data,
+        frame.timing(),
+    )
+}
+
 /// Overlays a foreground frame onto a background frame.
 ///
 /// The output keeps the background size, pixel format, and timing metadata.

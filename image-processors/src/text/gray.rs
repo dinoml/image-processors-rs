@@ -6,20 +6,20 @@ use super::{invalid, Result};
 
 /// Outline coordinates are signed 26.6 pixels, before bitmap placement.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) struct Position {
+pub(crate) struct Position {
     pub x: i64,
     pub y: i64,
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(super) enum Segment {
+pub(crate) enum Segment {
     Move(Position),
     Line(Position),
     Conic(Position, Position),
     Cubic(Position, Position, Position),
 }
 
-pub(super) struct Bitmap {
+pub(crate) struct Bitmap {
     pub left: i32,
     pub top: i32,
     pub width: usize,
@@ -184,7 +184,7 @@ impl Raster {
     }
 }
 
-pub(super) fn rasterize(segments: &[Segment]) -> Result<Bitmap> {
+pub(crate) fn rasterize(segments: &[Segment]) -> Result<Bitmap> {
     let mut bounds = None;
     let mut include = |p: Position| {
         let limits = bounds.get_or_insert([p.x, p.y, p.x, p.y]);
